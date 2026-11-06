@@ -11,6 +11,9 @@ that real Bitcoin transactions, the upstream software, or buyers behave that
 way. Those are listed separately at the end, and no model result is ever
 reported as one of them.
 
+MVP order (2026-11-06): the fixed-price cases come first. Auctions (D1 to
+D35, N6) and auction evidence (E1 to E4) follow after the MVP.
+
 ## Shape
 
 The model is a pure, deterministic state machine:

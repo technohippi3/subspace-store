@@ -25,15 +25,22 @@ def tested_cases():
     return found
 
 
+DEFERRED_AFTER_MVP = lambda c: c[0] in "DE" or c == "N6"
+
+
 def main():
     spec = spec_cases()
     tested = tested_cases()
+    mvp = [c for c in spec if not DEFERRED_AFTER_MVP(c)]
+    mvp_missing = [c for c in mvp if c not in tested]
     unknown = sorted(tested - set(spec))
     missing = [c for c in spec if c not in tested]
     done = [c for c in spec if c in tested]
     print(f"spec cases: {len(spec)}, with model tests: {len(done)}, without: {len(missing)}")
     print("with model tests:", " ".join(done))
     print("without:", " ".join(missing))
+    print(f"fixed-price MVP cases: {len(mvp)}, without model tests: {len(mvp_missing)}"
+          + (": " + " ".join(mvp_missing) if mvp_missing else ""))
     if unknown:
         print("tests naming unknown cases:", " ".join(unknown))
         return 1

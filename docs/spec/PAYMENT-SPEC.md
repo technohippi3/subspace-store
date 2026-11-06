@@ -1,5 +1,9 @@
 # Subspace store payment specification (draft 8, 2026-11-06)
 
+MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
+auction section, its cases D1 to D35, case N6, and the auction evidence
+cases E1 to E4 are kept but deferred until after the MVP.
+
 Status: draft specification under review. Every rule below is a
 requirement until its cases are implemented and pass as executable tests.
 Nothing here has been built or tested, and a reviewed specification is not an

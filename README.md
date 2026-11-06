@@ -9,9 +9,12 @@ client. Nacho is the first client being tested.
 
 ## Status
 
-Pre-alpha. There is a reviewed specification and a reference model of its
-payment rules, and nothing else. There is no store, no registry, no
-controller and no installer. Nothing here is fit for selling names, and paid
+Pre-alpha. The MVP sells names at fixed prices. Dutch auctions are
+specified but deferred until after the MVP.
+
+There is a reviewed specification and a reference model of the fixed-price
+rules, and nothing else. There is no store, no registry, no real controller
+and no installer. Nothing here is fit for selling names, and paid
 sales stay closed until the acceptance gates in the specification pass.
 
 A passing model test shows that the specified rules are consistent on a
@@ -25,10 +28,13 @@ upstream Spaces software or buyers behave that way.
 - `model/`: the reference model, in plain Python with no dependencies.
   `chain.py` simulates a Bitcoin chain with real spends, conflicts and
   reorgs. `store.py` holds the fixed-price payment, reservation and refund
-  rules. `sim.py` journals every call so a run can be replayed.
-- `tests/`: the named specification cases, one test per case identifier,
-  plus seeded generated sequences with invariant, replay and cut-and-resume
-  checks.
+  rules. `controller.py` simulates batch issuance: the binding check,
+  `issuing`, uncertain broadcasts, supersession, finality and the off-host
+  journal. `sim.py` journals every call, and simulates journal outages and
+  host loss.
+- `tests/`: the named specification cases, one test per case identifier.
+  Every fixed-price MVP case has one. There are also seeded generated
+  sequences with invariant, replay and cut-and-resume checks.
 - `tools/case_coverage.py`: reports which named cases have tests.
 
 ## Running the checks

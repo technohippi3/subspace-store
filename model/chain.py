@@ -29,6 +29,12 @@ class Chain:
         self.blocks = []  # blocks[i] holds the txids mined at base + 1 + i
         self.txs = {}
         self.mempool = []
+        self._pos = {}  # txid -> (height, index), rebuilt whenever blocks change
+
+    def _reindex(self):
+        self._pos = {txid: (self.base + 1 + i, j)
+                     for i, block in enumerate(self.blocks)
+                     for j, txid in enumerate(block)}
 
     # Heights and positions
 
@@ -37,10 +43,7 @@ class Chain:
         return self.base + len(self.blocks)
 
     def position(self, txid):
-        for i, block in enumerate(self.blocks):
-            if txid in block:
-                return (self.base + 1 + i, block.index(txid))
-        return None
+        return self._pos.get(txid)
 
     def conf(self, txid):
         """Conventional confirmations: 0 when unmined, 1 in the tip block."""
@@ -118,6 +121,7 @@ class Chain:
             elif txids is not None:
                 raise ChainError(f"invalid in block: {txid}")
         self.blocks.append(block)
+        self._reindex()
         self._purge_mempool()
         return block
 
@@ -136,6 +140,7 @@ class Chain:
             raise ChainError("reorg deeper than the simulated chain")
         removed = self.blocks[len(self.blocks) - depth:]
         self.blocks = self.blocks[: len(self.blocks) - depth]
+        self._reindex()
         for block in removed:
             for txid in block:
                 if txid not in self.mempool:

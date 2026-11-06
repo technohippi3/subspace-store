@@ -55,6 +55,7 @@ class Sufficiency(unittest.TestCase):
         sim = new_sim()
         o = converted_order(sim, depth=3)
         sim.do("store", "mark_issuing", "o1")
+        sim.do("store", "mark_ready", "o1")
         sim.do("store", "mark_fulfilled", "o1")
         mine_empty(sim, 10)
         self.assertEqual(o.price_reserve, PRICE)
@@ -67,6 +68,7 @@ class Sufficiency(unittest.TestCase):
         o = converted_order(sim, depth=3)
         sim.do("store", "mark_issuing", "o1")
         if fulfilled:
+            sim.do("store", "mark_ready", "o1")
             sim.do("store", "mark_fulfilled", "o1")
         mine_empty(sim, 10)
         return sim, o
@@ -117,6 +119,7 @@ class Sufficiency(unittest.TestCase):
         mine_empty(sim, 2)
         o = sim.store.orders["o1"]
         sim.do("store", "mark_issuing", "o1")
+        sim.do("store", "mark_ready", "o1")
         sim.do("store", "mark_fulfilled", "o1")
         sim.do("chain", "drop", "small")
         # Remove the block holding "large" only.

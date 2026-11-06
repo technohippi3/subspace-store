@@ -3,13 +3,15 @@
 A reference model of PAYMENT-SPEC.md draft 8 (docs/spec). It covers
 fixed-price holds, conversion to a fulfillment reservation, late payments,
 cancellation, the price reserve, the two sufficiency rules, the
-`reconciling` reasons with recorded losses, and refund obligation groups.
-Auctions, batches, the controller and evidence are later slices.
+`reconciling` reasons with recorded losses, refund obligation groups, and
+an off-host journal snapshot that every escaping effect waits for. The batch
+controller is in controller.py. Auctions and evidence are later slices.
 
 Everything here is a simulation. A passing model case says the rules are
 consistent on a simulated chain, nothing more.
 """
 
+import copy
 from dataclasses import dataclass, field
 
 CONFIRMED, BATCHABLE, SETTLED = 1, 3, 6
@@ -17,7 +19,8 @@ HOLD_MINUTES = 15  # proposal
 EXTENSION_BLOCKS = 6
 EXCESS_MINIMUM_OVER_FEE = 546  # proposal
 
-FULFILLABLE = ("converted", "issuing", "fulfilled")
+FULFILLABLE = ("converted", "issuing", "ready", "fulfilled")
+ISSUED = ("issuing", "ready", "fulfilled")
 REFUNDABLE_IN_FULL = ("cancelled", "refund_due")
 
 
@@ -77,6 +80,7 @@ class Order:
     status: str = "quoted"
     price_reserve: int = 0
     late_evaluated: bool = False
+    eligible: bool = True
     reasons: set = field(default_factory=set)
     losses: dict = field(default_factory=dict)
 
@@ -97,6 +101,31 @@ class Store:
         self.groups = {}
         self.alerts = []
         self.authorizations = []  # (amount authorized, available at that moment)
+        # Off-host journal: the last acknowledged copy of durable state.
+        self.offhost_available = True
+        self.auto_ack = True
+        self.offhost = None
+
+    # Off-host journal
+
+    DURABLE = ("now", "names", "orders", "groups", "alerts", "authorizations")
+
+    def ack_journal(self):
+        if not self.offhost_available:
+            return False
+        self.offhost = {k: copy.deepcopy(getattr(self, k)) for k in self.DURABLE}
+        return True
+
+    def restore_from_offhost(self):
+        """Host loss: keep only what the off-host journal acknowledged."""
+        for k, v in copy.deepcopy(self.offhost or {}).items():
+            setattr(self, k, v)
+        self.observe()
+
+    def _acked_attempt(self, gid, txid):
+        groups = (self.offhost or {}).get("groups", {})
+        g = groups.get(gid)
+        return g is not None and txid in g.txids()
 
     # Owner and clock
 
@@ -140,7 +169,7 @@ class Store:
                     - max(0, settled - o.price_reserve))
         return {
             "issuance": shortfall if o.status == "converted" else 0,
-            "post_issuance_deficit": shortfall if o.status in ("issuing", "fulfilled") else 0,
+            "post_issuance_deficit": shortfall if o.status in ISSUED else 0,
             "refunds": exposure,
         }
 
@@ -162,7 +191,7 @@ class Store:
     def cancel(self, oid):
         self.observe()
         o = self.orders[oid]
-        if o.status in ("issuing", "fulfilled"):
+        if o.status in ISSUED:
             raise Refused("not cancellable once issuing")
         n = self.names[o.name]
         if n.fulfillment == oid:
@@ -173,21 +202,46 @@ class Store:
         o.price_reserve = 0
         self.observe()
 
+    def batch_entry_ok(self, o):
+        return (o.status == "converted" and o.eligible
+                and "issuance" not in o.reasons
+                and self.sum_at(o, BATCHABLE) >= o.price_reserve)
+
+    def invalidate_eligibility(self, oid):
+        self.orders[oid].eligible = False
+        self.observe()
+
     def mark_issuing(self, oid):
         self.observe()
         o = self.orders[oid]
         if o.status != "converted":
             raise Refused("not converted")
-        if "issuance" in o.reasons or self.sum_at(o, BATCHABLE) < o.price_reserve:
+        if not self.batch_entry_ok(o):
             raise Refused("batch entry refused")
         o.status = "issuing"
+        self.observe()
+
+    def unissue(self, oid):
+        """Only after safe supersession is proven: the order is paid again."""
+        o = self.orders[oid]
+        if o.status != "issuing":
+            raise Refused("not issuing")
+        o.status = "converted"
+        self.observe()
+
+    def mark_ready(self, oid):
+        self.observe()
+        o = self.orders[oid]
+        if o.status != "issuing":
+            raise Refused("not issuing")
+        o.status = "ready"
         self.observe()
 
     def mark_fulfilled(self, oid):
         self.observe()
         o = self.orders[oid]
-        if o.status != "issuing":
-            raise Refused("not issuing")
+        if o.status != "ready":
+            raise Refused("not ready")
         o.status = "fulfilled"
         self.observe()
 
@@ -247,13 +301,18 @@ class Store:
         self.observe()
 
     def export_psbt(self, gid, txid):
+        if not self._acked_attempt(gid, txid):
+            raise Refused("journal entry not acknowledged off-host")
         self.groups[gid].attempt(txid).exported = True
+        self.observe()
 
     def release(self, gid):
         raise Refused("a reservation is released only by settled evidence")
 
     def broadcast(self, gid, txid, response_lost=False, reached_network=True):
         a = self.groups[gid].attempt(txid)
+        if not self._acked_attempt(gid, txid):
+            raise Refused("journal entry not acknowledged off-host")
         a.attempted = True  # recorded before the node is called
         if reached_network:
             self.chain.add(a.tx)
@@ -290,6 +349,8 @@ class Store:
             self._step_group(g)
         for o in self.orders.values():
             self._reasons(o)
+        if self.auto_ack:
+            self.ack_journal()
 
     def _step_order(self, o):
         n = self.names[o.name]

@@ -37,7 +37,9 @@ class Generator:
         weights = {"quote": 3, "pay": 4, "mine": 6, "mine_empty": 3, "reorg": 2,
                    "vanish": 1, "advance": 1, "refund": 3, "broadcast": 2,
                    "bump": 1, "conflict": 1, "replace": 1, "cancel": 0.4,
-                   "issue": 3, "fulfil": 3, "loss": 2, "drop": 1}
+                   "loss": 2, "drop": 1,
+                   "batch": 3, "send": 3, "readback": 1, "supersede": 0.3,
+                   "finality": 0.5, "deliver": 2, "outage": 0.5, "host_loss": 0.5}
         op = r.choices(list(weights), weights=list(weights.values()))[0]
         if op == "quote":
             s.try_do("store", "quote", self.uid("o"), r.choice(["n1", "n2"]),
@@ -79,8 +81,8 @@ class Generator:
         elif op == "broadcast" and st.groups:
             g = r.choice(list(st.groups.values()))
             a = r.choice(g.attempts)
-            s.do("store", "broadcast", g.gid, a.tx.txid,
-                 response_lost=r.random() < 0.2, reached_network=r.random() < 0.9)
+            s.try_do("store", "broadcast", g.gid, a.tx.txid,
+                     response_lost=r.random() < 0.2, reached_network=r.random() < 0.9)
         elif op == "bump" and st.groups:
             g = r.choice(list(st.groups.values()))
             first = g.attempts[0]
@@ -104,16 +106,47 @@ class Generator:
             s.try_do("store", "add_attempt", g.gid, tx, a0.to_buyer, a0.fee)
         elif op == "cancel" and orders:
             s.try_do("store", "cancel", r.choice(orders).oid)
-        elif op == "issue" and orders:
-            s.try_do("store", "mark_issuing", r.choice(orders).oid)
-        elif op == "fulfil" and orders:
-            s.try_do("store", "mark_fulfilled", r.choice(orders).oid)
         elif op == "loss" and orders:
             o = r.choice(orders)
             if o.reasons:
                 s.try_do("store", "record_loss", o.oid, r.choice(sorted(o.reasons)))
         elif op == "drop" and s.chain.mempool:
             s.do("chain", "drop", r.choice(s.chain.mempool))
+        elif op == "batch":
+            try:
+                bid = s.do("controller", "freeze")
+                for stage in ("commit_local", "prove", "checkpoint"):
+                    s.do("controller", stage, bid)
+            except Refused:
+                pass
+        elif op == "send":
+            ready = [b for b in s.controller.batches.values() if b.state == "checkpointed"]
+            if ready:
+                s.try_do("controller", "check_and_issue", r.choice(ready).bid,
+                         r.choice(["ok", "ok", "ok", "lost", "unsent"]))
+        elif op == "readback":
+            unsure = [b for b in s.controller.batches.values()
+                      if b.state == "broadcast_uncertain"]
+            if unsure:
+                s.do("controller", "readback", r.choice(unsure).bid)
+        elif op == "supersede":
+            live = [b for b in s.controller.batches.values()
+                    if b.state in ("broadcast", "broadcast_uncertain", "mined")]
+            if live:
+                s.do("controller", "owner_supersede", r.choice(live).bid, self.uid("rb"))
+        elif op == "finality":
+            for _ in range(r.choice([20, 150])):
+                s.do("chain", "mine")
+        elif op == "deliver":
+            for b in s.controller.batches.values():
+                if b.state == "final":
+                    for m in b.members:
+                        if st.orders[m].status == "ready":
+                            s.try_do("controller", "confirm_delivery", b.bid, m)
+        elif op == "outage":
+            s.do("sim", "set_offhost", r.random() < 0.6)
+        elif op == "host_loss":
+            s.do("sim", "host_loss")
 
 
 def check(gen, test):
@@ -127,7 +160,7 @@ def check(gen, test):
             test.assertEqual(st.orders[n.hold.oid].status, "quoted")
         if n.fulfillment is not None:
             test.assertIn(st.orders[n.fulfillment].status,
-                          ("converted", "issuing", "fulfilled"))
+                          ("converted", "issuing", "ready", "fulfilled"))
         if n.hold is not None and n.fulfillment is not None:
             test.fail(f"{name} has a hold and a fulfillment reservation")
     for o in st.orders.values():
@@ -146,13 +179,37 @@ def check(gen, test):
         shortfall = o.price_reserve - batchable if o.price_reserve > 0 else 0
         expected = {
             "issuance": shortfall if o.status == "converted" else 0,
-            "post_issuance_deficit": shortfall if o.status in ("issuing", "fulfilled") else 0,
+            "post_issuance_deficit": shortfall if o.status in ("issuing", "ready", "fulfilled") else 0,
             "refunds": refunded + reserved - max(0, settled - o.price_reserve),
         }
         for reason, value in expected.items():
             active = value - o.losses.get(reason, 0) > 0
             test.assertEqual(reason in o.reasons, active, (o.oid, reason, value))
+    ctl = gen.sim.controller
+    issued_states = ("issuing", "broadcast", "broadcast_uncertain", "mined", "final")
+    seen_members = {}
+    for b in ctl.batches.values():
+        if b.state in issued_states:
+            for m in b.members:
+                test.assertNotIn(m, seen_members, "order in two issued batches")
+                seen_members[m] = b.bid
+                test.assertNotEqual(st.orders[m].status, "cancelled")
+    for txid in chain.txs:
+        if txid.startswith("commit-"):
+            bid = txid[len("commit-"):]
+            acked = ctl.offhost["batches"].get(bid)
+            test.assertTrue(acked is not None and acked.intent,
+                            f"{txid} escaped without an acknowledged intent")
+    for o in st.orders.values():
+        if o.status in ("ready", "fulfilled"):
+            test.assertIn(o.oid, seen_members)
     for g in st.groups.values():
+        for a in g.attempts:
+            if a.tx.txid in chain.txs:
+                test.assertTrue(st.offhost is not None and a.tx.txid in
+                                st.offhost["groups"].get(g.gid, g).txids()
+                                if g.gid in st.offhost["groups"] else False,
+                                f"{a.tx.txid} escaped without an acknowledged journal entry")
         mined = [a for a in g.attempts if chain.position(a.tx.txid) is not None]
         test.assertLessEqual(len(mined), 1, g.gid)
         res = g.reservation()
@@ -179,6 +236,18 @@ class Generated(unittest.TestCase):
             losses += sum(len(o.losses) for o in gen.sim.store.orders.values())
         self.assertEqual(seen, {"issuance", "post_issuance_deficit", "refunds"})
         self.assertGreater(losses, 0)
+
+    def test_generator_reaches_the_issuance_states(self):
+        states = set()
+        for seed in range(RUNS):
+            gen = Generator(seed)
+            for _ in range(STEPS):
+                gen.step()
+                states |= {b.state for b in gen.sim.controller.batches.values()}
+                states |= {o.status for o in gen.sim.store.orders.values()}
+        for expected in ("final", "superseded", "broadcast_uncertain", "rebuilt",
+                         "ready", "fulfilled"):
+            self.assertIn(expected, states)
 
     def test_replay_and_cut_and_resume_match(self):
         for seed in range(RUNS):

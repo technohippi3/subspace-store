@@ -6,6 +6,7 @@ compared with an uninterrupted run.
 """
 
 from .chain import Chain
+from .controller import Controller
 from .store import Refused, Store
 
 
@@ -13,16 +14,34 @@ class Sim:
     def __init__(self):
         self.chain = Chain()
         self.store = Store(self.chain)
+        self.controller = Controller(self.chain, self.store)
         self.journal = []
 
     def do(self, target, method, *args, **kwargs):
         self.journal.append((target, method, args, kwargs))
-        obj = self.chain if target == "chain" else self.store
+        if target == "sim":
+            return getattr(self, "_" + method)(*args, **kwargs)
+        obj = {"chain": self.chain, "store": self.store,
+               "controller": self.controller}[target]
         try:
             return getattr(obj, method)(*args, **kwargs)
         finally:
             if target == "chain":
                 self.store.observe()
+                self.controller.observe()
+
+    # Faults
+
+    def _set_offhost(self, available):
+        self.store.offhost_available = available
+        self.controller.offhost_available = available
+
+    def _host_loss(self):
+        """Lose the host: keep the chain, restore state from the off-host
+        journal, then reconcile."""
+        self.store.restore_from_offhost()
+        self.controller.restore_from_offhost()
+        self.store.observe()
 
     def try_do(self, target, method, *args, **kwargs):
         try:
@@ -49,5 +68,8 @@ class Sim:
             "groups": {k: (g.reservation(), g.closed_by, g.needs_rebuild,
                            len(g.attempts))
                        for k, g in sorted(s.groups.items())},
+            "batches": {k: (b.state, tuple(b.members), b.txid)
+                        for k, b in sorted(self.controller.batches.items())},
+            "delegate": self.controller.delegate,
             "tip": self.chain.tip,
         }
