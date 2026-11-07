@@ -1,4 +1,4 @@
-# Subspace store payment specification (draft 10, 2026-11-07)
+# Subspace store payment specification (draft 11, 2026-11-07)
 
 MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
 auction section, its cases D1 to D35, case N6, and the auction evidence
@@ -32,7 +32,9 @@ member already fulfilled (B6, B7, J3 to J10, L1 to L5). Draft 10 applies
 the first regtest findings, R10 and R11 of the regtest harness: a member is
 ready only once its certificate verifies as sovereign, which can trail
 `d >= 150`, and a commitment that lost finality returns to the chain only
-from its journaled signed bytes (L6 to L8), and a supersession that a deeper reorg undoes is tracked (X10).
+from its journaled signed bytes (L6 to L8), and a supersession that a deeper reorg undoes is tracked (X10). Draft 11 adds L9 from regtest findings R23 and
+R24: a certificate built on a later commitment than its batch's is
+delivered only once that later root is final and covered.
 
 ## Terms, depth arithmetic and thresholds
 
@@ -884,6 +886,7 @@ Finality, publication and delivery (with `CONTROLLER-DESIGN.md`):
 | L6 | batch final at `d >= 150`, newest root anchor 138 blocks past the commitment | certificate verified | pending: member stays `issuing`, waiting for anchor coverage; nothing paused; publish and delivery refused; ready once an anchor is 144 past the commitment |
 | L7 | final commitment, its signed bytes journaled; a reorg takes it off the chain and it is in no mempool | recovery | identical bytes rebroadcast after the journal check; never `/broadcast`; final and ready again once mined to `d >= 150` and covered |
 | L8 | broadcast answer lost and the transaction evicted before any readback, so no bytes were journaled | recovery | refused; recovery paused and owner alerted; members `issuing` and non-cancellable; with U1(c), bytes journaled before the send make the same case recoverable |
+| L9 | batch final and covered, a member published; a later commitment of the same space is mined, at `d = 149` | the member's delivery is confirmed | waits: the relay serves the certificate under the later root, so delivery is refused while that root is below `d >= 150` or no anchor covers it; nothing paused; confirmed once both hold (regtest R24) |
 
 Eligibility cases (altered name, altered recipient, wrong scope, replay, and
 a quota race between two orders with the same nullifier) are listed under

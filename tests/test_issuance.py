@@ -1,9 +1,10 @@
-"""Named cases X1 to X10, B1 to B7, J1 to J10, L1 to L8 and N12 (fixed-price
+"""Named cases X1 to X10, B1 to B7, J1 to J10, L1 to L9 and N12 (fixed-price
 issuance).
 
 B6, B7, J3 to J10 and L1 to L5 are regressions from the model review of
 2026-11-07: each replays a sequence the earlier model got wrong. L6 to L8
-come from the first regtest findings (R10, R11) and are still model cases.
+come from the first regtest findings (R10, R11), and L9 from R23 and R24.
+They are still model cases.
 
 Model only: `subs` is reduced to single steps and a commitment is a simulated
 transaction spending the delegate output.
@@ -628,6 +629,49 @@ class FinalityPublicationDelivery(unittest.TestCase):
         self.assertEqual(ctl.certificate_status("o1"), "verified")
         self.assertEqual(sim.store.orders["o1"].status, "ready")
         self.assertEqual(sim.do("controller", "publish", bid, ["o1"]), 1)
+
+    def test_L9_delivery_waits_for_the_root_the_certificate_was_built_on(self):
+        # Regtest R24: subs builds a handle's certificate against the space's
+        # latest on-chain commitment when the handle is published, so it can
+        # prove inclusion in a later root than its batch's.
+        for published_before_later in (False, True):
+            with self.subTest(published_before_later=published_before_later):
+                sim, b1 = self._final()
+                ctl = sim.controller
+                if published_before_later:
+                    sim.do("controller", "publish", b1, ["o1"])
+                converted_order(sim, oid="o2", name="n2", depth=10)
+                b2 = prepare(sim)
+                issue(sim, b2)
+                mine(sim)
+                mine_empty(sim, 149)
+                h2 = sim.chain.position(f"commit-{b2}")[0]
+                self.assertEqual(sim.chain.tip - h2, 149)
+                self.assertEqual(ctl.batches[b1].state, "final")
+                self.assertEqual(ctl._certificates(ctl.batches[b1]), "verified")
+                if published_before_later:
+                    # Built on b1's root, which is final and covered.
+                    sim.do("controller", "confirm_delivery", b1, "o1")
+                    self.assertEqual(sim.store.orders["o1"].status, "fulfilled")
+                    continue
+                # The batch's own root allows publication; the certificate is
+                # built on b2's root at d = 149.
+                self.assertEqual(sim.do("controller", "publish", b1, ["o1"]), 1)
+                self.assertEqual(ctl.batches[b1].served_under["o1"], b2)
+                with self.assertRaises(Refused):
+                    sim.do("controller", "confirm_delivery", b1, "o1")
+                self.assertEqual(sim.store.orders["o1"].status, "ready")
+                mine_empty(sim)
+                self.assertEqual(ctl.batches[b2].state, "final")
+                if ctl._certificates(ctl.batches[b2]) == "awaiting_anchor":
+                    with self.assertRaises(Refused):
+                        sim.do("controller", "confirm_delivery", b1, "o1")
+                    cover(sim)
+                # Waiting, not a failure: nothing paused, no alert.
+                self.assertIsNone(ctl.paused_at)
+                self.assertFalse(any(a[1] == b1 for a in ctl.alerts if len(a) > 1))
+                sim.do("controller", "confirm_delivery", b1, "o1")
+                self.assertEqual(sim.store.orders["o1"].status, "fulfilled")
 
     def test_L7_lost_commitment_returns_from_journaled_bytes(self):
         # Regtest R10: after a deep reorg the commitment was in no mempool.

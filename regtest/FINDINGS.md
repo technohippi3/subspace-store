@@ -394,6 +394,35 @@ verified with libveritas, with the handle, the buyer's script and
 not the root of the batch that issued the handle. The harness compared the
 batch's root, so delivery wasn't confirmed and the run failed at those
 rows. CONTROLLER-DESIGN.md step 6 said the same ("handle, `script_pubkey`
-and root"). Both now take the space's live commitment as the certificate's
-root. The batch's own root is still required on chain at `d >= 150` by the
-live check before each publication and delivery.
+and root"). Both then took the space's live commitment as the
+certificate's root, without checking that root's own depth or anchor
+coverage; R24 corrects that. The batch's own root is still required on
+chain at `d >= 150` by the live check before each publication and delivery.
+
+R24. The root a certificate is built on is chosen when the handle is
+published, and it can be younger than the batch's. In the pinned `subs`,
+`publish_certs` (`core/src/app.rs`) issues each certificate against the
+space's latest on-chain commitment at the time of the call, and marks the
+handle "final" when the handle's own commitment index is at or below that
+commitment's, at any depth. A reviewer showed with stubbed answers that the
+harness then confirmed delivery with the batch's root at depth 748 and the
+certificate's root at depth 149. The live run
+`combined-20261107T145828Z-92636d` reproduced it on regtest. b7 was final
+and covered, and its member's handle was published while b8, the next
+commitment of `@test10000`, was at `d = 149`. `subs` reported the handle
+"final". The relay's answer verified with libveritas, with the handle and
+the buyer's script correct, under b8's root at height 4684. libveritas
+answered "pending" for the handle, because no anchor covered b8.
+
+With the corrected check, the harness refused delivery at `d = 149` and
+again at `d = 150` before an anchor covered b8, and the model (new case L9)
+refused both too. It confirmed delivery once b8 was covered. The run still
+failed at those two rows, because the harness counted libveritas's
+"pending" as a mismatch and alerted, where the specification says waiting.
+That classification is fixed. Delivery now requires the root the relay's
+answer carries to be a commitment of the space on the active chain, at
+`d >= 150`, with a root anchor that covers it, and the handle to be
+sovereign. A matching answer that falls short of any of these is waiting,
+not alerted. Publication still checks only the batch's own commitment, so
+a handle can be published while a later commitment is young. Delivery then
+waits for that later root.

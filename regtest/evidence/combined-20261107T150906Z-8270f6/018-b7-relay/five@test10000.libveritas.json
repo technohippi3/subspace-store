@@ -1,0 +1,1 @@
+{"certificates":[{"final":true,"subject":"@test10000","temporary":false}],"newest_anchor":4824,"verified":true,"zones":[{"anchor":4824,"canonical":"@test10000","commitment_height":null,"commitment_root":null,"handle":"@test10000","script_pubkey":"51202be5aa110d865d5c936de847790e471535a4a719b57b736fabdd12dba6283f81","sovereignty":"sovereign"}]}

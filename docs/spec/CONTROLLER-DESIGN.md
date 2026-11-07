@@ -1,4 +1,4 @@
-# Subspace store issuance controller design (draft 7, 2026-11-07)
+# Subspace store issuance controller design (draft 8, 2026-11-07)
 
 Status: draft design. Nothing is built. Payment, reservation, cancellation
 and refund rules are in `PAYMENT-SPEC.md`, including the depth arithmetic
@@ -16,7 +16,11 @@ journaled so it can be rebroadcast after a deep reorg. Draft 7 corrects
 the pins and three statements about `subs` against what the regtest
 harness found (`regtest/FINDINGS.md` R2, R12, R13, R14 and R16), and
 records the candidate U1(b) patch that lets a space issue again after a
-restore (R17, R18).
+restore (R17, R18). Draft 8 takes U1(b)'s evidence from the nums block
+index (R18, R22), and accepts a certificate built on a later root than the
+batch's only once that root is final and covered (R23, R24, case L9 in
+`PAYMENT-SPEC.md`). Publication checks the batch's own commitment by its
+root, not the space's latest.
 
 ## Pinned upstream versions
 
@@ -134,24 +138,29 @@ Publication procedure:
    the cap. If a call returns `handles_published: 0` for a non-empty chunk,
    halve the chunk and retry. A single handle that can't be sent pauses the
    space and alerts the owner.
-4. Immediately before each call, read the live commitment with
-   `getcommitment` and check that its root is the batch's root at
-   `d >= 150`. If not, don't call. A reorg means waiting until it holds
-   again.
+4. Immediately before each call, read the batch's commitment with
+   `getcommitment(space, root)` and check that it is on the active chain at
+   `d >= 150`, with a root anchor that covers it. If not, don't call. A
+   reorg means waiting until it holds again. A later commitment of the
+   space doesn't block the call: the certificate is then built on the later
+   root, and step 6 waits for that root (L9).
 5. After each call, read each handle's `publish_status` from
    `/spaces/:space/handles/:handle`. Only "final" counts toward progress. A
    "temp" result means the certificate was built against a different tip, so
    the handle stays outstanding and the owner is alerted.
 6. Confirm delivery per handle with a verified lookup through the relay
    network, using the verifying client from the buyer gate. It must return
-   a final certificate for the handle with its `script_pubkey`, under the
-   space's live commitment at `d >= 150`. That is the batch's root, or a
-   later one once the space has moved on, because relays serve certificates
-   against the space's current root (R23). The batch's own root must still
-   be on chain, which step 4's live check confirms. A relay's `/peek` output
-   doesn't count. Only a published handle is
-   confirmed, and the live-commitment check of step 4 runs again immediately
-   before the confirmation.
+   a final certificate for the handle with its `script_pubkey`, under a
+   root that is a commitment of the space on the active chain, at
+   `d >= 150`, with a root anchor that covers it. `subs` builds a handle's
+   certificate against the space's latest on-chain commitment when it
+   publishes the handle, so that root is the batch's or a later one (R23,
+   R24). A later root below `d >= 150` or not yet covered means waiting:
+   nothing is paused or alerted, and the lookup runs again (L9). The
+   batch's own root must still be on chain, which step 4's live check
+   confirms. A relay's `/peek` output doesn't count. Only a published
+   handle is confirmed, and the live check of step 4 runs again
+   immediately before the confirmation.
 
 HTTP success, `handles_published`, `remaining = 0` and
 `publish_status = "final"` are all signals, not proof of delivery. Only step
@@ -432,9 +441,9 @@ For each member of a batch at `d >= 150`, fetch the certificate from `subs`
 - it names the expected handle and the order's `script_pubkey`;
 - it proves inclusion in the batch's root and absence from earlier roots;
 - that root is the one in the mined transaction recorded for the batch. A
-  certificate built after a later commitment proves inclusion in the
-  space's live root instead, and then that root must be the space's
-  current on-chain commitment (R23).
+  certificate built after a later commitment proves inclusion in that
+  later root instead, and then that root must be a commitment of the space
+  on the active chain, final and covered like the batch's own (R23, R24).
 
 A member's certificate must also verify as sovereign. libveritas judges
 that from the newest root anchor it is given, and `spaced` computes one every

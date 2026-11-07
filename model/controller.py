@@ -66,6 +66,10 @@ class Batch:
     supersedes: object = None
     published: set = field(default_factory=set)
     delivered: set = field(default_factory=set)
+    # Per published member, the batch whose commitment was the space's latest
+    # on chain when it was published. `subs` builds the certificate against
+    # that root, so it is the root a relay serves (R23, R24).
+    served_under: dict = field(default_factory=dict)
 
 
 class Controller:
@@ -583,9 +587,21 @@ class Controller:
             return 0  # an empty list would mean "all unpublished" upstream
         if len(handles) > MAX_CHUNK:
             raise Refused("chunk too large")
-        b.published |= {h for h in handles if h in b.members}
+        sent = {h for h in handles if h in b.members}
+        b.published |= sent
+        live = self._live_commitment()
+        for h in sent:
+            b.served_under[h] = live.bid if live else bid
         self.ack_journal()
         return len(handles)
+
+    def _live_commitment(self):
+        """The batch whose commitment is the space's latest on the chain.
+        `subs` builds a certificate against that root when it publishes a
+        handle, whichever batch issued the handle (R23)."""
+        on_chain = [(self.chain.position(b.txid), b.bid) for b in self.batches.values()
+                    if b.txid and self.chain.position(b.txid) is not None]
+        return self.batches[max(on_chain)[1]] if on_chain else None
 
     def confirm_delivery(self, bid, oid):
         b = self.batches[bid]
@@ -595,6 +611,12 @@ class Controller:
             raise Refused("not a member")
         if oid not in b.published:
             raise Refused("not published")
+        # L9: the certificate the relay serves proves inclusion in the root
+        # that was live when the handle was published, which can be a later
+        # commitment than the batch's. That root must be final and covered too.
+        served = self.batches[b.served_under.get(oid, bid)]
+        if served is not b and self._certificates(served) != "verified":
+            raise Refused("the certificate's root is not final and covered")
         b.delivered.add(oid)
         self.store.mark_fulfilled(oid)
         self.ack_journal()

@@ -13,10 +13,13 @@ namespace:
 5. after each call, `publish_status` per handle, where only "final" counts;
 6. delivery per handle through a verified lookup: the relay's `/query`
    answer, verified with libveritas against root anchors read from `spaced`
-   directly, must show the handle and its `script_pubkey`, under the space's
-   live commitment. That is the batch's root, or a later one once the space
-   has moved on (R23). The live check of step 4 runs again first. A relay's `/peek` is
-   never read.
+   directly, must show the handle and its `script_pubkey`, under a root that
+   is a commitment of the space on chain at d >= 150 with an anchor that
+   covers it (L9). `subs` builds the certificate against the space's latest
+   commitment when it publishes the handle, so that root is the batch's or
+   a later one (R23, R24); a later one below d >= 150 or not yet covered
+   means waiting. The live check of step 4 runs again first. A relay's
+   `/peek` is never read.
 
 `subs` must be the build with `upstream/subs-fabric-seed.patch` and the run
 must have SUBSPACE_RELAY=1, so that `subs` seeds its fabric client with the
@@ -164,11 +167,46 @@ class Publisher:
 
     # 6. Delivery
 
+    def verify_message(self, msg_path, anchors_path):
+        """libveritas's verdict on one relay message, from the verifier."""
+        proc = subprocess.run([str(self.c.verifier_bin), str(msg_path), str(anchors_path)],
+                              capture_output=True, text=True)
+        (msg_path.parent / (msg_path.name.replace(".message.bin", "") + ".libveritas.json")
+         ).write_text(proc.stdout + proc.stderr)
+        return json.loads(proc.stdout) if proc.stdout.strip().startswith("{") else \
+            {"verified": False, "error": proc.stderr[-500:]}
+
+    def root_gate(self, space, root, height):
+        """The certificate's own root, the one the relay's answer carries:
+        it must be a commitment of the space on the active chain, at
+        d >= 150, with an anchor that covers it (L9). `subs` builds a
+        certificate against the space's latest commitment when it publishes
+        the handle, so this root can be later than the batch's (R23, R24)."""
+        try:
+            on_chain = self.c.onchain_commitment(space, root) if root else None
+        except Exception:  # noqa: BLE001 - spaced has no such commitment
+            on_chain = None
+        tip = self.c.tip()
+        newest = self.c.root_anchors()[0]["block"]["height"]
+        out = {
+            "on_chain": bool(on_chain and on_chain.get("state_root") == root
+                             and on_chain.get("block_height") == height),
+            "height": height,
+            "depth": tip - height if height is not None else None,
+            "newest_anchor": newest,
+        }
+        out["final"] = out["on_chain"] and out["depth"] >= FINAL_D
+        out["covered"] = out["on_chain"] and newest - height >= ANCHOR_FINALITY
+        out["ok"] = out["final"] and out["covered"]
+        return out
+
     def lookup(self, bid, oid):
         """A verified lookup of one handle through the local relay. The relay
         answers `/query` with a message; libveritas verifies it against root
-        anchors read from spaced directly, and the zones must carry the
-        handle, its script_pubkey and the batch's root at its height."""
+        anchors read from spaced directly. The zones must carry the handle
+        and its script_pubkey, under a root that is a commitment of the
+        space on chain, no earlier than the batch's. Whether that root is
+        final and covered is reported separately, in `root_gate`."""
         b = self.c.batch(bid)
         o = self.reg.order(oid)
         handle = o["name"]
@@ -186,37 +224,40 @@ class Publisher:
                     "error": e.body[:300], "artifacts": str(out_dir)}
         msg_path = out_dir / f"{handle}.message.bin"
         msg_path.write_bytes(msg)
-        proc = subprocess.run([str(self.c.verifier_bin), str(msg_path),
-                               str(out_dir / "anchors.json")], capture_output=True, text=True)
-        (out_dir / f"{handle}.libveritas.json").write_text(proc.stdout + proc.stderr)
-        res = json.loads(proc.stdout) if proc.stdout.strip().startswith("{") else \
-            {"verified": False, "error": proc.stderr[-500:]}
+        res = self.verify_message(msg_path, out_dir / "anchors.json")
         zones = res.get("zones", [])
         zone = next((z for z in zones if z["handle"] == handle), None)
         space_zone = next((z for z in zones if z["handle"] == b["space"]), None)
-        # The relay serves the handle under the space's current commitment,
-        # which is a later one than the batch's once the space has moved on
-        # (R23). The batch's own root is checked on chain by the live check;
-        # here the message must carry the space's live commitment.
+        root = space_zone["commitment_root"] if space_zone else None
+        height = space_zone["commitment_height"] if space_zone else None
+        gate = self.root_gate(b["space"], root, height)
         live = self.c.onchain_commitment(b["space"]) or {}
         checks = {
             "verified": res.get("verified", False),
             "handle": zone is not None,
             "script_pubkey": bool(zone and zone["script_pubkey"] == o["recipient_spk"]),
-            "root": bool(space_zone and live and space_zone["commitment_root"] == live.get("state_root")),
-            "root_height": bool(space_zone and live
-                                and space_zone["commitment_height"] == live.get("block_height")),
-            "sovereign": bool(zone and zone["sovereignty"] == "sovereign"),
+            "root_on_chain": gate["on_chain"],
+            "root_not_before_batch": bool(height is not None and b["mined_height"] is not None
+                                          and height >= b["mined_height"]),
+            # "pending" is libveritas waiting for an anchor that covers the
+            # root (L6, R11), not a mismatch; confirm_delivery waits on it.
+            "sovereign_or_pending": bool(zone and zone["sovereignty"] in ("sovereign", "pending")),
         }
         return {"handle": handle, "ok": all(checks.values()), "checks": checks,
-                "root_is_the_batchs": bool(space_zone and space_zone["commitment_root"] == b["root"]),
+                "sovereignty": zone["sovereignty"] if zone else None,
+                "root_gate": gate,
+                "root_is_the_batchs": root == b["root"],
+                "root_is_live": bool(live and root == live.get("state_root")),
                 "zone": zone, "space_zone": space_zone, "error": res.get("error"),
                 "message_bytes": len(msg), "relay_answer": "HTTP 200", "artifacts": str(out_dir)}
 
     def confirm_delivery(self, bid, oid):
         """Step 6 for one handle: only a published handle is looked up, the
         live check runs again immediately before, and only a verified lookup
-        that matches marks the order fulfilled."""
+        that matches, under a root that is final and covered and with the
+        handle sovereign, marks the order fulfilled. A matching answer whose
+        root isn't final and covered yet, or that libveritas still answers
+        "pending", is waiting, not a failure: nothing is alerted."""
         row = self.row(bid, oid)
         if row is None or row["state"] not in ("published", "delivered"):
             return {"confirmed": False, "why": "not published"}
@@ -227,6 +268,13 @@ class Publisher:
         if not found["ok"]:
             self.c.alert("delivery_unconfirmed", bid, oid)
             return {"confirmed": False, "why": "verified lookup does not match", "lookup": found,
+                    "live": live}
+        gate = found["root_gate"]
+        if not gate["ok"] or found["sovereignty"] != "sovereign":
+            why = (f"waiting: the certificate's root is at d = {gate['depth']}" if not gate["final"]
+                   else "waiting: no anchor covers the certificate's root yet" if not gate["covered"]
+                   else "waiting: libveritas still answers pending")
+            return {"confirmed": False, "waiting": True, "why": why, "lookup": found,
                     "live": live}
         if row["state"] != "delivered":
             self.db.execute("update publication set state = 'delivered' where bid = ? and oid = ?",
@@ -260,15 +308,19 @@ def _lookup_cell(res):
     lk = res.get("lookup")
     if lk:
         out.update({"relay_answer": lk.get("relay_answer"), "checks": lk.get("checks"),
+                    "root_gate": lk.get("root_gate"), "root_is_the_batchs": lk.get("root_is_the_batchs"),
+                    "root_is_live": lk.get("root_is_live"),
                     "zone": lk.get("zone"), "space_zone": lk.get("space_zone"),
                     "error": lk.get("error")})
+    if res.get("waiting"):
+        out["waiting"] = True
     if res.get("live"):
         out["live"] = res["live"]
     return out
 
 
-def _publish_and_deliver(run, p, scen, bid):
-    """Steps 1 to 6 for one batch, each compared with the model."""
+def _enroll_and_publish(run, p, scen, bid):
+    """Steps 1 to 5 for one batch, each compared with the model."""
     r, c = run.report, run.controller
     space, mbid = run.bids[bid]
     m = run.mirror(space)
@@ -301,15 +353,31 @@ def _publish_and_deliver(run, p, scen, bid):
                      "why": mcount if not mok else ""},
                match=compare.same_publish(res, {"ok": mok, "count": mcount if mok else 0,
                                                 "published": mpub}))
+
+
+def _deliver(run, p, scen, bid, case="L2", what="confirmed by a verified lookup through the relay"):
+    """Step 6 for every outstanding member of one batch, compared with the
+    model. A refusal agrees with the model only when it is a wait: a
+    matching answer whose root isn't final and covered yet."""
+    r = run.report
+    space, mbid = run.bids[bid]
+    m = run.mirror(space)
     for oid in list(p.outstanding(bid)):
         res = p.confirm_delivery(bid, oid)
         mok, mwhy = m.step("confirm_delivery", mbid, oid)
         got = {"confirmed": res["confirmed"], "status": run.registry.order(oid)["status"]}
         exp = {"ok": mok, "status": m.order_status(oid)}
-        r.step(scen, "L2", f"delivery of {oid} confirmed by a verified lookup through the relay",
+        r.step(scen, case, f"delivery of {oid} {what}",
                dict(_lookup_cell(res), status=got["status"]),
                dict(exp, why=mwhy if not mok else ""),
-               match=compare.same_delivery(got, exp))
+               match=compare.same_delivery(got, exp)
+               and (res["confirmed"] or bool(res.get("waiting"))))
+
+
+def _nothing_outstanding(run, p, scen, bid):
+    r, c = run.report, run.controller
+    space, mbid = run.bids[bid]
+    m = run.mirror(space)
     run.compare_orders(scen, None, f"{bid} members after delivery", c.batch(bid)["members"], space)
     # Step 2: nothing is outstanding now, so nothing is called.
     calls = len(p.calls)
@@ -322,10 +390,19 @@ def _publish_and_deliver(run, p, scen, bid):
                                       {"ok": mok, "count": mcount if mok else 0, "published": []}))
 
 
+def _publish_and_deliver(run, p, scen, bid):
+    """Steps 1 to 6 for one batch, each compared with the model."""
+    _enroll_and_publish(run, p, scen, bid)
+    _deliver(run, p, scen, bid)
+    _nothing_outstanding(run, p, scen, bid)
+
+
 def publication(run):
     """Publish the first purchase's batch to the local relay and confirm
     delivery, then issue another batch and show that publication waits for
-    finality and anchor coverage, then publish and deliver that one."""
+    finality and anchor coverage. Publish that one while a third commitment
+    is at d = 149, and show that delivery waits for the root the certificate
+    was built on (L9). Then publish and deliver the third."""
     from .scenarios import FEE_RATE, SPACE_A, attempt, isolated
 
     scen = "6. publication and delivery"
@@ -398,7 +475,45 @@ def publication(run):
         r.step(scen, "L6", f"publish {bid} before anchor coverage",
                {"skipped": "an anchor already covered the commitment at d = 150"}, required=False)
     run.certify(scen, bid, SPACE_A)
-    _publish_and_deliver(run, p, scen, bid)
+
+    # L9 (R24): the batch is final and covered, and its member is published
+    # while a later commitment of the space is at d = 149. subs builds the
+    # certificate against that later root, so delivery waits until it is
+    # final and covered too, then proceeds.
+    oid2, _ = run.buy(scen, SPACE_A, _free_label(run, SPACE_A))
+    run.mine(3)
+    m.mine(3)
+    run.compare_orders(scen, "P1", "payment at 3 conf converts the hold", [oid2], SPACE_A)
+    later, mlater = run.prepare(scen, SPACE_A, [oid2])
+    c.issue(later, FEE_RATE)
+    m.step("check_and_issue", mlater, "ok")
+    run.compare_batch(scen, "B3", f"{later} broadcast", later, {"txid": c.batch(later)["txid"]})
+    run.mine(1)
+    m.mine(1)
+    c.watch(later)
+    run.mine(149)
+    m.mine(149)
+    c.watch(later)
+    c.watch(bid)
+    run.compare_batch(scen, None, f"{later} at d = 149", later,
+                      {"position": c.tx_position(c.batch(later)["txid"])})
+    run.compare_batch(scen, None, f"{bid} still final while {later} is at d = 149", bid)
+    _enroll_and_publish(run, p, scen, bid)
+    _deliver(run, p, scen, bid, "L9", f"while {later}, the certificate's root, is at d = 149")
+    run.mine(1)
+    m.mine(1)
+    c.watch(later)
+    run.compare_batch(scen, None, f"{later} at d = 150", later)
+    lb = c.batch(later)
+    if c.root_anchors()[0]["block"]["height"] - lb["mined_height"] < ANCHOR_FINALITY:
+        _deliver(run, p, scen, bid, "L9", f"while no anchor covers {later}, the certificate's root")
+    else:
+        r.step(scen, "L9", f"delivery before an anchor covers {later}",
+               {"skipped": "an anchor already covered the commitment at d = 150"}, required=False)
+    run.certify(scen, later, SPACE_A)
+    _deliver(run, p, scen, bid, "L9", f"once {later}, the certificate's root, is final and covered")
+    _nothing_outstanding(run, p, scen, bid)
+    _publish_and_deliver(run, p, scen, later)
     r.step(scen, None, "every /publish call of the run", {"calls": p.calls}, required=False,
            note="no call had an empty list or more than 100 handles; the relay's /peek "
                 "was never read")

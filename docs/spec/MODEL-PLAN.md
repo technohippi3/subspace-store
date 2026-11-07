@@ -4,8 +4,8 @@ Status: the reference model exists in `model/` and its named cases run in
 `tests/`, in this public repository under the Apache 2.0 licence. No store,
 registry or integration code exists yet. This file defines the states,
 events, checks and case mapping of an executable reference model of
-`PAYMENT-SPEC.md` (draft 10) and of the controller's journal rules in
-`CONTROLLER-DESIGN.md` (draft 6).
+`PAYMENT-SPEC.md` (draft 11) and of the controller's journal rules in
+`CONTROLLER-DESIGN.md` (draft 8).
 
 A model result shows that the rules hold in a simulation. It is not evidence
 that real Bitcoin transactions, the upstream software, or buyers behave that
@@ -196,7 +196,7 @@ identifier as the test name.
 | X1 to X10 | cancellation against issuance and reversed supersession | yes |
 | B1 to B7 | batch entry, binding check and one commitment per space | yes, against a simulated `subs` |
 | J1 to J10 | restore against reservations and both journals | yes, with simulated host loss and independent journal outages |
-| L1 to L8 | finality, anchor coverage, publication, delivery, recovery incidents and commitment rebroadcast | yes, with reorgs across `d >= 150` and simulated root anchors |
+| L1 to L9 | finality, anchor coverage, publication, delivery under a later root, recovery incidents and commitment rebroadcast | yes, with reorgs across `d >= 150` and simulated root anchors |
 | E1 to E4 | evidence and disclosure | yes, with a real signature library for receipts |
 | eligibility (README) | proof binding and quotas | yes, with a stubbed verifier; local ZKPassport verification is an integration test |
 

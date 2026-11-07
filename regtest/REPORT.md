@@ -296,33 +296,42 @@ bytes, 43.2% of the relay's 512 KB limit (R20).
 
 ## Recovery, continued issuance and delivery together (2026-11-07)
 
-Script: `regtest/run-combined.sh`, from `main` at `5fc3f79` plus this
-round's changes. `subs` is built with both upstream patches
-(`build-combined.sh`): U1(b), now taking its evidence from `spaced`'s nums
-block index (R18, R22), and `--fabric-seed`. The relay is `certrelay` at
-`fb44648`, inside the namespace. The run executes scenarios 1 to 6 in
+Script: `regtest/run-combined.sh`. `subs` is built with both upstream
+patches (`build-combined.sh`): U1(b), taking its evidence from `spaced`'s
+nums block index (R18, R22), and `--fabric-seed`. The relay is `certrelay`
+at `fb44648`, inside the namespace. The run executes scenarios 1 to 6 in
 order: the first purchase, the second commitment, the host restore, the
 lost broadcast answer, another batch after the recovery, and publication
-with delivery.
+with delivery. Scenario 6 now ends with case L9 (R24).
 
-Run `combined-20261107T114800Z-d17683`: verdict pass, exit 0. All 169
-required steps agree with the model, and 24 are informational.
+Run `combined-20261107T150906Z-8270f6`, from `main` at `78c55b7` plus this
+round's changes: verdict pass, exit 0. All 193 required steps agree with
+the model, and 26 are informational.
 - Scenario 5 refused three impostor txids and attached b3's adopted txid.
-  The next batch (b6, order o8) committed, was proved with a step and a fold
-  (110 s), broadcast and finalized, and its certificate verified.
+  The next batch (b6, order o8) committed, was proved, broadcast and
+  finalized, and its certificate verified.
 - Scenario 6 published every final batch of `@test10000` to the local
-  relay, then b7 (order o9) after it waited for finality and anchor
-  coverage. Six orders reached "fulfilled", each by a libveritas-verified
-  lookup through the relay: o1, o3, o4, o5 (the restored batch), o8 (the
-  batch after the recovery) and o9.
-- The corrected L3 check ran through the controller's `confirm_delivery`,
-  and refused every unpublished handle.
-- The lookups for o1 to o8 came back under b6's root, at height 4328, and
-  the one for o9 under b7's root, at 4504 (R23).
+  relay and confirmed delivery: o1, o3, o4, o5 (the restored batch) and o8
+  (the batch after the recovery). Their lookups came back under b6's root,
+  at height 4328 (R23).
+- b7 (order o9) waited for finality and anchor coverage before publication.
+  Its member was then published while b8 (order o10), the next commitment,
+  was at `d = 149`. `subs` built the certificate on b8's root, at height
+  4684, and libveritas answered "pending". Delivery waited at `d = 149`
+  and again at `d = 150` before an anchor covered b8, with no alert, and
+  the model (L9) refused both times too. Once an anchor covered b8, the
+  lookup verified as sovereign and o9 was fulfilled. o10 followed.
+- Seven orders reached "fulfilled" by libveritas-verified lookups through
+  the relay. The corrected L3 check refused every unpublished handle.
 
-The run before it, `combined-20261107T113909Z-345992`, is kept as R23's
-evidence. Scenario 5 passed there too, but delivery of o1 to o5 failed at
-the root check, because the harness compared the issuing batch's root.
+Two earlier combined runs are kept. `combined-20261107T113909Z-345992` is
+R23's evidence: delivery of o1 to o5 failed at the root check, because the
+harness compared the issuing batch's root.
+`combined-20261107T145828Z-92636d` is R24's: it reproduced the young
+certificate root live, and the harness refused delivery correctly, but
+counted libveritas's "pending" as a mismatch and alerted, so those two rows
+disagreed with the model. `combined-20261107T114800Z-d17683` passed before
+L9 existed, with 169 required steps, and the U1(b) draft cites it.
 
 ## The tightened harness
 
@@ -351,8 +360,10 @@ Since fp4:
 Not exercised on regtest:
 - publication beyond one local relay: propagation between relays, the
   public relay network, chunks of more than one handle, an oversized chunk
-  and its halving, temp certificates, and a reorg between the live check
-  and a `/publish` call (scenario 6 uses one relay and one-handle chunks);
+  and its halving, temp certificates, a reorg between the live check
+  and a `/publish` call, and a reorg of a later root that a published
+  certificate was built on (scenario 6 uses one relay and one-handle
+  chunks);
 - buyer import, in Nacho or any other client, and the buyer gate's
   verifying client (delivery was confirmed by the harness's own lookup:
   the relay's answer verified with the pinned libveritas);
@@ -389,8 +400,8 @@ they're published, and a run id must be a plain name.
 runs, four continued runs and `publication-20261107T094250Z-76605c`. Four
 of the publication run's verifications, in its `-relay` directories, are
 the relay's `/query` answers from scenario 6: two from before publication
-and two from the delivery lookups. The two combined runs are kept as well,
-83 messages in all. Each message is kept with its root anchors and
+and two from the delivery lookups. The four combined runs are kept as
+well, 133 messages in all. Each message is kept with its root anchors and
 libveritas output. `verify-evidence.sh` verifies them all offline, and
 `evidence/README.md` says how. fp4's certificate isn't kept in the repository,
 because its handle label was a personal name and is part of the signed
