@@ -144,8 +144,12 @@ Publication procedure:
    the handle stays outstanding and the owner is alerted.
 6. Confirm delivery per handle with a verified lookup through the relay
    network, using the verifying client from the buyer gate. It must return
-   the expected final certificate: handle, `script_pubkey` and root. A
-   relay's `/peek` output doesn't count. Only a published handle is
+   a final certificate for the handle with its `script_pubkey`, under the
+   space's live commitment at `d >= 150`. That is the batch's root, or a
+   later one once the space has moved on, because relays serve certificates
+   against the space's current root (R23). The batch's own root must still
+   be on chain, which step 4's live check confirms. A relay's `/peek` output
+   doesn't count. Only a published handle is
    confirmed, and the live-commitment check of step 4 runs again immediately
    before the confirmation.
 
@@ -169,9 +173,11 @@ pass):
   commit (R17). A candidate patch, checked on regtest, is in
   `regtest/upstream/`: `POST /spaces/:space/commit/txid` attaches the `txid`
   only when the commitment has none, `spaced` is synced, the chain's
-  commitment carries its root at height H, and the space's delegate output
-  is output 0 of that `txid`, unspent and last updated at H. A wallet record
-  that contradicts this refuses (R18);
+  commitment carries its root at height H, and `spaced`'s nums block index
+  for H shows that exactly this transaction committed the space to that
+  root. Without the block index it refuses. The space's current delegate
+  output isn't evidence, because another transaction can move it later in
+  the same block (R18, R22);
 - (c) preferably, a split into "prepare" (build and sign, store the raw
   transaction and `txid`) and "send", so the exact bytes can be journaled
   before anything escapes. That also makes a commitment that was never seen
@@ -425,7 +431,10 @@ For each member of a batch at `d >= 150`, fetch the certificate from `subs`
 (`/certs/:handle`) and verify it with the pinned `libveritas`:
 - it names the expected handle and the order's `script_pubkey`;
 - it proves inclusion in the batch's root and absence from earlier roots;
-- that root is the one in the mined transaction recorded for the batch.
+- that root is the one in the mined transaction recorded for the batch. A
+  certificate built after a later commitment proves inclusion in the
+  space's live root instead, and then that root must be the space's
+  current on-chain commitment (R23).
 
 A member's certificate must also verify as sovereign. libveritas judges
 that from the newest root anchor it is given, and `spaced` computes one every

@@ -50,7 +50,8 @@ wallets are made fresh for each run inside `.run/`.
   as `.cache/bin/subs-u1b`, from a separate worktree of the pinned checkout.
   `SUBSPACE_SUBS_BIN` points a run at it, and the report records which
   `subs` ran.
-- `upstream/`: the candidate upstream change U1(b) as a patch, and
+- `upstream/`: the candidate upstream change U1(b) as a patch, with its
+  draft submission (`U1B-SUBMISSION.md`), and
   `subs-fabric-seed.patch`, which adds `--fabric-seed <url>` to `subs` so
   its fabric client uses the named relays instead of the public seeds
   (finding R19).
@@ -63,6 +64,10 @@ wallets are made fresh for each run inside `.run/`.
   delivery confirmed per handle by a verified lookup through it, so the
   orders reach "fulfilled". It runs with `SUBSPACE_RELAY=1`, which makes
   `procs.py` start the relay and pass `--fabric-seed` to `subs`.
+- `build-combined.sh` and `run-combined.sh [prefix]`: `subs` with both
+  upstream patches (`.cache/bin/subs-combined`), and scenarios 1 to 6 in
+  one run: recovery after a restore, continued issuance, publication and
+  verified delivery.
 - `keep-run.sh <run id>`: keeps a run's report and certificates in `runs/`
   and `evidence/`. It never replaces or removes anything already kept.
 - `verify-evidence.sh`: verifies every kept certificate offline.

@@ -294,6 +294,36 @@ lookup through it. The relay messages are kept as evidence and verify
 offline. The one-handle message after the proved commitment was 226,260
 bytes, 43.2% of the relay's 512 KB limit (R20).
 
+## Recovery, continued issuance and delivery together (2026-11-07)
+
+Script: `regtest/run-combined.sh`, from `main` at `5fc3f79` plus this
+round's changes. `subs` is built with both upstream patches
+(`build-combined.sh`): U1(b), now taking its evidence from `spaced`'s nums
+block index (R18, R22), and `--fabric-seed`. The relay is `certrelay` at
+`fb44648`, inside the namespace. The run executes scenarios 1 to 6 in
+order: the first purchase, the second commitment, the host restore, the
+lost broadcast answer, another batch after the recovery, and publication
+with delivery.
+
+Run `combined-20261107T114800Z-d17683`: verdict pass, exit 0. All 169
+required steps agree with the model, and 24 are informational.
+- Scenario 5 refused three impostor txids and attached b3's adopted txid.
+  The next batch (b6, order o8) committed, was proved with a step and a fold
+  (110 s), broadcast and finalized, and its certificate verified.
+- Scenario 6 published every final batch of `@test10000` to the local
+  relay, then b7 (order o9) after it waited for finality and anchor
+  coverage. Six orders reached "fulfilled", each by a libveritas-verified
+  lookup through the relay: o1, o3, o4, o5 (the restored batch), o8 (the
+  batch after the recovery) and o9.
+- The corrected L3 check ran through the controller's `confirm_delivery`,
+  and refused every unpublished handle.
+- The lookups for o1 to o8 came back under b6's root, at height 4328, and
+  the one for o9 under b7's root, at 4504 (R23).
+
+The run before it, `combined-20261107T113909Z-345992`, is kept as R23's
+evidence. Scenario 5 passed there too, but delivery of o1 to o5 failed at
+the root check, because the harness compared the issuing batch's root.
+
 ## The tightened harness
 
 Since fp4:
@@ -337,9 +367,6 @@ Not exercised on regtest:
 - continued operation after a lost answer on a later commitment, rather
   than a restore (scenario 5 covers the restore case, and only with the
   U1(b) patch);
-- the U1(b) and `--fabric-seed` patches together: they are separate builds
-  (`subs-u1b`, `subs-relay`), so no run has both recovered after a restore
-  and published;
 - auctions, and a natural competing-chain reorg as opposed to
   `invalidateblock`.
 
@@ -362,8 +389,9 @@ they're published, and a run id must be a plain name.
 runs, four continued runs and `publication-20261107T094250Z-76605c`. Four
 of the publication run's verifications, in its `-relay` directories, are
 the relay's `/query` answers from scenario 6: two from before publication
-and two from the delivery lookups. Each message is kept with its root
-anchors and libveritas output. `verify-evidence.sh` verifies them all offline, and
+and two from the delivery lookups. The two combined runs are kept as well,
+83 messages in all. Each message is kept with its root anchors and
+libveritas output. `verify-evidence.sh` verifies them all offline, and
 `evidence/README.md` says how. fp4's certificate isn't kept in the repository,
 because its handle label was a personal name and is part of the signed
 message.

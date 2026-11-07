@@ -217,8 +217,11 @@ Needs the upstream software, on a local regtest network where possible:
 
 On regtest the harness in `regtest/` has since shown the controller cycle,
 proving, certificate verification with libveritas and a restore against the
-pinned `subs` and `spaced` (`regtest/REPORT.md`). Publication, refunds and
-the full operator gate are still unexercised there.
+pinned `subs` and `spaced` (`regtest/REPORT.md`). With two candidate
+patches to `subs`, it has also shown continued issuance after a restore,
+and publication to a local relay with per-handle verified delivery.
+Refunds, a buyer's client and the full operator gate are still unexercised
+there.
 
 Needs mainnet with the owner's authorization:
 - a commitment on a real throwaway space;

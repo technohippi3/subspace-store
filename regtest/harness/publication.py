@@ -13,8 +13,9 @@ namespace:
 5. after each call, `publish_status` per handle, where only "final" counts;
 6. delivery per handle through a verified lookup: the relay's `/query`
    answer, verified with libveritas against root anchors read from `spaced`
-   directly, must show the handle, its `script_pubkey` and the batch's
-   root. The live check of step 4 runs again first. A relay's `/peek` is
+   directly, must show the handle and its `script_pubkey`, under the space's
+   live commitment. That is the batch's root, or a later one once the space
+   has moved on (R23). The live check of step 4 runs again first. A relay's `/peek` is
    never read.
 
 `subs` must be the build with `upstream/subs-fabric-seed.patch` and the run
@@ -193,15 +194,22 @@ class Publisher:
         zones = res.get("zones", [])
         zone = next((z for z in zones if z["handle"] == handle), None)
         space_zone = next((z for z in zones if z["handle"] == b["space"]), None)
+        # The relay serves the handle under the space's current commitment,
+        # which is a later one than the batch's once the space has moved on
+        # (R23). The batch's own root is checked on chain by the live check;
+        # here the message must carry the space's live commitment.
+        live = self.c.onchain_commitment(b["space"]) or {}
         checks = {
             "verified": res.get("verified", False),
             "handle": zone is not None,
             "script_pubkey": bool(zone and zone["script_pubkey"] == o["recipient_spk"]),
-            "root": bool(space_zone and space_zone["commitment_root"] == b["root"]),
-            "root_height": bool(space_zone and space_zone["commitment_height"] == b["mined_height"]),
+            "root": bool(space_zone and live and space_zone["commitment_root"] == live.get("state_root")),
+            "root_height": bool(space_zone and live
+                                and space_zone["commitment_height"] == live.get("block_height")),
             "sovereign": bool(zone and zone["sovereignty"] == "sovereign"),
         }
         return {"handle": handle, "ok": all(checks.values()), "checks": checks,
+                "root_is_the_batchs": bool(space_zone and space_zone["commitment_root"] == b["root"]),
                 "zone": zone, "space_zone": space_zone, "error": res.get("error"),
                 "message_bytes": len(msg), "relay_answer": "HTTP 200", "artifacts": str(out_dir)}
 
@@ -226,6 +234,18 @@ class Publisher:
             self._journal(bid)
             self.reg.mark_fulfilled(oid)
         return {"confirmed": True, "live": live, "lookup": found}
+
+
+LABELS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+          "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+          "eighteen", "nineteen", "twenty")
+
+
+def _free_label(run, space):
+    """The first numbered label not yet listed on the space, so scenario 6 can
+    follow the other scenarios in one run."""
+    used = {r[0] for r in run.registry.db.execute("select name from names")}
+    return next(l for l in LABELS if f"{l}{space}" not in used)
 
 
 def _subs_seed_line(stack):
@@ -335,7 +355,7 @@ def publication(run):
     # A later batch. Publication is refused while it isn't final (L1) and
     # while no anchor covers it (L6), then proceeds (L2).
     m = run.mirror(SPACE_A)
-    oid, _ = run.buy(scen, SPACE_A, "two")
+    oid, _ = run.buy(scen, SPACE_A, _free_label(run, SPACE_A))
     run.mine(3)
     m.mine(3)
     run.compare_orders(scen, "P1", "payment at 3 conf converts the hold", [oid], SPACE_A)

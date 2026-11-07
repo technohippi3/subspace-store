@@ -17,9 +17,16 @@ rules, and a regtest harness that drives the pinned `subs`, `spaced` and
 Bitcoin Core on a local regtest network. On regtest the harness has issued
 names through to a certificate verified with libveritas and marked ready:
 an initial commitment, later commitments with real proofs, a host restore
-and a lost broadcast response. That is regtest evidence. It isn't a
-completed purchase: nothing has been published to relays or delivered to a
-buyer's client, and the harness's registry and controller are test code.
+and a lost broadcast response. After a restore it issued another batch,
+with a candidate upstream change to `subs` (U1(b)). It published
+certificates to a relay running inside the test network and confirmed
+each delivery with a verified lookup through that relay, so orders reached
+"fulfilled".
+
+That is regtest evidence, with two small patches to `subs` kept in
+`regtest/upstream/`. It isn't a buyer's purchase. No buyer's client has
+imported a certificate, nothing has touched the public relay network, and
+the harness's registry and controller are test code.
 
 There is no store, no persistent registry, no payment or refund service, no
 real controller, no checkout and no installer. Nothing here is fit for

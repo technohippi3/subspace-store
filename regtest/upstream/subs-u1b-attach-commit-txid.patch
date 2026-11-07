@@ -1,14 +1,14 @@
 diff --git a/core/src/app.rs b/core/src/app.rs
-index a804ba8..b1e88bf 100644
+index a804ba8..c8a2dec 100644
 --- a/core/src/app.rs
 +++ b/core/src/app.rs
-@@ -1156,6 +1156,83 @@ impl Operator {
+@@ -1156,6 +1156,104 @@ impl Operator {
          Ok(txid)
      }
  
 +    /// Attach a known txid to the last local commitment (U1(b)), after
-+    /// `attach::check_attach` accepts it against chain state read from
-+    /// `spaced` now. The same txid again is a no-op. It sends nothing.
++    /// `attach::check_attach` accepts it against chain state and the nums
++    /// block index read from `spaced` now. The same txid again is a no-op. It sends nothing.
 +    pub async fn attach_commit_txid(&self, space: &SLabel, txid: Txid) -> anyhow::Result<()> {
 +        use crate::attach::{check_attach, ChainEvidence, WalletRecord};
 +        use spaces_client::rpc::RpcClient;
@@ -30,18 +30,39 @@ index a804ba8..b1e88bf 100644
 +        hex::decode_to_slice(&commitment.root, &mut local_root)
 +            .map_err(|e| anyhow!("invalid root: {}", e))?;
 +
-+        // Chain state, from spaced.
++        // Chain state, from spaced: the commitment, then the nums block index
++        // for its height on the node's active chain.
 +        let info = rpc.get_server_info().await?;
 +        let on_chain = rpc.get_commitment(space.clone().into(), None).await?;
-+        let Some(fso) = get_subject_out(rpc, space).await? else {
-+            return Err(anyhow!("subject not found: {}", space));
++        let block = match &on_chain {
++            Some(c) => match rpc
++                .get_num_block_meta(spaces_client::rpc::HeightOrHash::Height(c.block_height))
++                .await
++            {
++                Ok(meta) => Some((
++                    meta.block_meta.height,
++                    meta.block_meta
++                        .tx_meta
++                        .iter()
++                        .map(|tx| {
++                            let made = tx
++                                .changeset
++                                .commitments
++                                .iter()
++                                .map(|ci| (ci.space.to_string(), ci.commitment.state_root))
++                                .collect();
++                            (tx.changeset.txid, made)
++                        })
++                        .collect(),
++                )),
++                Err(_) => None,
++            },
++            None => None,
 +        };
-+        let sptr = NumId::from_spk::<Sha256>(fso.script_pubkey().clone());
-+        let delegate = rpc.get_num(spaces_wallet::Subject::NumId(sptr)).await?;
 +        let chain = ChainEvidence {
 +            synced: info.ready && info.chain.blocks == info.chain.headers,
 +            commitment: on_chain.map(|c| (c.state_root, c.block_height)),
-+            delegate: delegate.map(|d| (d.txid, d.numout.n, d.numout.spent, d.numout.num.last_update)),
++            block,
 +        };
 +
 +        // The operator wallet's record of the txid, if it has one.
@@ -88,44 +109,52 @@ index a804ba8..b1e88bf 100644
          let local_space = self.get_local_space(space)?;
 diff --git a/core/src/attach.rs b/core/src/attach.rs
 new file mode 100644
-index 0000000..37145a6
+index 0000000..a05db73
 --- /dev/null
 +++ b/core/src/attach.rs
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,240 @@
 +//! U1(b): attach a known txid to the last local commitment.
 +//!
 +//! After a restore from a snapshot that predates the broadcast, or after the
 +//! answer to `/broadcast` was lost, a commitment can be on chain while
 +//! `commit_txid` is empty. For a commitment after the first,
 +//! `can_commit_local` then refuses every further local commit. The check
-+//! here decides, from authoritative chain state read from `spaced`, whether
-+//! a given txid is the transaction that made this space's commitment:
++//! here decides whether a given txid is the transaction that made this
++//! space's commitment. It asks for evidence that names the transaction
++//! itself, read from `spaced`:
 +//!
 +//! - `spaced` is ready and synced to its node's headers, so its view is not
 +//!   stale;
-+//! - the space's on-chain commitment carries the local root, at height H;
-+//! - the space's delegate output is output 0 of the given txid, unspent and
-+//!   last updated at H. A commitment spends the delegate output and makes
-+//!   the new one at output 0, so only the transaction that committed at H
-+//!   can be named there.
++//! - the space's on-chain commitment (`getcommitment`) carries the local
++//!   root, at height H;
++//! - the nums block index for height H on the node's active chain
++//!   (`getnumblockmeta`) lists, per transaction, the commitments that
++//!   transaction made. Exactly one transaction in that block must commit
++//!   this space to the local root, and it must be the given txid.
++//!
++//! Without that index (`spaced` run without `--block-index`), the block
++//! comes back with no transactions and the attach is refused. Which output
++//! currently holds the delegate is not evidence: another transaction can
++//! move the delegate later in the same block without committing.
 +//!
 +//! The operator wallet's record of the txid, where it has one, must not
-+//! contradict that: a record for another space, another root or another
-+//! height refuses. A missing record doesn't, because a restored wallet may
-+//! not keep its event history. Nothing here sends anything.
++//! contradict the evidence: a record for another space, another root or
++//! another height refuses. A missing record doesn't, because a restored
++//! wallet may not keep its event history. Nothing here sends anything.
 +
 +use bitcoin::Txid;
 +
-+/// What `spaced` reports about the space, read just before the check.
++/// What `spaced` reports, read just before the check.
 +#[derive(Clone, Debug)]
 +pub struct ChainEvidence {
 +    /// `getserverinfo`: `ready`, and `chain.blocks == chain.headers`.
 +    pub synced: bool,
 +    /// `getcommitment(space)`: the on-chain state root and its block height.
 +    pub commitment: Option<([u8; 32], u32)>,
-+    /// `getnum(delegate)`: the delegate output's txid, output index, whether
-+    /// it is spent, and the height of its last update.
-+    pub delegate: Option<(Txid, usize, bool, u32)>,
++    /// `getnumblockmeta(H)` on the active chain: the block's height, and for
++    /// each transaction in it, its txid and the `(space, state_root)` of each
++    /// commitment it made. `None` when the lookup failed.
++    pub block: Option<(u32, Vec<(Txid, Vec<(String, [u8; 32])>)>)>,
 +}
 +
 +/// The operator wallet's record of the txid, if it has one.
@@ -154,23 +183,44 @@ index 0000000..37145a6
 +    if &root != local_root {
 +        return Err("the on-chain commitment root doesn't match the last local commitment".into());
 +    }
-+    let (delegate_txid, vout, spent, last_update) = chain
-+        .delegate
-+        .ok_or_else(|| "no delegate output found for this space".to_string())?;
-+    if &delegate_txid != txid || vout != 0 {
++    let (block_height, txs) = chain
++        .block
++        .as_ref()
++        .ok_or_else(|| format!("the nums block index has no block at height {}", height))?;
++    if *block_height != height {
 +        return Err(format!(
-+            "{} didn't make this space's delegate output, which is {}:{}",
-+            txid, delegate_txid, vout
++            "the nums block index answered height {}, not the commitment's height {}",
++            block_height, height
 +        ));
 +    }
-+    if spent {
-+        return Err("this space's delegate output is spent".into());
-+    }
-+    if last_update != height {
-+        return Err(format!(
-+            "the delegate output was last updated at {}, not at the commitment's height {}",
-+            last_update, height
-+        ));
++    let committers: Vec<&Txid> = txs
++        .iter()
++        .filter(|(_, commitments)| {
++            commitments.iter().any(|(s, r)| s == space && r == local_root)
++        })
++        .map(|(t, _)| t)
++        .collect();
++    match committers.as_slice() {
++        [] => {
++            return Err(format!(
++                "no transaction in block {} commits {} to this root; without spaced's block \
++                 index there is no evidence of which transaction did",
++                height, space
++            ))
++        }
++        [only] if *only == txid => {}
++        [only] => {
++            return Err(format!(
++                "{} didn't make this space's commitment; {} did, in block {}",
++                txid, only, height
++            ))
++        }
++        _ => {
++            return Err(format!(
++                "more than one transaction in block {} commits {} to this root",
++                height, space
++            ))
++        }
 +    }
 +    if let Some(record) = wallet {
 +        if let Some(h) = record.block_height {
@@ -200,6 +250,7 @@ index 0000000..37145a6
 +    use bitcoin::hashes::Hash;
 +
 +    const SPACE: &str = "@test10000";
++    const OTHER: &str = "@test9999";
 +    const ROOT: [u8; 32] = [7u8; 32];
 +    const H: u32 = 3600;
 +
@@ -207,11 +258,13 @@ index 0000000..37145a6
 +        Txid::from_byte_array([b; 32])
 +    }
 +
++    /// Block H: the commitment (txid 1), then a later transaction (txid 2)
++    /// that moves the delegate output without committing.
 +    fn good() -> ChainEvidence {
 +        ChainEvidence {
 +            synced: true,
 +            commitment: Some((ROOT, H)),
-+            delegate: Some((txid(1), 0, false, H)),
++            block: Some((H, vec![(txid(1), vec![(SPACE.to_string(), ROOT)]), (txid(2), vec![])])),
 +        }
 +    }
 +
@@ -223,39 +276,54 @@ index 0000000..37145a6
 +    }
 +
 +    #[test]
-+    fn the_transaction_that_made_the_delegate_output_is_attached() {
++    fn the_transaction_that_made_the_commitment_is_attached() {
 +        assert_eq!(check_attach(SPACE, &ROOT, &txid(1), &good(), None), Ok(()));
 +        let w = wallet(H, SPACE, &ROOT);
 +        assert_eq!(check_attach(SPACE, &ROOT, &txid(1), &good(), Some(&w)), Ok(()));
 +    }
 +
 +    #[test]
++    fn a_later_delegate_movement_in_the_same_block_is_refused() {
++        // It now holds the delegate output, but it made no commitment.
++        let no_record = check_attach(SPACE, &ROOT, &txid(2), &good(), None);
++        assert!(no_record.unwrap_err().contains("didn't make this space's commitment"));
++        let no_event = WalletRecord { block_height: Some(H), commit_roots: vec![] };
++        assert!(check_attach(SPACE, &ROOT, &txid(2), &good(), Some(&no_event)).is_err());
++    }
++
++    #[test]
 +    fn copied_root_bytes_are_not_enough() {
-+        // Any other transaction, whatever bytes it carries, didn't make the
-+        // delegate output.
-+        assert!(check_attach(SPACE, &ROOT, &txid(2), &good(), None).is_err());
++        // A transaction carrying the root's bytes makes no commitment in the
++        // index, whatever its outputs hold.
++        let mut chain = good();
++        chain.block.as_mut().unwrap().1.push((txid(3), vec![]));
++        assert!(check_attach(SPACE, &ROOT, &txid(3), &chain, None).is_err());
 +    }
 +
 +    #[test]
 +    fn another_spaces_commitment_is_refused() {
-+        // Its txid isn't this space's delegate output.
-+        assert!(check_attach(SPACE, &ROOT, &txid(9), &good(), None).is_err());
-+        // And a wallet record naming another space contradicts the chain.
-+        let w = wallet(H, "@test9999", &ROOT);
++        let mut chain = good();
++        chain.block.as_mut().unwrap().1.push((txid(9), vec![(OTHER.to_string(), ROOT)]));
++        assert!(check_attach(SPACE, &ROOT, &txid(9), &chain, None).is_err());
++        // Only another space committed to this root in the block: no evidence.
++        let mut chain = good();
++        chain.block = Some((H, vec![(txid(9), vec![(OTHER.to_string(), ROOT)])]));
++        assert!(check_attach(SPACE, &ROOT, &txid(9), &chain, None).is_err());
++        let w = wallet(H, OTHER, &ROOT);
 +        assert!(check_attach(SPACE, &ROOT, &txid(1), &good(), Some(&w)).is_err());
 +    }
 +
 +    #[test]
 +    fn a_wrong_height_is_refused() {
 +        let mut chain = good();
-+        chain.delegate = Some((txid(1), 0, false, H + 1));
++        chain.block.as_mut().unwrap().0 = H + 1;
 +        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
 +        let w = wallet(H - 6, SPACE, &ROOT);
 +        assert!(check_attach(SPACE, &ROOT, &txid(1), &good(), Some(&w)).is_err());
 +    }
 +
 +    #[test]
-+    fn stale_or_missing_chain_evidence_is_refused() {
++    fn missing_or_stale_evidence_is_refused() {
 +        let mut chain = good();
 +        chain.synced = false;
 +        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
@@ -263,20 +331,23 @@ index 0000000..37145a6
 +        chain.commitment = None;
 +        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
 +        let mut chain = good();
-+        chain.delegate = None;
++        chain.block = None;
 +        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
++        // spaced without its block index answers the block with no
++        // transactions: there is no evidence, so nothing is attached.
++        let mut chain = good();
++        chain.block = Some((H, vec![]));
++        let no_index = check_attach(SPACE, &ROOT, &txid(1), &chain, None);
++        assert!(no_index.unwrap_err().contains("without spaced's block index"));
 +    }
 +
 +    #[test]
-+    fn a_different_root_or_output_is_refused() {
++    fn a_different_root_or_an_ambiguous_block_is_refused() {
 +        let mut chain = good();
 +        chain.commitment = Some(([8u8; 32], H));
 +        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
 +        let mut chain = good();
-+        chain.delegate = Some((txid(1), 1, false, H));
-+        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
-+        let mut chain = good();
-+        chain.delegate = Some((txid(1), 0, true, H));
++        chain.block.as_mut().unwrap().1.push((txid(4), vec![(SPACE.to_string(), ROOT)]));
 +        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
 +        let w = wallet(H, SPACE, &[8u8; 32]);
 +        assert!(check_attach(SPACE, &ROOT, &txid(1), &good(), Some(&w)).is_err());

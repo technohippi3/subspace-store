@@ -223,44 +223,79 @@ the commit, because the previous commitment is final, so that step is a
 required disagreement and the run's verdict is "fail". This is the blocker
 the run was meant to show.
 
-R18. `gettxmeta` needs `spaced`'s block index. `spaced` v0.5.0 answers
-`gettxmeta` only when it runs with `--block-index` or `--block-index-full`
-(`client/src/store/chain.rs`). The harness runs it without, as a deployment
-might, so `gettxmeta` returned nothing for the mined commitment. The first
-draft of the U1(b) patch relied on it and refused the true txid. The second
-draft fell back to matching the root's bytes anywhere in the raw
-transaction, and to the operator wallet's record without its space. Review
-showed that doesn't establish which transaction made the commitment. Both
-are gone.
+R18. Which transaction made a commitment. `gettxmeta` reads `spaced`'s
+spaces block index, which records spaces-protocol transactions only
+(`get_indexed_tx` in `client/src/rpc.rs`). A commitment transaction is a
+nums transaction, so `gettxmeta` returned nothing for it, although the
+harness runs `spaced` with `--block-index-full`. An earlier version of this
+finding blamed a missing block index. That was wrong. Nums transactions are
+in the nums block index, which `getnumblockmeta(height)` reads. For the
+block at that height on the node's active chain, it gives each
+transaction's nums changeset, including the commitments the transaction
+made (`spaces_nums::TxChangeSet.commitments`, each with its space and state
+root). The changeset's fields are the same in the `spaces_nums` 0.4.2 that
+`subs` builds against and the 0.5.0 that `spaced` runs. Without a block
+index the block comes back with no transactions.
+
+The patch went through three drafts:
+- the first relied on `gettxmeta`, and refused the true txid;
+- the second matched the root's bytes anywhere in the raw transaction;
+- the third took the transaction that made the space's current delegate
+  output.
+
+Review found that the third accepts the wrong transaction. If another
+transaction moves the delegate later in the same block without
+committing, its txid passed, and the commitment's own was refused. The
+pinned protocol allows that sequence. So which output holds the delegate
+isn't evidence of which transaction committed (R22).
 
 The smallest change: U1(b). `regtest/upstream/subs-u1b-attach-commit-txid.patch`
 applies to `subs` at `4dcc923`. It adds `core/src/attach.rs` (the pure
-`check_attach`, with six unit tests), `Operator::attach_commit_txid`, and
+`check_attach`, with seven unit tests), `Operator::attach_commit_txid`, and
 the route `POST /spaces/:space/commit/txid {"txid": ...}`. The route
 attaches a txid to the last local commitment only when it has none (the
-same txid again is a no-op). It decides from chain state read from `spaced`
-at the time of the call:
-- `getserverinfo` is `ready`, with `chain.blocks == chain.headers`, so the
-  view isn't stale;
+same txid again is a no-op), and only when all of these hold, read from
+`spaced` at the time of the call:
+- `getserverinfo` is `ready`, with `chain.blocks == chain.headers`;
 - `getcommitment(space)` carries the local root, at height H;
-- the space's delegate output, from `getnum` on its delegate's num id, is
-  output 0 of the given txid, unspent, with `last_update` H. A commitment
-  spends the delegate output and makes the new one at output 0, so only
-  the transaction that committed at H can be named there.
+- in `getnumblockmeta(H)`, exactly one transaction's changeset commits this
+  space to the local root, and it is the given txid.
+
+Without the nums block index there is no such evidence, and the attach is
+refused. A deployment that relies on U1(b) has to run `spaced` with
+`--block-index` or `--block-index-full`.
 
 The operator wallet's record of the txid, where it has one, must not
 contradict that. A commit-root event for another space or root, or another
 height, refuses. A missing record doesn't, because a restored wallet may
-have lost its event history. The unit tests refuse copied root bytes,
-another space's commitment, a wrong height (in the delegate or the wallet
-record), stale or missing chain evidence, another root, another output and
-a spent delegate output (`cargo test -p subs-core --lib attach::`, six
-pass). It sends nothing and changes nothing else. `regtest/build-u1b.sh`
-builds it as `.cache/bin/subs-u1b` from a separate worktree of the pinned
-checkout. `upstream/U1B-SUBMISSION.md` is the draft issue and pull request,
+have lost its event history.
+
+The unit tests (`cargo test -p subs-core --lib attach::`, seven pass) cover:
+- the commitment's own transaction, which is attached;
+- a later transaction in the same block that moves the delegate without
+  committing, refused with or without a wallet record or commit event (the
+  regression for R22);
+- copied root bytes;
+- another space's commitment;
+- a wrong height;
+- stale, missing or index-less evidence;
+- another root, and an ambiguous block.
+
+It sends nothing and changes nothing else. `regtest/build-u1b.sh` builds it
+alone, and `regtest/build-combined.sh` builds it with the `--fabric-seed`
+patch. `upstream/U1B-SUBMISSION.md` is the draft issue and pull request,
 with its limitations.
 
-On regtest with this patch, run `continued-u1b-20261107T101924Z-2f11b7`
+R22. The delegate output doesn't identify the commitment. A commitment
+spends the space's delegate output and makes the new one at output 0, but
+any later transaction that spends that output in the same block, without
+committing, becomes the delegate output's maker, with the same height. A
+check built on "the transaction that made the current delegate output at
+the commitment's height" accepts that later transaction. This was
+reproduced against the patch's predicate, not on a live chain. The patch
+now uses the nums block index (R18).
+
+On regtest with the third draft, run `continued-u1b-20261107T101924Z-2f11b7`
 refused three impostors, each because it "didn't make this space's delegate
 output": a transaction from the buyer's wallet whose `OP_RETURN` carries
 the bytes `6a 52 20` and b3's root, the commitment of `@test9999`, and b2,
@@ -350,3 +385,15 @@ The pinned `certrelay` also met R15 here: two of its anchor refreshes read
 `spaced`'s anchors file mid-write ("EOF while parsing") and were retried
 at the next refresh.
 
+R23. Relays serve certificates against the space's current root. In the
+combined run `combined-20261107T113909Z-345992`, the earlier batches b1 to
+b3 were published and looked up only after b6, a later commitment of the
+same space, had been made. The relay's `/query` answer for each handle
+verified with libveritas, with the handle, the buyer's script and
+`sovereign` all correct. But the space's zone carried b6's root and height,
+not the root of the batch that issued the handle. The harness compared the
+batch's root, so delivery wasn't confirmed and the run failed at those
+rows. CONTROLLER-DESIGN.md step 6 said the same ("handle, `script_pubkey`
+and root"). Both now take the space's live commitment as the certificate's
+root. The batch's own root is still required on chain at `d >= 150` by the
+live check before each publication and delivery.
