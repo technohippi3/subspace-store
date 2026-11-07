@@ -39,6 +39,13 @@ PORTS = {
 OPERATOR_WALLET = "wallet_99"  # an upstream regtest test wallet; see README
 
 
+def subs_bin():
+    """The pinned subs, or another build named by SUBSPACE_SUBS_BIN, such as
+    subs with the U1(b) patch in `regtest/upstream/`. A run records which."""
+    import os
+    return Path(os.environ.get("SUBSPACE_SUBS_BIN") or BIN / "subs")
+
+
 class Stack:
     def __init__(self, run="default"):
         self.run = run
@@ -218,7 +225,7 @@ class Stack:
             return
         spaced_port = PORTS["spaced_proxy"] if via_spaced_proxy else PORTS["spaced"]
         self._spawn("subs", [
-            str(BIN / "subs"), "--port", str(PORTS["subs"]),
+            str(subs_bin()), "--port", str(PORTS["subs"]),
             "--data-dir", str(self.subs_dir), "--wallet", OPERATOR_WALLET,
             "--rpc-url", f"http://127.0.0.1:{spaced_port}",
             "--rpc-cookie", str(self.spaced_cookie()),

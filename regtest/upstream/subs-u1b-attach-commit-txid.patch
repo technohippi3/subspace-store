@@ -1,0 +1,154 @@
+diff --git a/core/src/app.rs b/core/src/app.rs
+index a804ba8..c1a845b 100644
+--- a/core/src/app.rs
++++ b/core/src/app.rs
+@@ -1156,6 +1156,99 @@ impl Operator {
+         Ok(txid)
+     }
+ 
++    /// Attach a known txid to the last local commitment (U1(b)).
++    ///
++    /// After a restore from a snapshot that predates the broadcast, or after
++    /// the answer to `/broadcast` was lost, the commitment can be on chain
++    /// while `commit_txid` is empty. For a commitment after the first,
++    /// `can_commit_local` then refuses every further local commit. This
++    /// attaches the txid only when the last commitment has none, the space's
++    /// on-chain commitment carries this commitment's root, and the txid is
++    /// shown to be the transaction that put it there: the operator wallet
++    /// holds it, mined at the commitment's height, with a commit-root event
++    /// for the root, or, where spaced keeps its block index, its bytes carry
++    /// the root in an OP_RETURN. The same txid again is a no-op. It never
++    /// sends anything.
++    pub async fn attach_commit_txid(&self, space: &SLabel, txid: Txid) -> anyhow::Result<()> {
++        use spaces_client::rpc::RpcClient;
++
++        let rpc = self.require_rpc()?;
++        let local_space = self.get_local_space(space)?;
++        let storage = local_space.storage();
++        let commitment = storage
++            .get_last_commitment()
++            .await?
++            .ok_or_else(|| anyhow!("no local commitment"))?;
++        if let Some(existing) = &commitment.commit_txid {
++            if *existing == txid.to_string() {
++                return Ok(());
++            }
++            return Err(anyhow!("the last commitment already has txid {}", existing));
++        }
++
++        let mut root = [0u8; 32];
++        hex::decode_to_slice(&commitment.root, &mut root)
++            .map_err(|e| anyhow!("invalid root: {}", e))?;
++        let on_chain = rpc
++            .get_commitment(space.clone().into(), None)
++            .await?
++            .ok_or_else(|| anyhow!("no commitment on chain for this space"))?;
++        if on_chain.state_root != root {
++            return Err(anyhow!("the on-chain commitment root doesn't match the last local commitment"));
++        }
++
++        // The operator wallet's record of the transaction.
++        let mut in_wallet = false;
++        let mut skip = 0;
++        'pages: loop {
++            let page = rpc.wallet_list_transactions(&self.wallet, 100, skip).await?;
++            if page.is_empty() {
++                break;
++            }
++            for tx in &page {
++                if tx.txid != txid {
++                    continue;
++                }
++                let carries_root = tx.events.iter().any(|ev| {
++                    let v = serde_json::to_value(ev).unwrap_or_default();
++                    v.get("type").and_then(|t| t.as_str()) == Some("commit_root")
++                        && v.get("root")
++                            .and_then(|r| r.as_str())
++                            .map(|r| r.eq_ignore_ascii_case(&commitment.root))
++                            .unwrap_or(false)
++                });
++                in_wallet = carries_root && tx.block_height == Some(on_chain.block_height);
++                break 'pages;
++            }
++            skip += page.len();
++        }
++
++        // Where spaced keeps its block index, the transaction's own bytes.
++        let in_bytes = match rpc.get_tx_meta(txid).await {
++            Ok(Some(entry)) => entry.tx.map(|data| {
++                // OP_RETURN OP_2 <32-byte root>
++                let mut script = vec![0x6a, 0x52, 0x20];
++                script.extend_from_slice(&root);
++                let raw = data.raw.to_vec();
++                raw.windows(script.len()).any(|w| w == script.as_slice())
++            }).unwrap_or(false),
++            _ => false,
++        };
++
++        if !(in_wallet || in_bytes) {
++            return Err(anyhow!(
++                "transaction {} isn't shown to carry the commitment root at height {}",
++                txid,
++                on_chain.block_height
++            ));
++        }
++
++        storage
++            .update_commitment_txid(commitment.id, &txid.to_string())
++            .await?;
++        Ok(())
++    }
++
+     /// Get the status of the on-chain commit for a space.
+     pub async fn get_commit_status(&self, space: &SLabel) -> anyhow::Result<CommitStatus> {
+         let local_space = self.get_local_space(space)?;
+diff --git a/subs/src/routes/commits.rs b/subs/src/routes/commits.rs
+index b57ae8e..1e2487a 100644
+--- a/subs/src/routes/commits.rs
++++ b/subs/src/routes/commits.rs
+@@ -133,6 +133,33 @@ pub async fn broadcast(
+     }))
+ }
+ 
++#[derive(Deserialize)]
++pub struct AttachTxidBody {
++    pub txid: String,
++}
++
++/// POST /spaces/:space/commit/txid - Attach a known txid to the last local
++/// commitment (U1(b)), after checking it against the chain. Sends nothing.
++pub async fn attach_commit_txid(
++    State(state): State<AppState>,
++    Path(space): Path<String>,
++    Json(body): Json<AttachTxidBody>,
++) -> Result<Json<BroadcastResponse>, Response> {
++    let space = space
++        .parse()
++        .map_err(|e| json_error(StatusCode::BAD_REQUEST, format!("invalid space: {}", e)))?;
++    let txid: bitcoin::Txid = body
++        .txid
++        .parse()
++        .map_err(|e| json_error(StatusCode::BAD_REQUEST, format!("invalid txid: {}", e)))?;
++    state
++        .operator
++        .attach_commit_txid(&space, txid)
++        .await
++        .map_err(|e| json_error(StatusCode::CONFLICT, e))?;
++    Ok(Json(BroadcastResponse { txid: txid.to_string() }))
++}
++
+ #[derive(Serialize)]
+ pub struct CommitStatusResponse {
+     pub status: String,
+diff --git a/subs/src/routes/mod.rs b/subs/src/routes/mod.rs
+index 22d83dd..b8c605a 100644
+--- a/subs/src/routes/mod.rs
++++ b/subs/src/routes/mod.rs
+@@ -53,6 +53,7 @@ pub fn router() -> Router<AppState> {
+         .route("/spaces/:space/remove", post(commits::remove_handles))
+         .route("/spaces/:space/broadcast", post(commits::broadcast))
+         .route("/spaces/:space/commit/status", get(commits::get_commit_status))
++        .route("/spaces/:space/commit/txid", post(commits::attach_commit_txid))
+         .route("/spaces/:space/pipeline", get(commits::get_pipeline_status))
+         .route("/spaces/:space/publish", post(commits::publish_certs))
+         // API: Proving

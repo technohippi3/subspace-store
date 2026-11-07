@@ -1,11 +1,11 @@
 # Kept certificate evidence
 
-Label: regtest. These files come from the passing run
-`all-20261107T075846Z-ff80d4` (see `../REPORT.md`) on a local regtest
-network. They are not mainnet, integration or buyer-acceptance evidence.
+Label: regtest. These files come from kept runs on a local regtest network
+(see `../REPORT.md`), one directory per run id. They are not mainnet,
+integration or buyer-acceptance evidence.
 
-Each directory is one certificate verification, numbered in run order and
-named after its batch:
+Each run directory holds one subdirectory per certificate verification,
+numbered in run order and named after its batch:
 - `<handle>.message.bin`: the borsh-encoded message `subs` built for the
   handle;
 - `anchors.json`: the root anchors read from `spaced` (`getrootanchors`) for
@@ -13,10 +13,11 @@ named after its batch:
 - `<handle>.libveritas.json`: what libveritas 0.4.4 returned then.
 
 The handles are numbered test labels on the regtest spaces `@test10000` and
-`@test9999`. The six messages cover the first commitment (twice: before and
+`@test9999`. Each full run's messages cover the first commitment (before and
 after the lost-finality reorg), the second commitment with a step proof,
 the third with a step and a fold, and the commitment adopted after a lost
-broadcast answer.
+broadcast answer. The `continued-u1b` run adds the fourth commitment of
+`@test10000`, issued after the restore with the U1(b) patch.
 
 To check them again offline, build the verifier once (`cargo build
 --release` in `../verifier`) and run, from the repository root:

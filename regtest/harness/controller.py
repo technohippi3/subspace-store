@@ -380,7 +380,9 @@ class Controller:
         self.stack.start_subs()
         if mismatches:
             raise Refused(f"snapshot objects do not match: {mismatches}")
-        return {"dir": str(dest), "objects": len(manifest["files"]),
+        root = Path(__file__).resolve().parents[2]
+        shown = dest.relative_to(root) if dest.is_relative_to(root) else dest
+        return {"dir": str(shown), "objects": len(manifest["files"]),
                 "store_journal": manifest["store_journal"],
                 "controller_journal": manifest["controller_journal"]}
 
@@ -532,6 +534,26 @@ class Controller:
             self._save(bid, state="broadcast", txid=txid, answer=json.dumps({"adopted": txid}))
             self.capture_bytes(bid)
         return {"adopted": bool(txid), "txid": txid, "evidence": evidence}
+
+    def attach_txid_value(self, bid, txid):
+        """Ask subs to attach a given txid to the last commitment of the
+        batch's space. Used to check that a wrong one is refused."""
+        b = self.batch(bid)
+        self.journal.append("attach_txid_intent", bid=bid, space=b["space"], txid=txid, probe=True)
+        return self.subs.post(f"/spaces/{b['space']}/commit/txid", {"txid": txid})
+
+    def attach_txid(self, bid):
+        """U1(b): tell subs the txid the readback adopted, so that its own
+        status and its next local commit see it. Only through the
+        `/commit/txid` route of the patch in `regtest/upstream/`; the pinned
+        subs has no such route. It sends nothing."""
+        b = self.batch(bid)
+        if not b["txid"]:
+            raise Refused("no adopted txid to attach")
+        self.journal.append("attach_txid_intent", bid=bid, space=b["space"], txid=b["txid"])
+        answer = self.subs.post(f"/spaces/{b['space']}/commit/txid", {"txid": b["txid"]})
+        self.journal.append("attach_txid_answer", bid=bid, answer=answer)
+        return answer
 
     # 10. Watch
 

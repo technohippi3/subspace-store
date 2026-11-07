@@ -184,6 +184,38 @@ Earlier all-scenario runs, kept for the record:
 - `all-20261107T075023Z-f6dfd6`: ended in error, `getrootanchors` reading
   a half-written file (R15).
 
+## Corrected comparisons (run all-20261107T083353Z-06a396, 2026-11-07)
+
+Script: `regtest/run-all.sh`, from `main` at `8c20619`, isolated. Verdict:
+pass, exit 0, all four scenarios completed. All 98 required steps agree
+with the model, now including the quote, freeze, local-commit, L1 and L6
+rows with their actual comparisons. 16 steps are informational. Proving
+took 40 s for b2 and 110 s for b3. Report: `runs/all-20261107T083353Z-06a396.*`,
+certificates in `evidence/`.
+
+## Continued operation after recovery (2026-11-07)
+
+Script: `regtest/run-continued.sh [pinned|u1b]`. It runs the first
+purchase, the second commitment and the host restore, then scenario 5: the
+first space's last commitment (b3, `idx 2`) is final, the controller
+adopted its txid, and `subs` holds none (R13). One more order is bought, and
+the controller tries to issue another batch.
+
+- With the pinned `subs`, run `continued-pinned-20261107T085046Z-cc9a7a`:
+  verdict fail, exit 1. 80 of 81 required steps agree. The one that
+  disagrees is the blocker: `subs` refused the next local commit, "previous
+  commit not yet submitted on-chain" (R17). The model allows it. The
+  pinned `subs` has no route to attach the txid (HTTP 404).
+- With `subs` patched for U1(b), run `continued-u1b-20261107T085107Z-645ce5`:
+  verdict pass, exit 0, all 94 required steps agree. A wrong txid (b2's) was
+  refused. The adopted txid was attached. The next batch (b4, `idx 3`)
+  committed, was proved with a step and a fold (110 s), broadcast and
+  finalized, waited for anchor coverage, and its certificate verified. The
+  order became ready.
+
+So recovery restores continued operation only with U1(b). The patch is in
+`upstream/` (R17, R18).
+
 ## The tightened harness
 
 Since fp4:
@@ -217,8 +249,9 @@ Not exercised on regtest:
   `subs` was dropped);
 - X10, a supersession undone by a reorg deeper than settled depth, and L8,
   a lost commitment with no journaled bytes;
-- recovering a later commitment, `idx > 0`, without its `txid`, then
-  issuing another batch (R16 read from the source only);
+- continued operation after a lost answer on a later commitment, rather
+  than a restore (scenario 5 covers the restore case, and only with the
+  U1(b) patch);
 - auctions, and a natural competing-chain reorg as opposed to
   `invalidateblock`.
 
@@ -231,10 +264,13 @@ show a clean-host backup and wallet restore.
 
 ## Evidence kept
 
-The run directories under `.run/` are ignored by git. The six certificate
-messages of the passing run `all-20261107T075846Z-ff80d4`, with the root
-anchors and libveritas output of each verification, are kept in
-`evidence/all-20261107T075846Z-ff80d4/`, and `evidence/README.md` says how
-to verify them offline. fp4's certificate isn't kept in the repository,
+The run directories under `.run/` are ignored by git. `keep-run.sh` copies a
+run's report into `runs/` and its certificate verifications into
+`evidence/<run id>/`, with the repository's absolute path made relative. It
+refuses copies that contain a local path or a personal name. The kept runs
+are `all-20261107T075846Z-ff80d4`, `all-20261107T083353Z-06a396` and both
+continued runs: 23 certificate messages, each with its root anchors and
+libveritas output. `verify-evidence.sh` verifies them all offline, and
+`evidence/README.md` says how. fp4's certificate isn't kept in the repository,
 because its handle label was a personal name and is part of the signed
 message.

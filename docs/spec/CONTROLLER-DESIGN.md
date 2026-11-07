@@ -14,7 +14,9 @@ and lost finality. Draft 6 applies the first regtest findings (R10, R11):
 readiness waits for root-anchor coverage, and a commitment's signed bytes are
 journaled so it can be rebroadcast after a deep reorg. Draft 7 corrects
 the pins and three statements about `subs` against what the regtest
-harness found (`regtest/FINDINGS.md` R2, R12, R13, R14 and R16).
+harness found (`regtest/FINDINGS.md` R2, R12, R13, R14 and R16), and
+records the candidate U1(b) patch that lets a space issue again after a
+restore (R17, R18).
 
 ## Pinned upstream versions
 
@@ -162,7 +164,14 @@ pass):
   any retry look for an existing transaction carrying the root, from the
   wallet, the mempool or the chain, and adopt it instead of sending again;
 - (b) a way to attach a known `txid` to the last local commitment, which a
-  restore needs when the snapshot predates the broadcast;
+  restore needs when the snapshot predates the broadcast. Without it, a
+  later commitment restored without its `txid` blocks every further local
+  commit (R17). A candidate patch, checked on regtest, is in
+  `regtest/upstream/`: `POST /spaces/:space/commit/txid` attaches the `txid`
+  only when the commitment has none, the chain's commitment carries its
+  root, and the operator wallet (or, with `spaced`'s block index, the
+  transaction's bytes) shows that `txid` carrying the root at that height
+  (R18);
 - (c) preferably, a split into "prepare" (build and sign, store the raw
   transaction and `txid`) and "send", so the exact bytes can be journaled
   before anything escapes. That also makes a commitment that was never seen
@@ -175,12 +184,16 @@ stays allowed. `subs` itself doesn't follow this rule. After a restore or a
 lost answer it holds the local commitment without a `txid`, and its
 `/pipeline` offers "Ready to broadcast" for a commitment already on chain
 (R13). Only the controller stands in the way of a second send, which is one
-more reason `subs` is reachable by the controller alone. For that commitment the controller never calls `/broadcast` or
+more reason `subs` is reachable by the controller alone.
+
+For an uncertain commitment the controller never calls `/broadcast` or
 `/rollback-local` again. It reads back the evidence below, pauses the space
-and alerts the owner. Resolving it means either adopting the `txid` (which
-needs U1(b), or a repair the owner authorizes) or safe supersession (see
-`PAYMENT-SPEC.md`), which is an on-chain action that needs the owner's
-decision.
+and alerts the owner. Resolving it means either adopting the `txid` that the
+readback finds into the controller's journal, which needs no change to
+`subs` (R14), or safe supersession (see `PAYMENT-SPEC.md`), which is an
+on-chain action that needs the owner's decision. Attaching that `txid`
+inside `subs`, so that its own status and its next local commit see it,
+needs U1(b) or a repair the owner authorizes.
 
 Authoritative readback for an uncertain broadcast, using `spaced` RPC calls
 that exist in `spaces` v0.5.0 (`client/src/rpc.rs` at tag

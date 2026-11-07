@@ -43,6 +43,17 @@ wallets are made fresh for each run inside `.run/`.
   fresh network, then stop. This is the milestone script.
 - `run-all.sh [prefix]`: every scenario in order. CPU proving makes it
   slow.
+- `run-continued.sh [pinned|u1b]`: the first purchase, the second
+  commitment and the restore, then another batch on the same space
+  (scenario 5), with the pinned `subs` or with the U1(b) patch.
+- `build-u1b.sh`: builds `subs` with `upstream/subs-u1b-attach-commit-txid.patch`
+  as `.cache/bin/subs-u1b`, from a separate worktree of the pinned checkout.
+  `SUBSPACE_SUBS_BIN` points a run at it, and the report records which
+  `subs` ran.
+- `upstream/`: the candidate upstream change U1(b) as a patch.
+- `keep-run.sh <run id>`: keeps a run's report and certificates in `runs/`
+  and `evidence/`.
+- `verify-evidence.sh`: verifies every kept certificate offline.
 - `harness/`: the harness, standard-library Python.
   - `procs.py`: the processes and their ports.
   - `faultproxy.py`: a proxy in front of `spaced` and one in front of

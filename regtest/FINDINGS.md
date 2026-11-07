@@ -206,3 +206,54 @@ transaction ID yet" holds only after the first commitment. For a later
 commitment restored without its txid (the restore scenario, `idx 2`), the
 code refuses the next local commit until a txid is attached, which is U1(b).
 That half comes from reading the code. It wasn't run.
+
+## Continued operation after recovery
+
+R17. A later commitment restored without its txid stops the space. In run
+`continued-pinned-20261107T085046Z-cc9a7a`, after the host restore, the
+last commitment of `@test10000` (b3, `idx 2`) was final on chain, and the
+controller had adopted its txid in its journal, but `subs` held none. With
+the next order converted and staged, `subs` refused the next local commit:
+"cannot commit: previous commit not yet submitted on-chain" (HTTP 500 from
+`POST /spaces/:space/commit`). The pinned `subs` has no way to be told the
+txid, so the space can't issue again without a manual database repair.
+This confirms the code reading in R16 by a run. The reference model allows
+the commit, because the previous commitment is final, so that step is a
+required disagreement and the run's verdict is "fail". This is the blocker
+the run was meant to show.
+
+R18. `gettxmeta` needs `spaced`'s block index. `spaced` v0.5.0 answers
+`gettxmeta` only when it runs with `--block-index` or `--block-index-full`
+(`client/src/store/chain.rs`). The harness runs it without, as a deployment
+might, so `gettxmeta` returned nothing for the mined commitment. A first
+version of the U1(b) patch relied on it and refused the true txid. The patch
+now checks the operator wallet's record of the transaction, which `subs`
+already depends on, and uses `gettxmeta` only where the index exists.
+
+The smallest change: U1(b). `regtest/upstream/subs-u1b-attach-commit-txid.patch`
+adds 121 lines to `subs` at `4dcc923`. It adds
+`attach_commit_txid` to `core/src/app.rs` and the route
+`POST /spaces/:space/commit/txid {"txid": ...}`. The route attaches a txid
+to the last local commitment only when all of these hold:
+- the commitment has no txid yet (the same txid again is a no-op);
+- the space's on-chain commitment carries this commitment's root;
+- the operator wallet holds that transaction, mined at the commitment's
+  height, with a `commit_root` event for the root, or, where `spaced` keeps
+  its block index, the transaction's bytes carry the root in an
+  `OP_RETURN`.
+
+It sends nothing and changes nothing else. `regtest/build-u1b.sh` builds it
+as `.cache/bin/subs-u1b` from a separate worktree of the pinned checkout.
+In run `continued-u1b-20261107T085107Z-645ce5`, with that build:
+- attaching b2's txid to b3 was refused (HTTP 409), because b2's
+  transaction didn't put b3's root on chain;
+- attaching b3's adopted txid was accepted;
+- the next batch (b4, `idx 3`, one order) then committed locally, needed a
+  step and a fold proof (110 s), was broadcast, reached final, waited for
+  anchor coverage (L6), and its certificate verified with libveritas. The
+  order became ready.
+
+The run's verdict is "pass", with all 94 required steps agreeing with the
+model. The patch is for the maintainers to accept or reshape, as U1 says.
+Until they do, a deployment needs either this patch or an owner-authorized
+repair after any restore that loses a later commitment's txid.

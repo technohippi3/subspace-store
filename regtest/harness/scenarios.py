@@ -19,7 +19,7 @@ from . import compare
 from .controller import Controller, Refused as CRefused
 from .journal import Journal
 from .oracle import Mirror
-from .procs import CACHE, HERE, OPERATOR_WALLET, PORTS, PRESET, Stack
+from .procs import CACHE, HERE, OPERATOR_WALLET, PORTS, PRESET, Stack, subs_bin
 from .registry import Refused as RRefused, Registry
 from .report import Report
 
@@ -179,6 +179,10 @@ class Run:
         return oid, txid
 
     def prepare(self, scen, space, members=None):
+        bid, mbid = self.freeze_and_stage(scen, space, members)
+        return self.commit_prove_checkpoint(scen, bid, mbid)
+
+    def freeze_and_stage(self, scen, space, members=None):
         c, m = self.controller, self.mirror(space)
         bid = c.freeze(space, members)
         ok, mbid = m.freeze(members)
@@ -193,6 +197,11 @@ class Run:
         self.report.step(scen, None, f"stage {bid} with readback",
                          {"staged": st["staged"], "parked": st["parked"],
                           "sync": st["sync"]})
+        return bid, mbid
+
+    def commit_prove_checkpoint(self, scen, bid, mbid):
+        c = self.controller
+        m = self.mirror(self.bids[bid][0])
         cl = c.commit_local(bid)
         m.step("commit_local", mbid)
         got = {"state": c.batch(bid)["state"], "root": cl["root"], "prev_root": cl["prev_root"],
@@ -201,6 +210,11 @@ class Run:
         exp = {"state": m.batch_state(mbid), "members": m.batch_members(mbid)}
         self.report.step(scen, None, f"local commit {bid} with readback", got, exp,
                          match=compare.same_local_commit(got, exp))
+        return self.finish_preparation(scen, bid, mbid, cl)
+
+    def finish_preparation(self, scen, bid, mbid, _committed):
+        c = self.controller
+        m = self.mirror(self.bids[bid][0])
         pr = c.prove(bid)
         m.step("prove", mbid)
         self.report.step(scen, None, f"prove {bid}", pr, {"state": m.batch_state(mbid)},
@@ -582,6 +596,79 @@ def lost_broadcast(run):
             "commit_status": subs.get(f"/spaces/{SPACE_B}/commit/status")}, required=False)
 
 
+def attempt_upstream(fn, *args, **kwargs):
+    """Like `attempt`, but an HTTP refusal from subs also counts as a refusal."""
+    from .rpc import HttpError
+    try:
+        return True, fn(*args, **kwargs)
+    except REFUSED + (HttpError,) as e:
+        return False, str(e)
+
+
+def continued_operation(run):
+    """After the restore, the last commitment of the first space (a later
+    commitment, after the first) is final, and the controller adopted its
+    txid, but subs holds none. Issue another batch from there: the test of
+    whether recovery restores continued operation. Runs after `restore`."""
+    scen = "5. continued operation after recovery"
+    r, c = run.report, run.controller
+    m = run.mirror(SPACE_A)
+    subs = run.stack.subs()
+    last = [bid for bid, (space, _) in run.bids.items() if space == SPACE_A][-1]
+    lb = c.batch(last)
+    pipe = subs.get(f"/spaces/{SPACE_A}/pipeline")
+    r.step(scen, "R13", f"subs' view of {last} before the next batch",
+           {"subs_commitment_idx": pipe.get("commitment_idx"), "subs_txid": pipe.get("txid"),
+            "subs_current_step": pipe.get("current_step"),
+            "subs_commit_status": subs.get(f"/spaces/{SPACE_A}/commit/status"),
+            "controller_state": lb["state"], "controller_txid": lb["txid"]})
+    oid, _ = run.buy(scen, SPACE_A, "seven")
+    run.mine(3)
+    m.mine(3)
+    run.compare_orders(scen, "P1", "payment at 3 conf", [oid], SPACE_A)
+    # Recovery, U1(b): tell subs the txid the controller adopted. A txid that
+    # didn't carry this root must be refused first.
+    earlier = [b for b, (space, _) in run.bids.items() if space == SPACE_A and b != last]
+    wrong = c.batch(earlier[-1])["txid"] if earlier else "00" * 32
+    ok, why = attempt_upstream(c.attach_txid_value, last, wrong)
+    r.step(scen, "U1(b)", f"attach the txid of {earlier[-1] if earlier else 'nothing'} to {last}",
+           {"attached": ok, "answer": why if not ok else ok}, {"attached": False}, match=not ok,
+           note="a txid that didn't put this root on chain is never attached")
+    att_ok, att = attempt_upstream(c.attach_txid, last)
+    r.step(scen, "U1(b)", f"attach the adopted txid of {last} to subs",
+           {"attached": att_ok, "answer": att,
+            "subs_commit_status": subs.get(f"/spaces/{SPACE_A}/commit/status")}, required=False,
+           note="needs the U1(b) patch in regtest/upstream/; the pinned subs has no such route")
+    bid, mbid = run.freeze_and_stage(scen, SPACE_A, [oid])
+    # In the model a frozen batch commits locally once the previous commitment
+    # is final, which it is here.
+    mallowed = m.batch_state(mbid) == "frozen" and m.batch_state(run.bids[last][1]) == "final"
+    ok, why = attempt_upstream(c.commit_local, bid)
+    r.step(scen, "U1(b)", f"local commit of {bid} after the recovery of {last}",
+           {"allowed": ok, "why": why if not ok else "", "txid_attached": att_ok},
+           {"allowed": mallowed, "previous": m.batch_state(run.bids[last][1])},
+           match=ok == mallowed)
+    if not ok:
+        r.finding("R17", f"after a restore, subs refuses the next local commit for a later "
+                         f"commitment it holds no txid for, although that commitment is final "
+                         f"on chain: {why}")
+        return
+    cl = why
+    m.step("commit_local", mbid)
+    got = {"state": c.batch(bid)["state"], "root": cl["root"], "prev_root": cl["prev_root"],
+           "is_initial": cl["is_initial"], "handles": cl["handles_committed"],
+           "members_on_root": cl["members_on_root"]}
+    exp = {"state": m.batch_state(mbid), "members": m.batch_members(mbid)}
+    r.step(scen, None, f"local commit {bid} with readback", got, exp,
+           match=compare.same_local_commit(got, exp))
+    run.finish_preparation(scen, bid, mbid, cl)
+    c.issue(bid, FEE_RATE)
+    m.step("check_and_issue", mbid, "ok")
+    run.compare_batch(scen, None, f"{bid} broadcast", bid, {"txid": c.batch(bid)["txid"]})
+    run.finalize(scen, bid, SPACE_A)
+    run.certify(scen, bid, SPACE_A)
+
+
 def isolated():
     """True inside a network namespace with loopback only: nothing outside
     the host can reach the stack, and the stack can reach nothing outside."""
@@ -617,6 +704,7 @@ def main(argv):
         "run": run_id,
         "scenarios": names,
         "isolation": "unprivileged user and network namespace (unshare -rn), loopback only",
+        "subs_binary": str(subs_bin().relative_to(HERE)) if subs_bin().is_relative_to(HERE) else str(subs_bin()),
         "pins": {l.split("=")[0]: l.split("=", 1)[1]
                  for l in (HERE / "pins.env").read_text().splitlines()
                  if "=" in l and not l.startswith("#")},
