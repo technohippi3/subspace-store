@@ -225,35 +225,53 @@ the run was meant to show.
 R18. `gettxmeta` needs `spaced`'s block index. `spaced` v0.5.0 answers
 `gettxmeta` only when it runs with `--block-index` or `--block-index-full`
 (`client/src/store/chain.rs`). The harness runs it without, as a deployment
-might, so `gettxmeta` returned nothing for the mined commitment. A first
-version of the U1(b) patch relied on it and refused the true txid. The patch
-now checks the operator wallet's record of the transaction, which `subs`
-already depends on, and uses `gettxmeta` only where the index exists.
+might, so `gettxmeta` returned nothing for the mined commitment. The first
+draft of the U1(b) patch relied on it and refused the true txid. The second
+draft fell back to matching the root's bytes anywhere in the raw
+transaction, and to the operator wallet's record without its space. Review
+showed that doesn't establish which transaction made the commitment. Both
+are gone.
 
 The smallest change: U1(b). `regtest/upstream/subs-u1b-attach-commit-txid.patch`
-adds 121 lines to `subs` at `4dcc923`. It adds
-`attach_commit_txid` to `core/src/app.rs` and the route
-`POST /spaces/:space/commit/txid {"txid": ...}`. The route attaches a txid
-to the last local commitment only when all of these hold:
-- the commitment has no txid yet (the same txid again is a no-op);
-- the space's on-chain commitment carries this commitment's root;
-- the operator wallet holds that transaction, mined at the commitment's
-  height, with a `commit_root` event for the root, or, where `spaced` keeps
-  its block index, the transaction's bytes carry the root in an
-  `OP_RETURN`.
+applies to `subs` at `4dcc923`. It adds `core/src/attach.rs` (the pure
+`check_attach`, with six unit tests), `Operator::attach_commit_txid`, and
+the route `POST /spaces/:space/commit/txid {"txid": ...}`. The route
+attaches a txid to the last local commitment only when it has none (the
+same txid again is a no-op). It decides from chain state read from `spaced`
+at the time of the call:
+- `getserverinfo` is `ready`, with `chain.blocks == chain.headers`, so the
+  view isn't stale;
+- `getcommitment(space)` carries the local root, at height H;
+- the space's delegate output, from `getnum` on its delegate's num id, is
+  output 0 of the given txid, unspent, with `last_update` H. A commitment
+  spends the delegate output and makes the new one at output 0, so only
+  the transaction that committed at H can be named there.
 
-It sends nothing and changes nothing else. `regtest/build-u1b.sh` builds it
-as `.cache/bin/subs-u1b` from a separate worktree of the pinned checkout.
-In run `continued-u1b-20261107T085107Z-645ce5`, with that build:
-- attaching b2's txid to b3 was refused (HTTP 409), because b2's
-  transaction didn't put b3's root on chain;
-- attaching b3's adopted txid was accepted;
-- the next batch (b4, `idx 3`, one order) then committed locally, needed a
-  step and a fold proof (110 s), was broadcast, reached final, waited for
-  anchor coverage (L6), and its certificate verified with libveritas. The
-  order became ready.
+The operator wallet's record of the txid, where it has one, must not
+contradict that. A commit-root event for another space or root, or another
+height, refuses. A missing record doesn't, because a restored wallet may
+have lost its event history. The unit tests refuse copied root bytes,
+another space's commitment, a wrong height (in the delegate or the wallet
+record), stale or missing chain evidence, another root, another output and
+a spent delegate output (`cargo test -p subs-core --lib attach::`, six
+pass). It sends nothing and changes nothing else. `regtest/build-u1b.sh`
+builds it as `.cache/bin/subs-u1b` from a separate worktree of the pinned
+checkout. `upstream/U1B-SUBMISSION.md` is the draft issue and pull request,
+with its limitations.
 
-The run's verdict is "pass", with all 94 required steps agreeing with the
-model. The patch is for the maintainers to accept or reshape, as U1 says.
+On regtest with this patch, run `continued-u1b-20261107T101924Z-2f11b7`
+refused three impostors, each because it "didn't make this space's delegate
+output": a transaction from the buyer's wallet whose `OP_RETURN` carries
+the bytes `6a 52 20` and b3's root, the commitment of `@test9999`, and b2,
+an earlier commitment of `@test10000`. It then attached b3's adopted txid.
+The next batch (b6, `idx 3`) committed, was proved with a step and a fold
+(100 s), broadcast and finalized, waited for anchor coverage, and its
+certificate verified, so the order is ready. The verdict is "pass", with
+all 119 required steps agreeing with the model. With the pinned `subs`, run
+`continued-pinned-20261107T101052Z-049497` refused the same three, because
+it has no route at all, and then failed at the blocker: 104 of 105 required
+steps agree. The earlier draft's runs, `...085046Z-cc9a7a` and
+`...085107Z-645ce5`, are kept too. The patch is for the maintainers to
+accept or reshape, as U1 says.
 Until they do, a deployment needs either this patch or an owner-authorized
 repair after any restore that loses a later commitment's txid.

@@ -4,3 +4,4 @@ __pycache__/
 regtest/.cache/
 regtest/.run/
 regtest/verifier/target/
+regtest/.keep-run.*/

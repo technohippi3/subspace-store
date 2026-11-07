@@ -614,6 +614,15 @@ def continued_operation(run):
     r, c = run.report, run.controller
     m = run.mirror(SPACE_A)
     subs = run.stack.subs()
+    # Each space has its own model mirror, and blocks mined while another
+    # space's scenario ran weren't mirrored here. Bring this mirror's chain to
+    # the real tip first, so depths and root anchors line up again.
+    behind = c.tip() - m.sim.chain.tip
+    if behind > 0:
+        m.mine(behind)
+    r.step(scen, None, f"model mirror of {SPACE_A} at the real tip",
+           {"tip": c.tip(), "mirror_was_behind_by": behind}, {"tip": m.sim.chain.tip},
+           match=c.tip() == m.sim.chain.tip)
     last = [bid for bid, (space, _) in run.bids.items() if space == SPACE_A][-1]
     lb = c.batch(last)
     pipe = subs.get(f"/spaces/{SPACE_A}/pipeline")
@@ -626,14 +635,32 @@ def continued_operation(run):
     run.mine(3)
     m.mine(3)
     run.compare_orders(scen, "P1", "payment at 3 conf", [oid], SPACE_A)
-    # Recovery, U1(b): tell subs the txid the controller adopted. A txid that
-    # didn't carry this root must be refused first.
+    # Recovery, U1(b): tell subs the txid the controller adopted. First, txids
+    # that didn't make this space's commitment must all be refused:
+    # - a transaction that only carries the root's bytes;
+    # - another space's commitment;
+    # - an earlier commitment of this space, at another height and root.
+    w = run.stack.btc("buyer")  # the wallet that pays orders, so it has funds
+    raw = w.call("createrawtransaction", [], [{"data": "6a5220" + lb["root"]}])
+    raw = w.call("fundrawtransaction", raw)["hex"]
+    raw = w.call("signrawtransactionwithwallet", raw)["hex"]
+    copied = w.call("sendrawtransaction", raw)
+    run.mine(1)
+    m.mine(1)
+    impostors = [("a transaction carrying the root's bytes", copied)]
+    other = [b for b, (space, _) in run.bids.items() if space == SPACE_B and c.batch(b)["txid"]]
+    if other:
+        impostors.append((f"{other[-1]}, the commitment of {SPACE_B}", c.batch(other[-1])["txid"]))
     earlier = [b for b, (space, _) in run.bids.items() if space == SPACE_A and b != last]
-    wrong = c.batch(earlier[-1])["txid"] if earlier else "00" * 32
-    ok, why = attempt_upstream(c.attach_txid_value, last, wrong)
-    r.step(scen, "U1(b)", f"attach the txid of {earlier[-1] if earlier else 'nothing'} to {last}",
-           {"attached": ok, "answer": why if not ok else ok}, {"attached": False}, match=not ok,
-           note="a txid that didn't put this root on chain is never attached")
+    if earlier:
+        impostors.append((f"{earlier[-1]}, an earlier commitment of {SPACE_A}",
+                          c.batch(earlier[-1])["txid"]))
+    for what, txid in impostors:
+        ok, why = attempt_upstream(c.attach_txid_value, last, txid)
+        r.step(scen, "U1(b)", f"attach {what} to {last}",
+               {"attached": ok, "txid": txid, "answer": why if not ok else ok},
+               {"attached": False}, match=not ok,
+               note="only the transaction that made this space's commitment is ever attached")
     att_ok, att = attempt_upstream(c.attach_txid, last)
     r.step(scen, "U1(b)", f"attach the adopted txid of {last} to subs",
            {"attached": att_ok, "answer": att,

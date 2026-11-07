@@ -168,10 +168,10 @@ pass):
   later commitment restored without its `txid` blocks every further local
   commit (R17). A candidate patch, checked on regtest, is in
   `regtest/upstream/`: `POST /spaces/:space/commit/txid` attaches the `txid`
-  only when the commitment has none, the chain's commitment carries its
-  root, and the operator wallet (or, with `spaced`'s block index, the
-  transaction's bytes) shows that `txid` carrying the root at that height
-  (R18);
+  only when the commitment has none, `spaced` is synced, the chain's
+  commitment carries its root at height H, and the space's delegate output
+  is output 0 of that `txid`, unspent and last updated at H. A wallet record
+  that contradicts this refuses (R18);
 - (c) preferably, a split into "prepare" (build and sign, store the raw
   transaction and `txid`) and "send", so the exact bytes can be journaled
   before anything escapes. That also makes a commitment that was never seen

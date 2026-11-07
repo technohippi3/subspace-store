@@ -52,7 +52,7 @@ wallets are made fresh for each run inside `.run/`.
   `subs` ran.
 - `upstream/`: the candidate upstream change U1(b) as a patch.
 - `keep-run.sh <run id>`: keeps a run's report and certificates in `runs/`
-  and `evidence/`.
+  and `evidence/`. It never replaces or removes anything already kept.
 - `verify-evidence.sh`: verifies every kept certificate offline.
 - `harness/`: the harness, standard-library Python.
   - `procs.py`: the processes and their ports.

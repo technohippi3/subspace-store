@@ -1,25 +1,16 @@
 diff --git a/core/src/app.rs b/core/src/app.rs
-index a804ba8..c1a845b 100644
+index a804ba8..b1e88bf 100644
 --- a/core/src/app.rs
 +++ b/core/src/app.rs
-@@ -1156,6 +1156,99 @@ impl Operator {
+@@ -1156,6 +1156,83 @@ impl Operator {
          Ok(txid)
      }
  
-+    /// Attach a known txid to the last local commitment (U1(b)).
-+    ///
-+    /// After a restore from a snapshot that predates the broadcast, or after
-+    /// the answer to `/broadcast` was lost, the commitment can be on chain
-+    /// while `commit_txid` is empty. For a commitment after the first,
-+    /// `can_commit_local` then refuses every further local commit. This
-+    /// attaches the txid only when the last commitment has none, the space's
-+    /// on-chain commitment carries this commitment's root, and the txid is
-+    /// shown to be the transaction that put it there: the operator wallet
-+    /// holds it, mined at the commitment's height, with a commit-root event
-+    /// for the root, or, where spaced keeps its block index, its bytes carry
-+    /// the root in an OP_RETURN. The same txid again is a no-op. It never
-+    /// sends anything.
++    /// Attach a known txid to the last local commitment (U1(b)), after
++    /// `attach::check_attach` accepts it against chain state read from
++    /// `spaced` now. The same txid again is a no-op. It sends nothing.
 +    pub async fn attach_commit_txid(&self, space: &SLabel, txid: Txid) -> anyhow::Result<()> {
++        use crate::attach::{check_attach, ChainEvidence, WalletRecord};
 +        use spaces_client::rpc::RpcClient;
 +
 +        let rpc = self.require_rpc()?;
@@ -35,20 +26,26 @@ index a804ba8..c1a845b 100644
 +            }
 +            return Err(anyhow!("the last commitment already has txid {}", existing));
 +        }
-+
-+        let mut root = [0u8; 32];
-+        hex::decode_to_slice(&commitment.root, &mut root)
++        let mut local_root = [0u8; 32];
++        hex::decode_to_slice(&commitment.root, &mut local_root)
 +            .map_err(|e| anyhow!("invalid root: {}", e))?;
-+        let on_chain = rpc
-+            .get_commitment(space.clone().into(), None)
-+            .await?
-+            .ok_or_else(|| anyhow!("no commitment on chain for this space"))?;
-+        if on_chain.state_root != root {
-+            return Err(anyhow!("the on-chain commitment root doesn't match the last local commitment"));
-+        }
 +
-+        // The operator wallet's record of the transaction.
-+        let mut in_wallet = false;
++        // Chain state, from spaced.
++        let info = rpc.get_server_info().await?;
++        let on_chain = rpc.get_commitment(space.clone().into(), None).await?;
++        let Some(fso) = get_subject_out(rpc, space).await? else {
++            return Err(anyhow!("subject not found: {}", space));
++        };
++        let sptr = NumId::from_spk::<Sha256>(fso.script_pubkey().clone());
++        let delegate = rpc.get_num(spaces_wallet::Subject::NumId(sptr)).await?;
++        let chain = ChainEvidence {
++            synced: info.ready && info.chain.blocks == info.chain.headers,
++            commitment: on_chain.map(|c| (c.state_root, c.block_height)),
++            delegate: delegate.map(|d| (d.txid, d.numout.n, d.numout.spent, d.numout.num.last_update)),
++        };
++
++        // The operator wallet's record of the txid, if it has one.
++        let mut wallet = None;
 +        let mut skip = 0;
 +        'pages: loop {
 +            let page = rpc.wallet_list_transactions(&self.wallet, 100, skip).await?;
@@ -59,40 +56,27 @@ index a804ba8..c1a845b 100644
 +                if tx.txid != txid {
 +                    continue;
 +                }
-+                let carries_root = tx.events.iter().any(|ev| {
-+                    let v = serde_json::to_value(ev).unwrap_or_default();
-+                    v.get("type").and_then(|t| t.as_str()) == Some("commit_root")
-+                        && v.get("root")
-+                            .and_then(|r| r.as_str())
-+                            .map(|r| r.eq_ignore_ascii_case(&commitment.root))
-+                            .unwrap_or(false)
-+                });
-+                in_wallet = carries_root && tx.block_height == Some(on_chain.block_height);
++                let commit_roots = tx
++                    .events
++                    .iter()
++                    .filter_map(|ev| {
++                        let v = serde_json::to_value(ev).ok()?;
++                        if v.get("type")?.as_str()? != "commit_root" {
++                            return None;
++                        }
++                        let root = v.get("root")?.as_str()?.to_string();
++                        let event_space = v.get("space").and_then(|s| s.as_str()).map(String::from);
++                        Some((event_space, root))
++                    })
++                    .collect();
++                wallet = Some(WalletRecord { block_height: tx.block_height, commit_roots });
 +                break 'pages;
 +            }
 +            skip += page.len();
 +        }
 +
-+        // Where spaced keeps its block index, the transaction's own bytes.
-+        let in_bytes = match rpc.get_tx_meta(txid).await {
-+            Ok(Some(entry)) => entry.tx.map(|data| {
-+                // OP_RETURN OP_2 <32-byte root>
-+                let mut script = vec![0x6a, 0x52, 0x20];
-+                script.extend_from_slice(&root);
-+                let raw = data.raw.to_vec();
-+                raw.windows(script.len()).any(|w| w == script.as_slice())
-+            }).unwrap_or(false),
-+            _ => false,
-+        };
-+
-+        if !(in_wallet || in_bytes) {
-+            return Err(anyhow!(
-+                "transaction {} isn't shown to carry the commitment root at height {}",
-+                txid,
-+                on_chain.block_height
-+            ));
-+        }
-+
++        check_attach(&space.to_string(), &local_root, &txid, &chain, wallet.as_ref())
++            .map_err(|reason| anyhow!("cannot attach {}: {}", txid, reason))?;
 +        storage
 +            .update_commitment_txid(commitment.id, &txid.to_string())
 +            .await?;
@@ -102,8 +86,214 @@ index a804ba8..c1a845b 100644
      /// Get the status of the on-chain commit for a space.
      pub async fn get_commit_status(&self, space: &SLabel) -> anyhow::Result<CommitStatus> {
          let local_space = self.get_local_space(space)?;
+diff --git a/core/src/attach.rs b/core/src/attach.rs
+new file mode 100644
+index 0000000..37145a6
+--- /dev/null
++++ b/core/src/attach.rs
+@@ -0,0 +1,190 @@
++//! U1(b): attach a known txid to the last local commitment.
++//!
++//! After a restore from a snapshot that predates the broadcast, or after the
++//! answer to `/broadcast` was lost, a commitment can be on chain while
++//! `commit_txid` is empty. For a commitment after the first,
++//! `can_commit_local` then refuses every further local commit. The check
++//! here decides, from authoritative chain state read from `spaced`, whether
++//! a given txid is the transaction that made this space's commitment:
++//!
++//! - `spaced` is ready and synced to its node's headers, so its view is not
++//!   stale;
++//! - the space's on-chain commitment carries the local root, at height H;
++//! - the space's delegate output is output 0 of the given txid, unspent and
++//!   last updated at H. A commitment spends the delegate output and makes
++//!   the new one at output 0, so only the transaction that committed at H
++//!   can be named there.
++//!
++//! The operator wallet's record of the txid, where it has one, must not
++//! contradict that: a record for another space, another root or another
++//! height refuses. A missing record doesn't, because a restored wallet may
++//! not keep its event history. Nothing here sends anything.
++
++use bitcoin::Txid;
++
++/// What `spaced` reports about the space, read just before the check.
++#[derive(Clone, Debug)]
++pub struct ChainEvidence {
++    /// `getserverinfo`: `ready`, and `chain.blocks == chain.headers`.
++    pub synced: bool,
++    /// `getcommitment(space)`: the on-chain state root and its block height.
++    pub commitment: Option<([u8; 32], u32)>,
++    /// `getnum(delegate)`: the delegate output's txid, output index, whether
++    /// it is spent, and the height of its last update.
++    pub delegate: Option<(Txid, usize, bool, u32)>,
++}
++
++/// The operator wallet's record of the txid, if it has one.
++#[derive(Clone, Debug)]
++pub struct WalletRecord {
++    pub block_height: Option<u32>,
++    /// `(space, root)` of each commit-root event on the transaction.
++    pub commit_roots: Vec<(Option<String>, String)>,
++}
++
++/// Whether `txid` may be attached to the last local commitment of `space`,
++/// whose root is `local_root`. Returns the reason when it may not.
++pub fn check_attach(
++    space: &str,
++    local_root: &[u8; 32],
++    txid: &Txid,
++    chain: &ChainEvidence,
++    wallet: Option<&WalletRecord>,
++) -> Result<(), String> {
++    if !chain.synced {
++        return Err("spaced is not synced to its node; its chain state may be stale".into());
++    }
++    let (root, height) = chain
++        .commitment
++        .ok_or_else(|| "no commitment on chain for this space".to_string())?;
++    if &root != local_root {
++        return Err("the on-chain commitment root doesn't match the last local commitment".into());
++    }
++    let (delegate_txid, vout, spent, last_update) = chain
++        .delegate
++        .ok_or_else(|| "no delegate output found for this space".to_string())?;
++    if &delegate_txid != txid || vout != 0 {
++        return Err(format!(
++            "{} didn't make this space's delegate output, which is {}:{}",
++            txid, delegate_txid, vout
++        ));
++    }
++    if spent {
++        return Err("this space's delegate output is spent".into());
++    }
++    if last_update != height {
++        return Err(format!(
++            "the delegate output was last updated at {}, not at the commitment's height {}",
++            last_update, height
++        ));
++    }
++    if let Some(record) = wallet {
++        if let Some(h) = record.block_height {
++            if h != height {
++                return Err(format!("the wallet has {} at height {}, not {}", txid, h, height));
++            }
++        }
++        let root_hex = hex::encode(local_root);
++        for (event_space, event_root) in &record.commit_roots {
++            let other_space = event_space.as_deref().map(|s| s != space).unwrap_or(false);
++            if other_space || !event_root.eq_ignore_ascii_case(&root_hex) {
++                return Err(format!(
++                    "the wallet records {} as committing {} for {}",
++                    txid,
++                    event_root,
++                    event_space.as_deref().unwrap_or("an unnamed space")
++                ));
++            }
++        }
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use bitcoin::hashes::Hash;
++
++    const SPACE: &str = "@test10000";
++    const ROOT: [u8; 32] = [7u8; 32];
++    const H: u32 = 3600;
++
++    fn txid(b: u8) -> Txid {
++        Txid::from_byte_array([b; 32])
++    }
++
++    fn good() -> ChainEvidence {
++        ChainEvidence {
++            synced: true,
++            commitment: Some((ROOT, H)),
++            delegate: Some((txid(1), 0, false, H)),
++        }
++    }
++
++    fn wallet(height: u32, space: &str, root: &[u8; 32]) -> WalletRecord {
++        WalletRecord {
++            block_height: Some(height),
++            commit_roots: vec![(Some(space.to_string()), hex::encode(root))],
++        }
++    }
++
++    #[test]
++    fn the_transaction_that_made_the_delegate_output_is_attached() {
++        assert_eq!(check_attach(SPACE, &ROOT, &txid(1), &good(), None), Ok(()));
++        let w = wallet(H, SPACE, &ROOT);
++        assert_eq!(check_attach(SPACE, &ROOT, &txid(1), &good(), Some(&w)), Ok(()));
++    }
++
++    #[test]
++    fn copied_root_bytes_are_not_enough() {
++        // Any other transaction, whatever bytes it carries, didn't make the
++        // delegate output.
++        assert!(check_attach(SPACE, &ROOT, &txid(2), &good(), None).is_err());
++    }
++
++    #[test]
++    fn another_spaces_commitment_is_refused() {
++        // Its txid isn't this space's delegate output.
++        assert!(check_attach(SPACE, &ROOT, &txid(9), &good(), None).is_err());
++        // And a wallet record naming another space contradicts the chain.
++        let w = wallet(H, "@test9999", &ROOT);
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &good(), Some(&w)).is_err());
++    }
++
++    #[test]
++    fn a_wrong_height_is_refused() {
++        let mut chain = good();
++        chain.delegate = Some((txid(1), 0, false, H + 1));
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
++        let w = wallet(H - 6, SPACE, &ROOT);
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &good(), Some(&w)).is_err());
++    }
++
++    #[test]
++    fn stale_or_missing_chain_evidence_is_refused() {
++        let mut chain = good();
++        chain.synced = false;
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
++        let mut chain = good();
++        chain.commitment = None;
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
++        let mut chain = good();
++        chain.delegate = None;
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
++    }
++
++    #[test]
++    fn a_different_root_or_output_is_refused() {
++        let mut chain = good();
++        chain.commitment = Some(([8u8; 32], H));
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
++        let mut chain = good();
++        chain.delegate = Some((txid(1), 1, false, H));
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
++        let mut chain = good();
++        chain.delegate = Some((txid(1), 0, true, H));
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &chain, None).is_err());
++        let w = wallet(H, SPACE, &[8u8; 32]);
++        assert!(check_attach(SPACE, &ROOT, &txid(1), &good(), Some(&w)).is_err());
++    }
++}
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index d358313..7e98aaa 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -1,4 +1,5 @@
+ pub mod app;
++pub mod attach;
+ pub mod core;
+ pub mod storage;
+ 
 diff --git a/subs/src/routes/commits.rs b/subs/src/routes/commits.rs
-index b57ae8e..1e2487a 100644
+index b57ae8e..5ad7893 100644
 --- a/subs/src/routes/commits.rs
 +++ b/subs/src/routes/commits.rs
 @@ -133,6 +133,33 @@ pub async fn broadcast(
@@ -116,7 +306,7 @@ index b57ae8e..1e2487a 100644
 +}
 +
 +/// POST /spaces/:space/commit/txid - Attach a known txid to the last local
-+/// commitment (U1(b)), after checking it against the chain. Sends nothing.
++/// commitment (U1(b)), after checking it against chain state. Sends nothing.
 +pub async fn attach_commit_txid(
 +    State(state): State<AppState>,
 +    Path(space): Path<String>,

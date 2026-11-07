@@ -216,6 +216,33 @@ the controller tries to issue another batch.
 So recovery restores continued operation only with U1(b). The patch is in
 `upstream/` (R17, R18).
 
+Those two runs used the patch's second draft, which review found too weak:
+it matched the root's bytes anywhere in a raw transaction, and the
+wallet's record without its space. The patch now binds the txid to the
+space's delegate output in chain state (R18). It was rerun with scenario 4
+first, so that another space has a commitment, and with three impostor
+txids tried before the real one:
+- `continued-pinned-20261107T101052Z-049497`: verdict fail, exit 1. 104 of
+  105 required steps agree. The impostors are refused, because the pinned
+  `subs` has no route. The local commit is refused at the blocker (R17).
+- `continued-u1b-20261107T101924Z-2f11b7`: verdict pass, exit 0. All 119
+  required steps agree, and 20 are informational. Each impostor was refused
+  because it didn't make this space's delegate output: a transaction
+  carrying the root's bytes, `@test9999`'s commitment, and an earlier
+  commitment of `@test10000`. The adopted txid was attached. The next batch
+  (b6, `idx 3`) committed, was proved with a step and a fold (100 s),
+  broadcast and finalized, and after anchor coverage its certificate
+  verified. The order became ready.
+
+Three runs in between ended in harness bugs and aren't kept.
+`continued-pinned-20261107T100339Z-dda7d3` and
+`continued-u1b-20261107T100411Z-4a4807` ended in error: the miner wallet had
+no spendable funds for the impostor transaction, and the buyer's wallet is
+used now. `continued-u1b-20261107T101124Z-e6bcf7` failed at L6, because the
+model's mirror of `@test10000` wasn't advanced for the blocks mined during
+scenario 4. Scenario 5 now brings the mirror to the real tip first, and
+records it (it was 183 blocks behind).
+
 ## The tightened harness
 
 Since fp4:
@@ -267,10 +294,12 @@ show a clean-host backup and wallet restore.
 The run directories under `.run/` are ignored by git. `keep-run.sh` copies a
 run's report into `runs/` and its certificate verifications into
 `evidence/<run id>/`, with the repository's absolute path made relative. It
-refuses copies that contain a local path or a personal name. The kept runs
-are `all-20261107T075846Z-ff80d4`, `all-20261107T083353Z-06a396` and both
-continued runs: 23 certificate messages, each with its root anchors and
-libveritas output. `verify-evidence.sh` verifies them all offline, and
+never replaces or removes anything already kept: a run id that is already
+kept is refused, the copies are checked in a temporary directory before
+they're published, and a run id must be a plain name.
+`tests/test_regtest_keep_run.py` covers this. The kept runs are the two full
+runs and four continued runs: 36 certificate messages, each with its root
+anchors and libveritas output. `verify-evidence.sh` verifies them all offline, and
 `evidence/README.md` says how. fp4's certificate isn't kept in the repository,
 because its handle label was a personal name and is part of the signed
 message.
