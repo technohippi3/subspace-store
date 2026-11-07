@@ -50,6 +50,10 @@ class Report:
             return "error"
         return "fail" if self.failures() else "pass"
 
+    def exit_code(self):
+        """0 pass, 1 a required step disagrees, 2 the run ended in error."""
+        return {"pass": 0, "fail": 1}.get(self.verdict(), 2)
+
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps({"meta": self.meta, "verdict": self.verdict(),

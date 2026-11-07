@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import compare
 from .controller import Controller, Refused as CRefused
 from .journal import Journal
 from .oracle import Mirror
@@ -167,9 +168,12 @@ class Run:
                          {"oid": oid, "script_pubkey": spk})
         q = self.registry.quote(oid)
         mq = m.quote(oid, handle)
-        self.report.step(scen, None, f"fixed-price quote for {oid}",
-                         {"price_sats": q["price_sats"], "address": q["address"]},
-                         {"quoted": mq[0]}, match=mq[0])
+        got = {"quoted": True, "status": self.registry.order(oid)["status"],
+               "price_sats": q["price_sats"], "address": q["address"]}
+        exp = {"quoted": mq[0], "status": m.order_status(oid) if mq[0] else None,
+               "price": PRICE}
+        self.report.step(scen, None, f"fixed-price quote for {oid}", got, exp,
+                         match=compare.same_quote(got, exp))
         txid = self.pay(q["address"], q["price_sats"])
         m.pay(oid, PRICE)
         return oid, txid
@@ -180,18 +184,23 @@ class Run:
         ok, mbid = m.freeze(members)
         self.bids[bid] = (space, mbid)
         b = c.batch(bid)
-        self.report.step(scen, None, f"freeze {bid}", {"members": b["members"], "state": b["state"]},
-                         {"members": m.batch_members(mbid) if ok else mbid}, match=ok)
+        got = {"members": b["members"], "state": b["state"]}
+        exp = {"ok": ok, "members": m.batch_members(mbid) if ok else None,
+               "state": m.batch_state(mbid) if ok else None, "refusal": None if ok else mbid}
+        self.report.step(scen, None, f"freeze {bid}", got, exp,
+                         match=compare.same_freeze(got, exp))
         st = c.stage(bid)
         self.report.step(scen, None, f"stage {bid} with readback",
                          {"staged": st["staged"], "parked": st["parked"],
                           "sync": st["sync"]})
         cl = c.commit_local(bid)
         m.step("commit_local", mbid)
-        self.report.step(scen, None, f"local commit {bid} with readback",
-                         {"root": cl["root"], "prev_root": cl["prev_root"],
-                          "is_initial": cl["is_initial"], "handles": cl["handles_committed"]},
-                         {"state": m.batch_state(mbid)}, match=True)
+        got = {"state": c.batch(bid)["state"], "root": cl["root"], "prev_root": cl["prev_root"],
+               "is_initial": cl["is_initial"], "handles": cl["handles_committed"],
+               "members_on_root": cl["members_on_root"]}
+        exp = {"state": m.batch_state(mbid), "members": m.batch_members(mbid)}
+        self.report.step(scen, None, f"local commit {bid} with readback", got, exp,
+                         match=compare.same_local_commit(got, exp))
         pr = c.prove(bid)
         m.step("prove", mbid)
         self.report.step(scen, None, f"prove {bid}", pr, {"state": m.batch_state(mbid)},
@@ -268,9 +277,11 @@ class Run:
                          {"status": mstatus}, match=status == mstatus)
         if status == "awaiting_anchor":
             ok, why = attempt(self.controller.verify_certificates, bid)
+            mstatus = m.certificate_status(members[0])
             self.report.step(scen, "L6", "verification refused while awaiting the anchor",
-                             {"verified": ok, "why": why if not ok else ""}, {"verified": False},
-                             match=not ok)
+                             {"verified": ok, "why": why if not ok else ""},
+                             {"verified": compare.verification_allowed(mstatus), "status": mstatus},
+                             match=compare.same_verification(ok, mstatus))
             self.compare_orders(scen, "L6", f"{bid} members while awaiting the anchor", members, space)
             target = -(-(b["mined_height"] + 144) // 36) * 36
             n = max(0, target - self.controller.tip())
@@ -352,8 +363,11 @@ def first_purchase(run):
     r.step(scen, "L1", "cancellation while finality is lost", {"cancelled": ok, "why": why},
            {"cancelled": mok, "why": mwhy}, match=ok == mok)
     ok, why = attempt(c.verify_certificates, bid)
+    mstatus = m.certificate_status(oid)
     r.step(scen, "L1", "certificate verification while not final",
-           {"allowed": ok, "why": why if not ok else ""}, {"allowed": False}, match=not ok)
+           {"allowed": ok, "why": why if not ok else ""},
+           {"allowed": compare.verification_allowed(mstatus), "status": mstatus},
+           match=compare.same_verification(ok, mstatus))
     btc.call("prioritisetransaction", b["txid"], 0, 100_000_000)
     in_pool = b["txid"] in btc.call("getrawmempool")
     r.step(scen, "L7", "commitment in the node's mempool after the reorg",
@@ -641,7 +655,7 @@ def main(argv):
     print(f"verdict: {verdict}")
     for f in run.report.failures():
         print(f"  required step disagrees: {f['scenario']} {f['case'] or ''} {f['step']}")
-    return {"pass": 0, "fail": 1}.get(verdict, 2)
+    return run.report.exit_code()
 
 
 if __name__ == "__main__":

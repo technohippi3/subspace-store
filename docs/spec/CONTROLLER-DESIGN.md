@@ -1,4 +1,4 @@
-# Subspace store issuance controller design (draft 6, 2026-11-07)
+# Subspace store issuance controller design (draft 7, 2026-11-07)
 
 Status: draft design. Nothing is built. Payment, reservation, cancellation
 and refund rules are in `PAYMENT-SPEC.md`, including the depth arithmetic
@@ -12,13 +12,21 @@ rule. Draft 5 applies the model review of 2026-11-07: both journals before a
 broadcast, the check at the moment of every send, one commitment per space,
 and lost finality. Draft 6 applies the first regtest findings (R10, R11):
 readiness waits for root-anchor coverage, and a commitment's signed bytes are
-journaled so it can be rebroadcast after a deep reorg.
+journaled so it can be rebroadcast after a deep reorg. Draft 7 corrects
+the pins and three statements about `subs` against what the regtest
+harness found (`regtest/FINDINGS.md` R2, R12, R13, R14 and R16).
 
 ## Pinned upstream versions
 
 - `subs` at `4dcc9237af3a807497d4b1532729842ee5dcdb68`;
-- `spaces` v0.5.0 (`spaced`, `space-cli`), released 2026-09-21;
-- `libveritas` at `61281f1`;
+- `spaces` v0.5.0 (`spaced`, `space-cli`), released 2026-09-21. `subs` at
+  that commit builds against the `spaces` crates 0.4.2, and git `16fb1f5`
+  for its test utilities, two commits before v0.5.0. On regtest it ran
+  against `spaced` v0.5.0 with no call-shape failure (R2);
+- `libveritas` 0.4.4, the version `subs` locks and verifies with. The
+  earlier pin, `61281f1`, is the v0.4.5 release merge, which `subs` doesn't
+  build (R2);
+- Bitcoin Core 26.0, for the regtest harness;
 - the RISC Zero toolchain that `subs` pins in its `Cargo.lock` and
   `rust-toolchain.toml`;
 - `yuki`, at a version still to be chosen.
@@ -36,8 +44,12 @@ Local commit (`POST /spaces/:space/commit`) commits every staged handle that
 isn't parked. The SQL is `UPDATE handles SET commitment_root = ? ... WHERE
 commitment_root IS NULL AND parked = 0`. It refuses if the space has an
 on-chain commitment it doesn't know, if the previous commitment lacks its
-proof, if the previous commitment has no transaction ID yet, or if the
-previous commitment is on chain with `d < 150`.
+proof, if a previous commitment after the first has no transaction ID yet,
+or if the previous commitment is on chain with `d < 150`. The initial
+commitment is checked for neither a transaction ID nor its presence on
+chain (R16). So `subs` doesn't stop a local commit after an initial
+commitment whose answer was lost, and the controller's own rule (one
+commitment per space, step 1) has to.
 
 Parking and removal (`/park`, `/remove`) only touch staged handles. Both
 statements are restricted to `commitment_root IS NULL`. A handle inside a
@@ -159,7 +171,11 @@ pass):
 Until U1 exists, the controller wraps `/broadcast` in an adapter with one
 rule: a `/broadcast` call without a recorded answer is an uncertain broadcast.
 Rebroadcasting the identical journaled bytes is not a `/broadcast` call and
-stays allowed. For that commitment the controller never calls `/broadcast` or
+stays allowed. `subs` itself doesn't follow this rule. After a restore or a
+lost answer it holds the local commitment without a `txid`, and its
+`/pipeline` offers "Ready to broadcast" for a commitment already on chain
+(R13). Only the controller stands in the way of a second send, which is one
+more reason `subs` is reachable by the controller alone. For that commitment the controller never calls `/broadcast` or
 `/rollback-local` again. It reads back the evidence below, pauses the space
 and alerts the owner. Resolving it means either adopting the `txid` (which
 needs U1(b), or a repair the owner authorizes) or safe supersession (see
@@ -250,8 +266,11 @@ back after it, and never repeat an effect whose outcome is unknown.
    root. Read back `filter=staged` to check that no member is still staged. A
    mismatch is repaired by `/rollback-local`, which is safe because no
    broadcast has been attempted, and the cycle returns to step 2.
-4. Prove, letting the proving loop or a remote prover run. Poll
-   `/pipeline`. Proving has no on-chain effect.
+4. Prove. Submit each proof through `POST /spaces/:space/proving/push`:
+   a step proof, then a fold for a commitment after the second. The
+   background proving loop only polls a job that is already in flight, and
+   never starts one (R12). Poll `/pipeline` until proving is complete. An
+   initial commitment needs no proof. Proving has no on-chain effect.
 5. Verify the proof locally with the pinned verifier against the prior and new
    roots. A failure pauses the space; it is never retried into a broadcast.
 6. Check. Run the binding pre-broadcast check from `PAYMENT-SPEC.md`. If a
@@ -361,9 +380,12 @@ exported all involve credentials, so the owner decides them.
      snapshot predates it. If no broadcast intent follows, redo it from
      step 2 of the cycle;
    - a broadcast intent after the snapshot means `subs` has the local
-     commitment, from the snapshot, with no `txid`. Read back the chain. If
-     the root is on chain or a spend of the delegate output carries it,
-     adopt the `txid` (U1(b)). Otherwise the batch is `broadcast_uncertain`;
+     commitment, from the snapshot, with no `txid`. Read back the chain,
+     the node's mempool and the operator wallet. If the root is on chain or
+     a spend of the delegate output carries it, adopt the `txid` in the
+     controller's journal. That needs no change to `subs` (R14). Telling
+     `subs` the `txid`, so its own status and its next local commit see it,
+     needs U1(b). Otherwise the batch is `broadcast_uncertain`;
    - a batch with a journaled intent, a `txid` or a later state has every
      member marked `issuing` in the registry again before any cancellation
      is accepted, even where the registry's journal lagged;
@@ -428,14 +450,20 @@ Checked on 2026-11-06, and recorded above:
 - the protocol finality rule, `height > block_height + 144`;
 - what sync and publishing emit.
 
+Checked on regtest on 2026-11-07 (`regtest/FINDINGS.md`): `subs` runs on
+regtest against a separately started `spaced` (R1), the `spaced` call
+shapes the adapter needs (R3), and a full Bitcoin Core node can answer the
+mempool readback (R4).
+
 Still open:
-- whether the deployment has a node that can answer mempool lookups;
-- the argument and return shapes of those calls, checked when the adapter is
-  written;
+- whether a deployment on `yuki` can answer mempool lookups;
 - whether the maintainers would accept U1, or prefer another shape;
 - what temp certificates mean to relays and to Nacho;
-- CPU proving time for later commitments of 1 and 50 names, which needs a
-  local benchmark run.
+- CPU proving time for later commitments of 50 names. On regtest, commitments
+  of 1 and 2 names took 35 to 141 s, step and fold together, varying between
+  runs;
+- the operator-side effect of R16 after a later commitment without a
+  `txid`, which was read from the source but not run.
 
 ## Out of scope for this draft
 

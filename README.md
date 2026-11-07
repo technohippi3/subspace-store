@@ -12,10 +12,20 @@ client. Nacho is the first client being tested.
 Pre-alpha. The MVP sells names at fixed prices. Dutch auctions are
 specified but deferred until after the MVP.
 
-There is a reviewed specification and a reference model of the fixed-price
-rules, and nothing else. There is no store, no registry, no real controller
-and no installer. Nothing here is fit for selling names, and paid
-sales stay closed until the acceptance gates in the specification pass.
+There is a reviewed specification, a reference model of the fixed-price
+rules, and a regtest harness that drives the pinned `subs`, `spaced` and
+Bitcoin Core on a local regtest network. On regtest the harness has issued
+names through to a certificate verified with libveritas and marked ready:
+an initial commitment, later commitments with real proofs, a host restore
+and a lost broadcast response. That is regtest evidence. It isn't a
+completed purchase: nothing has been published to relays or delivered to a
+buyer's client, and the harness's registry and controller are test code.
+
+There is no store, no persistent registry, no payment or refund service, no
+real controller, no checkout and no installer. Nothing here is fit for
+selling names, and paid sales stay closed until the buyer and operator
+acceptance gates in the specification pass. `regtest/REPORT.md` says what
+has and hasn't been exercised.
 
 A passing model test shows that the specified rules are consistent on a
 simulated chain. It is not evidence that real Bitcoin transactions, the

@@ -287,10 +287,13 @@ class Controller:
         self.journal.append("commit_local_intent", bid=bid, space=space)
         result = self.subs.post(f"/spaces/{space}/commit", {})
         root = result["root"]
+        on_root = 0
         for m in b["members"]:
             info = self.handle(space, label(self.registry.order(m)["name"]))
             if info["commitment_root"] != root:
                 raise Refused(f"member {m} readback root {info['commitment_root']} != {root}")
+            on_root += 1
+        result["members_on_root"] = on_root
         still = {h["name"] for h in self.handles(space, "staged")}
         if still & {label(self.registry.order(m)["name"]) for m in b["members"]}:
             raise Refused("a member is still staged after the local commit")

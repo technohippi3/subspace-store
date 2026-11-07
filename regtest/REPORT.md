@@ -114,7 +114,15 @@ Script: `regtest/run-all.sh`. Full table: `runs/all-20261107T075846Z-ff80d4.md`
 and `.json`. Isolated in a network namespace, after `main` (e0fa5ee, with
 L6 to L8 and X10) was merged. Verdict: pass, exit 0, all four scenarios
 completed. 98 required steps all agree with the model. 16 steps are
-informational. One `getrootanchors` read hit the half-written file (R15)
+informational. Five of those 98 rows were weaker than their label in this
+run. The quote row checked only that the model accepted a quote. The
+freeze row checked only that the model's freeze succeeded, without
+comparing members. The local-commit row was hardcoded to agree. The L1 and
+L6 refusal rows compared with a constant instead of asking the model. All
+five now compare the actual fields (`harness/compare.py`), and
+`tests/test_regtest_compare.py` shows that a mismatch on any field fails
+the run with exit status 1. The corrected comparisons haven't been rerun
+against the live stack yet. One `getrootanchors` read hit the half-written file (R15)
 and was retried. Proving took 79 s for b2 and 125 s for b3 in this run.
 The run before it, `all-20261107T075152Z-248f89`, gave the same verdict
 with the same counts, before the labels were changed. Its relabelled
@@ -200,6 +208,33 @@ Since fp4:
 
 ## Not exercised
 
-Publication to relays (R6), refunds, late payments, hold extension,
-eligibility proofs, auctions, and a natural competing-chain reorg as
-opposed to `invalidateblock`.
+Not exercised on regtest:
+- publication to relays (R6), buyer import and completed delivery, so no
+  purchase has finished;
+- refunds of any kind, late payments, hold extensions and eligibility
+  proofs;
+- a lost answer between `subs` and the controller (only `spaced`'s answer to
+  `subs` was dropped);
+- X10, a supersession undone by a reorg deeper than settled depth, and L8,
+  a lost commitment with no journaled bytes;
+- recovering a later commitment, `idx > 0`, without its `txid`, then
+  issuing another batch (R16 read from the source only);
+- auctions, and a natural competing-chain reorg as opposed to
+  `invalidateblock`.
+
+The restore scenario isn't the operator gate. Bitcoin Core and `spaced`
+stayed up through the "host loss", the operator wallet wasn't restored
+from its backup, and the "off-host" journal and snapshots are another
+local directory, not a separate store with per-object confirmation. So it
+shows the registry, controller and `subs` restore and reconcile. It doesn't
+show a clean-host backup and wallet restore.
+
+## Evidence kept
+
+The run directories under `.run/` are ignored by git. The six certificate
+messages of the passing run `all-20261107T075846Z-ff80d4`, with the root
+anchors and libveritas output of each verification, are kept in
+`evidence/all-20261107T075846Z-ff80d4/`, and `evidence/README.md` says how
+to verify them offline. fp4's certificate isn't kept in the repository,
+because its handle label was a personal name and is part of the signed
+message.

@@ -215,8 +215,10 @@ Needs the upstream software, on a local regtest network where possible:
 - restore against `subs`' health check;
 - the operator gate.
 
-`subs` has a `/rpc/mine` route, which suggests regtest support, but that is
-still to confirm.
+On regtest the harness in `regtest/` has since shown the controller cycle,
+proving, certificate verification with libveritas and a restore against the
+pinned `subs` and `spaced` (`regtest/REPORT.md`). Publication, refunds and
+the full operator gate are still unexercised there.
 
 Needs mainnet with the owner's authorization:
 - a commitment on a real throwaway space;
@@ -227,15 +229,15 @@ Needs buyers:
 - import on other phones;
 - whether the checkout copy is understood.
 
-## Local integration harness (preparation)
+## Local integration harness
 
-This prepares the second column of evidence, the upstream software, without
-funds or mainnet. It needs no repository decision to plan, but its code
-lives in the product repository too.
-- Components: `bitcoind` on regtest, `spaced` v0.5.0 against it, and `subs`
-  at `4dcc923` with a local prover. `subs` exposes `/rpc/mine` and
-  `/rpc/bitcoin`. Whether `spaced` and `subs` run end to end on regtest is the
-  first thing to confirm.
+This is the second column of evidence, the upstream software, without funds
+or mainnet. It is built in `regtest/`, and its results are in
+`regtest/REPORT.md` and `regtest/FINDINGS.md`.
+- Components: Bitcoin Core 26.0 on regtest, `spaced` v0.5.0 against it, and
+  `subs` at `4dcc923` built without its `test-rig` feature, with a local CPU
+  prover. `/rpc/mine` exists only with `test-rig`, so the harness mines
+  through Bitcoin Core (R1).
 - Scenarios, in order:
   1. one initial commitment of two names;
   2. a later commitment that needs proving;
