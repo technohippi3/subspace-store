@@ -34,9 +34,23 @@ PORTS = {
     "subs_proxy": 18947,
     "prover": 18948,
     "registry": 18949,
+    "certrelay": 18950,
 }
 
 OPERATOR_WALLET = "wallet_99"  # an upstream regtest test wallet; see README
+
+
+def relay_enabled():
+    """True when a run publishes to a local certrelay (SUBSPACE_RELAY=1).
+    Then subs is started with `--fabric-seed` naming that relay alone, which
+    needs the subs build with `upstream/subs-fabric-seed.patch` (finding R19):
+    the pinned subs has no such flag, so clap would stop it at startup. The
+    relay runs in the same namespace with no seeds of its own."""
+    return os.environ.get("SUBSPACE_RELAY") == "1"
+
+
+def relay_url():
+    return f"http://127.0.0.1:{PORTS['certrelay']}"
 
 
 def subs_bin():
@@ -224,13 +238,42 @@ class Stack:
         if self.running("subs"):
             return
         spaced_port = PORTS["spaced_proxy"] if via_spaced_proxy else PORTS["spaced"]
+        relay_args = []
+        if relay_enabled():
+            self.start_certrelay()
+            relay_args = ["--fabric-seed", relay_url()]
         self._spawn("subs", [
             str(subs_bin()), "--port", str(PORTS["subs"]),
             "--data-dir", str(self.subs_dir), "--wallet", OPERATOR_WALLET,
             "--rpc-url", f"http://127.0.0.1:{spaced_port}",
             "--rpc-cookie", str(self.spaced_cookie()),
+            *relay_args,
         ], env={"RUST_LOG": "info,subsd=info,subs_core=info"})
         self._wait("subs", lambda: self.subs().get("/status", timeout=10) is not None)
+
+    @property
+    def certrelay_dir(self):
+        return self.dir / "certrelay"
+
+    def start_certrelay(self):
+        """The pinned certrelay (the commit subs locks), on regtest, against
+        this run's spaced directly. It is a bootstrap relay with no seeds, so
+        it announces to and syncs from nobody, and it listens on 127.0.0.1
+        inside the namespace. The spaced credentials go through the
+        environment, not the command line."""
+        if self.running("certrelay"):
+            return
+        self.certrelay_dir.mkdir(exist_ok=True)
+        token = self.spaced_cookie().read_text().strip()
+        self._spawn("certrelay", [
+            str(BIN / "certrelay"), "--chain", "regtest",
+            "--data-dir", str(self.certrelay_dir),
+            "--bind", "127.0.0.1", "--port", str(PORTS["certrelay"]),
+            "--self-url", relay_url(), "--is-bootstrap",
+            "--anchor-refresh", "1", "--allow-private-peers",
+        ], env={"RUST_LOG": "info",
+                "CERTRELAY_SPACED_RPC_URL": f"http://{token}@127.0.0.1:{PORTS['spaced']}"})
+        self._wait("certrelay", lambda: Http(relay_url(), timeout=5).get("/health", raw=True) is not None)
 
     def start_proxies(self):
         for name, listen, target in (("spaced_proxy", "spaced_proxy", "spaced"),
@@ -245,8 +288,8 @@ class Stack:
             f"http://127.0.0.1:{PORTS['spaced_proxy']}", timeout=5).get("/__proxy__"))
 
     def stop_all(self):
-        for name in ("registry", "subs", "subs_proxy", "prover", "spaced_proxy",
-                     "spaced", "bitcoind"):
+        for name in ("registry", "subs", "certrelay", "subs_proxy", "prover",
+                     "spaced_proxy", "spaced", "bitcoind"):
             self.stop_process(name)
 
 

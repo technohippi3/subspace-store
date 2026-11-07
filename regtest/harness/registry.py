@@ -255,6 +255,11 @@ class Registry:
     def mark_ready(self, oid):
         self.set_status(oid, "ready", ("issuing",))
 
+    def mark_fulfilled(self, oid):
+        """Only after the handle's delivery is confirmed by a verified lookup
+        (publication.py)."""
+        self.set_status(oid, "fulfilled", ("ready",))
+
     def unready(self, oid):
         self.set_status(oid, "issuing", ("ready",))
 

@@ -216,6 +216,52 @@ the controller tries to issue another batch.
 So recovery restores continued operation only with U1(b). The patch is in
 `upstream/` (R17, R18).
 
+## Publication and delivery through a local relay (run publication-20261107T094250Z-76605c, 2026-11-07)
+
+Script: `regtest/run-publication.sh`. Full table:
+`runs/publication-20261107T094250Z-76605c.md` and `.json`. Verdict pass,
+exit 0. All 62 required steps agree with the model, 30 of them in
+scenario 6.
+
+The run uses `subs` with `upstream/subs-fabric-seed.patch` (built as
+`.cache/bin/subs-relay` by `build-relay.sh`) and the pinned `certrelay` at
+`fb44648`, the commit `subs` locks. Both run inside the run's namespace.
+`subs` logged "Using fabric seeds: http://127.0.0.1:18950", the relay had
+no seeds and no peers, and nothing in the namespace can reach the public
+relay network (R19). The pinned `subs` can't be isolated this way, because
+it has no option to name its relays.
+
+After the first purchase (scenario 1, unchanged), scenario 6 follows the
+publication procedure for b1, then issues b2 and does the same:
+1. The outstanding set for the batch is the member whose certificate
+   verified, journaled in the controller's journal.
+2. Before publication, a lookup of `one@test10000` through the relay
+   answered with a message that verified but held no zone for the handle,
+   so delivery was not confirmed. The model refuses delivery of an
+   unpublished handle too (L3, R21).
+3. Immediately before the call, the live chain carried b1's root at
+   `d = 174`, covered by the anchor at 3780. `/publish` with the one-handle
+   chunk `["one"]` answered `handles_published: 1, remaining: 0`, and the
+   handle's `publish_status` read "final". The model allowed and counted
+   the same chunk.
+4. The live check ran again, then the relay's `/query` answer was verified
+   with libveritas against `spaced`'s anchors. Handle, buyer script, root
+   `326b921a...` at 3606 and `sovereign` all matched. The order went from
+   ready to fulfilled, and the model fulfilled it too.
+5. A second pass with nothing outstanding made no call, as the model
+   expects for an empty set.
+6. For b2 (order o3, `two@test10000`, a commitment that needed a 50 s step
+   proof), publication was refused at `d = 149` (L1) and at `d = 150` while
+   the newest anchor was 140 blocks past the commitment (L6), as in the
+   model. After mining to the anchor at 3960, the certificate verified,
+   publication and delivery went as for b1, and o3 became fulfilled.
+
+So two orders reached "fulfilled" on regtest: request, quote, payment,
+issuance, finality, anchor coverage, publication to a relay and a verified
+lookup through it. The relay messages are kept as evidence and verify
+offline. The one-handle message after the proved commitment was 226,260
+bytes, 43.2% of the relay's 512 KB limit (R20).
+
 ## The tightened harness
 
 Since fp4:
@@ -241,8 +287,15 @@ Since fp4:
 ## Not exercised
 
 Not exercised on regtest:
-- publication to relays (R6), buyer import and completed delivery, so no
-  purchase has finished;
+- publication beyond one local relay: propagation between relays, the
+  public relay network, chunks of more than one handle, an oversized chunk
+  and its halving, temp certificates, and a reorg between the live check
+  and a `/publish` call (scenario 6 uses one relay and one-handle chunks);
+- buyer import, in Nacho or any other client, and the buyer gate's
+  verifying client (delivery was confirmed by the harness's own lookup:
+  the relay's answer verified with the pinned libveritas);
+- a fulfilled order whose commitment then loses finality or is superseded
+  (L4, L5);
 - refunds of any kind, late payments, hold extensions and eligibility
   proofs;
 - a lost answer between `subs` and the controller (only `spaced`'s answer to
@@ -268,9 +321,11 @@ The run directories under `.run/` are ignored by git. `keep-run.sh` copies a
 run's report into `runs/` and its certificate verifications into
 `evidence/<run id>/`, with the repository's absolute path made relative. It
 refuses copies that contain a local path or a personal name. The kept runs
-are `all-20261107T075846Z-ff80d4`, `all-20261107T083353Z-06a396` and both
-continued runs: 23 certificate messages, each with its root anchors and
-libveritas output. `verify-evidence.sh` verifies them all offline, and
+are `all-20261107T075846Z-ff80d4`, `all-20261107T083353Z-06a396`, both
+continued runs and `publication-20261107T094250Z-76605c`: 30 certificate
+messages, each with its root anchors and libveritas output. Four of them,
+in the `-relay` directories, are the relay's `/query` answers from scenario
+6, two from before publication and two from the delivery lookups. `verify-evidence.sh` verifies them all offline, and
 `evidence/README.md` says how. fp4's certificate isn't kept in the repository,
 because its handle label was a personal name and is part of the signed
 message.

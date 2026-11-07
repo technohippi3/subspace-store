@@ -46,3 +46,29 @@ def verification_allowed(model_certificate_status):
 
 def same_verification(regtest_allowed, model_certificate_status):
     return regtest_allowed == verification_allowed(model_certificate_status)
+
+
+def same_publish(regtest, model):
+    """regtest: {"called", "chunk", "response", "final"} for one publication
+    attempt: whether `/publish` was called, the chunk size, subs' answer and
+    the chunk's handles whose publish_status reads "final". model: {"ok",
+    "count", "published"} from the model's `publish`: whether it allowed the
+    call, how many handles it sent and which of the chunk it now counts as
+    published. An empty chunk is allowed with count 0 and must not be a
+    call."""
+    called = bool(model["ok"] and model["count"] > 0)
+    if regtest["called"] != called:
+        return False
+    if not called:
+        return True
+    resp = regtest.get("response") or {}
+    return (regtest.get("chunk") == model["count"]
+            and resp.get("handles_published") == model["count"]
+            and sorted(regtest.get("final", [])) == sorted(model["published"]))
+
+
+def same_delivery(regtest, model):
+    """regtest: {"confirmed", "status"}: whether the verified lookup through
+    the relay confirmed the handle, and the order's status after it. model:
+    {"ok", "status"} from the model's `confirm_delivery`."""
+    return regtest["confirmed"] == model["ok"] and regtest["status"] == model["status"]

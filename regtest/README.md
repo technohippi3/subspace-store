@@ -50,7 +50,19 @@ wallets are made fresh for each run inside `.run/`.
   as `.cache/bin/subs-u1b`, from a separate worktree of the pinned checkout.
   `SUBSPACE_SUBS_BIN` points a run at it, and the report records which
   `subs` ran.
-- `upstream/`: the candidate upstream change U1(b) as a patch.
+- `upstream/`: the candidate upstream change U1(b) as a patch, and
+  `subs-fabric-seed.patch`, which adds `--fabric-seed <url>` to `subs` so
+  its fabric client uses the named relays instead of the public seeds
+  (finding R19).
+- `build-relay.sh`: builds `subs` with `subs-fabric-seed.patch` as
+  `.cache/bin/subs-relay`, from a separate clone of the pinned checkout,
+  and the pinned `certrelay` (the commit `subs` locks, in `pins.env`) as
+  `.cache/bin/certrelay`.
+- `run-publication.sh [prefix]`: the first purchase, then scenario 6:
+  publication to a `certrelay` started inside the run's namespace, and
+  delivery confirmed per handle by a verified lookup through it, so the
+  orders reach "fulfilled". It runs with `SUBSPACE_RELAY=1`, which makes
+  `procs.py` start the relay and pass `--fabric-seed` to `subs`.
 - `keep-run.sh <run id>`: keeps a run's report and certificates in `runs/`
   and `evidence/`.
 - `verify-evidence.sh`: verifies every kept certificate offline.
@@ -67,6 +79,10 @@ wallets are made fresh for each run inside `.run/`.
   - `oracle.py`: drives the reference model through the same events, so the
     report can set the model's expectation beside each regtest result.
   - `scenarios.py`: the scenarios, and `report.py` the report.
+  - `publication.py`: scenario 6, the publication procedure of
+    `CONTROLLER-DESIGN.md` against the local relay, with delivery checked
+    by verifying the relay's `/query` answer with libveritas against root
+    anchors read from `spaced`.
 - `verifier/`: a small Rust program that verifies a certificate message with
   `libveritas` 0.4.4, the version `subs` locks, against root anchors read
   from `spaced` directly.
@@ -93,6 +109,7 @@ namespace or on a reused run id.
 
 The registry and controller here are harness code written for these
 scenarios, not the product. They cover the steps the scenarios take, and the
-report lists what was not exercised. Publication to relays is not exercised:
-a `subs` built without its `test-rig` feature seeds the public relay network,
-which this harness must not contact.
+report lists what was not exercised. The pinned `subs`, built without its
+`test-rig` feature, seeds the public relay network, which this harness must
+not contact, so publication runs only with `subs-fabric-seed.patch` and one
+local relay. Propagation between relays and buyer import are not exercised.

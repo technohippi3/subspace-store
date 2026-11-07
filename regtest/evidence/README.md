@@ -7,7 +7,8 @@ integration or buyer-acceptance evidence.
 Each run directory holds one subdirectory per certificate verification,
 numbered in run order and named after its batch:
 - `<handle>.message.bin`: the borsh-encoded message `subs` built for the
-  handle;
+  handle, or, in a directory named `<batch>-relay`, the message the local
+  relay answered to `/query` for the space and the handle;
 - `anchors.json`: the root anchors read from `spaced` (`getrootanchors`) for
   that verification;
 - `<handle>.libveritas.json`: what libveritas 0.4.4 returned then.
@@ -17,7 +18,10 @@ The handles are numbered test labels on the regtest spaces `@test10000` and
 after the lost-finality reorg), the second commitment with a step proof,
 the third with a step and a fold, and the commitment adopted after a lost
 broadcast answer. The `continued-u1b` run adds the fourth commitment of
-`@test10000`, issued after the restore with the U1(b) patch.
+`@test10000`, issued after the restore with the U1(b) patch. The
+`publication` run adds the relay's answers: before publication (verified,
+with no zone for the handle) and for the delivery lookup (the handle's
+zone), for an initial commitment and for one with a step proof.
 
 To check them again offline, build the verifier once (`cargo build
 --release` in `../verifier`) and run, from the repository root:

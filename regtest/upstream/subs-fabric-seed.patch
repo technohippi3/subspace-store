@@ -1,0 +1,34 @@
+diff --git a/subs/src/main.rs b/subs/src/main.rs
+index f4caf4c..454d06a 100644
+--- a/subs/src/main.rs
++++ b/subs/src/main.rs
+@@ -69,6 +69,12 @@ struct Cli {
+     #[arg(long)]
+     rpc_cookie: Option<PathBuf>,
+ 
++    /// Relay URL to bootstrap the fabric client from, instead of the built-in
++    /// public seeds. Repeatable. Lets a private regtest or testnet setup
++    /// publish to and resolve from its own relays only.
++    #[arg(long = "fabric-seed")]
++    fabric_seeds: Vec<String>,
++
+     /// Enable test rig mode (starts bitcoind + spaced automatically)
+     #[cfg(feature = "test-rig")]
+     #[arg(long)]
+@@ -151,8 +157,14 @@ async fn run_normal(cli: Cli) -> Result<()> {
+     let config = ConfigStore::open(&config_path)?;
+ 
+     // Create operator
+-    let operator = Operator::new(cli.data_dir, wallet, rpc)
+-        .with_fabric();
++    let operator = Operator::new(cli.data_dir, wallet, rpc);
++    let operator = if cli.fabric_seeds.is_empty() {
++        operator.with_fabric()
++    } else {
++        tracing::info!("Using fabric seeds: {}", cli.fabric_seeds.join(", "));
++        let seeds: Vec<&str> = cli.fabric_seeds.iter().map(|s| s.as_str()).collect();
++        operator.with_fabric_seeds(&seeds)
++    };
+ 
+     // Load all existing spaces from disk
+     operator.load_all_spaces().await?;

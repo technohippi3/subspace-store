@@ -75,8 +75,9 @@ R6. Publication can't be exercised without contacting the public relay
 network. A `subs` built without `test-rig` creates its fabric client with
 the default seeds (`Operator::with_fabric` in `subs/src/main.rs`), so
 `/spaces/:space/publish` and `/query` go to public relays. The harness never
-calls them, and the publication procedure stays unexercised on regtest.
-`/fees` also calls mempool.space and is never called.
+calls them with the pinned build. R19 is how publication was isolated
+after all, with a 14-line patch. `/fees` also calls mempool.space and is
+never called.
 
 R7. `subs` listens on every interface. At the pinned commit the HTTP server
 binds `0.0.0.0` with no option to change it (`subs/src/main.rs`,
@@ -257,3 +258,77 @@ The run's verdict is "pass", with all 94 required steps agreeing with the
 model. The patch is for the maintainers to accept or reshape, as U1 says.
 Until they do, a deployment needs either this patch or an owner-authorized
 repair after any restore that loses a later commitment's txid.
+
+## Publication and delivery
+
+R19. The pinned `subs` has no way to name its relays, and that is the only
+blocker. `run_normal` in `subs/src/main.rs` at `4dcc923` calls
+`Operator::new(...).with_fabric()`, which is `Fabric::new()`, which is
+`Fabric::with_seeds(SEEDS)` with the two public seeds in
+`fabric-resolver` 0.2.10 (`rust/src/seeds.rs`, `relay-cosmos` and
+`relay-atlas` at `spacesprotocol.org`, over HTTPS). There is no flag,
+environment variable or `/config` key for them. `export_message` builds a
+fresh client from the same seed list. `subs-core` already has
+`Operator::with_fabric_seeds`, which the `test-rig` mode uses for its
+in-process relay, but `test-rig` also brings its own `bitcoind` and a
+non-pinned `spaced` (R1). Redirecting the default seeds isn't an option
+either: they are HTTPS names checked against public roots. So isolation
+needs an upstream change, and
+`regtest/upstream/subs-fabric-seed.patch` is the smallest one: 14 added
+lines that add `--fabric-seed <url>` (repeatable) to `subs` and call
+`with_fabric_seeds` when it is given, logging "Using fabric seeds". Without
+the flag, `subs` behaves as before. The relay side needs no change: the
+pinned `certrelay`, at `fb44648` (the commit `subs` locks), uses no seeds
+on regtest unless `--seed` is given (`relay/src/app.rs`). The harness runs it
+in the run's namespace with `--chain regtest --is-bootstrap`, on
+`127.0.0.1`, against the run's `spaced`. `build-relay.sh` builds both, the
+patched `subs` from a separate clone of the pinned checkout. What the pinned
+`subs` would do inside the namespace, where the public seeds are
+unreachable, was not run. The patch, like U1(b), is for the maintainers to
+accept or reshape.
+
+R20. Publication through the local relay, in run
+`publication-20261107T094250Z-76605c`. For each of two batches (b1, the
+initial commitment, and b2, a later one that needed a step proof), the
+controller followed steps 1 to 6 of the publication procedure:
+- the outstanding set held the member whose certificate had verified, and
+  was journaled;
+- immediately before each call, `getcommitment` for the batch's root and
+  Bitcoin Core's position of the transaction showed the root at
+  `d >= 150`, with a root anchor 144 past it;
+- `POST /spaces/@test10000/publish {"handles": ["one"]}` answered
+  `handles_published: 1, remaining: 0`, and
+  `/spaces/@test10000/handles/one` then read `publish_status: "final"`.
+  The same for `two`;
+- the live check ran again, then the relay's `GET /query` answer for the
+  space and the handle was verified with libveritas 0.4.4 against root
+  anchors read from `spaced` directly. Handle, `script_pubkey`, the space
+  zone's root and height, and `sovereign` all matched, and the order became
+  `fulfilled`;
+- a second pass with nothing outstanding made no `/publish` call.
+
+For b2, publication was refused at `d = 149` (L1) and again at `d = 150`
+while the newest anchor was 140 blocks past the commitment (L6), and went
+ahead once an anchor covered it. All 30 required steps of the scenario, and
+all 62 of the run, agree with the model. `subs` builds two certificates for
+a one-handle chunk, the space's and the handle's. The message for one handle
+was 2,113 bytes after the initial commitment and 226,260 bytes, 43.2% of the
+512 KB relay limit, after the proved one, so the proof's receipt dominates
+it. Step 3's chunk of 100 is a count, while the relay limit is in bytes. A
+larger chunk, and the halving on `handles_published: 0`, were not
+exercised. This is one relay. Propagation between relays, the public relay
+network, buyer import and the buyer gate's verifying client were not
+exercised. The lookup here is the harness's own: the relay's answer
+checked with the pinned libveritas.
+
+R21. A relay answers for a handle it doesn't hold with a message that
+verifies. Before `one` was published, the relay's `/query` for
+`@test10000,one@test10000` answered HTTP 200 with a message that libveritas
+verified, holding the space's zone (with no commitment) and no zone for the
+handle. So "the lookup verified" is not delivery. A controller must find the
+handle's own zone and compare its `script_pubkey` and the root, as step 6
+says. The harness does, and recorded the attempt as not confirmed (L3).
+The pinned `certrelay` also met R15 here: two of its anchor refreshes read
+`spaced`'s anchors file mid-write ("EOF while parsing") and were retried
+at the next refresh.
+
