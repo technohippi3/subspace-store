@@ -283,6 +283,11 @@ publication procedure for b1, then issues b2 and does the same:
    model. After mining to the anchor at 3960, the certificate verified,
    publication and delivery went as for b1, and o3 became fulfilled.
 
+In this run the L3 row's regtest side was the constant "not confirmed",
+not the result of the delivery path. It now calls the controller's
+`confirm_delivery`, which refuses an unpublished handle, and compares that.
+The kept run predates the correction and hasn't been rerun.
+
 So two orders reached "fulfilled" on regtest: request, quote, payment,
 issuance, finality, anchor coverage, publication to a relay and a verified
 lookup through it. The relay messages are kept as evidence and verify

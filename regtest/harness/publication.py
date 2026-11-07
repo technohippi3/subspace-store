@@ -263,13 +263,15 @@ def _publish_and_deliver(run, p, scen, bid):
     # asked anyway, to show that it has nothing for the handle.
     for oid in p.outstanding(bid):
         found = p.lookup(bid, oid)
+        res = p.confirm_delivery(bid, oid)
         mok, mwhy = m.step("confirm_delivery", mbid, oid)
+        got = {"confirmed": res["confirmed"], "status": run.registry.order(oid)["status"]}
         r.step(scen, "L3", f"delivery of {oid} before its handle is published",
-               {"confirmed": False, "relay_answer": found.get("relay_answer"),
-                "checks": found.get("checks"), "error": found.get("error")},
+               {"confirmed": res["confirmed"], "why": res.get("why", ""), "status": got["status"],
+                "relay_answer": found.get("relay_answer"), "checks": found.get("checks"),
+                "error": found.get("error")},
                {"confirmed": mok, "why": mwhy if not mok else ""},
-               match=compare.same_delivery({"confirmed": False, "status": run.registry.order(oid)["status"]},
-                                           {"ok": mok, "status": m.order_status(oid)}))
+               match=compare.same_delivery(got, {"ok": mok, "status": m.order_status(oid)}))
     for res in p.publish_outstanding(bid):
         chunk = sorted(res.get("publish_status", {}))
         mok, mcount = m.step("publish", mbid, chunk)
