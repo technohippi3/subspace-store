@@ -26,7 +26,8 @@ PRICE = 10_000
 class Generator:
     def __init__(self, seed):
         self.r = random.Random(seed)
-        self.sim = Sim()
+        # Odd seeds journal the signed commitment before the send (U1(c)).
+        self.sim = Sim(journal_bytes_before_send=seed % 2 == 1)
         for name in ("n1", "n2"):
             self.sim.do("store", "list_name", name, PRICE)
         self.n = 0
@@ -80,7 +81,7 @@ class Generator:
                    "batch": 3, "send": 3, "readback": 1, "supersede": 0.6,
                    "finality": 1, "publish": 1.5, "deliver": 2, "outage": 0.8, "recover": 1,
                    "host_loss": 0.5, "resume": 3, "rebroadcast": 1, "rollback": 0.5,
-                   "deep_reorg": 0.15}
+                   "deep_reorg": 0.3, "recover_commit": 1}
         op = r.choices(list(weights), weights=list(weights.values()))[0]
         if op == "quote":
             s.try_do("store", "quote", self.uid("o"), r.choice(["n1", "n2"]),
@@ -180,7 +181,7 @@ class Generator:
             if live:
                 s.do("controller", "owner_supersede", r.choice(live).bid, self.uid("rb"))
         elif op == "finality":
-            for _ in range(r.choice([20, 150])):
+            for _ in range(r.choice([20, 150, 186])):
                 s.do("chain", "mine")
         elif op == "publish":
             for b in s.controller.batches.values():
@@ -192,6 +193,8 @@ class Generator:
                 if b.state in ("final", "mined"):
                     for m in b.members:
                         if st.orders[m].status in ("ready", "issuing"):
+                            if m not in b.published and r.random() < 0.6:
+                                s.try_do("controller", "publish", b.bid, [m])
                             s.try_do("controller", "confirm_delivery", b.bid, m)
         elif op == "outage":
             # The two journals fail together or independently.
@@ -199,6 +202,12 @@ class Generator:
                  r.choice(["both", "store", "controller"]))
         elif op == "recover":
             s.do("sim", "set_offhost", True)
+        elif op == "recover_commit":
+            # Recovery of commitments missing from every mempool: identical
+            # journaled bytes, or a paused recovery when there are none.
+            for b in list(s.controller.batches.values()):
+                if b.state in ("broadcast", "broadcast_uncertain"):
+                    s.try_do("controller", "rebroadcast_commitment", b.bid)
         elif op == "host_loss":
             s.do("sim", "host_loss")
         elif op == "resume":
@@ -269,9 +278,19 @@ def check(gen, test):
     for b in ctl.batches.values():
         if b.state in issued_states:
             for m in b.members:
-                test.assertNotIn(m, seen_members, "order in two issued batches")
+                o = st.orders[m]
+                reversed_ = o.incident is not None and "supersession_reversed" in o.incident.kinds
+                if m in seen_members:
+                    # Only after a reversed supersession, when the two
+                    # commitments can never both confirm, and then recorded.
+                    other = ctl.batches[seen_members[m]]
+                    test.assertTrue(reversed_, (m, b.bid, other.bid))
+                    test.assertTrue(chain.exclusive(ctl._build(b), ctl._build(other)),
+                                    f"{m} in {b.bid} and {other.bid}, which can both confirm")
+                    continue
                 seen_members[m] = b.bid
-                test.assertNotEqual(st.orders[m].status, "cancelled")
+                if o.status == "cancelled":
+                    test.assertTrue(reversed_, (m, b.bid))
     test.assertEqual(gen.violations, [])
     # One commitment per delegate output: no two commitment transactions known
     # to the simulated network spend the same outpoint.
@@ -290,8 +309,11 @@ def check(gen, test):
         if b.state not in ("rebuilt", "superseded") and (
                 b.intent or b.state in ("broadcast", "broadcast_uncertain", "mined", "final")):
             for m in b.members:
-                test.assertNotIn(st.orders[m].status, ("converted", "cancelled"),
-                                 (b.bid, m, b.state))
+                o = st.orders[m]
+                if o.status in ("converted", "cancelled"):
+                    # Only after a reversed supersession, and then recorded.
+                    test.assertIn("supersession_reversed", o.incident.kinds if o.incident else [],
+                                  (b.bid, m, b.state, o.status))
     # Ready means final on the current chain; delivery happens only then, and
     # only after publication.
     for o in st.orders.values():
@@ -299,6 +321,8 @@ def check(gen, test):
                   and b.state in issued_states), None)
         if o.status == "ready":
             test.assertEqual(b.state, "final", o.oid)
+            # Ready needs both gates: d >= 150 and anchor coverage.
+            test.assertEqual(ctl.certificate_status(o.oid), "verified", o.oid)
         if o.status == "fulfilled" and gen.statuses.get(o.oid) != "fulfilled":
             pos = chain.position(b.txid)
             test.assertTrue(pos is not None and chain.tip - pos[0] >= FINAL_D,
@@ -388,9 +412,10 @@ class Generated(unittest.TestCase):
             for _ in range(STEPS):
                 gen.step()
             journal = gen.sim.journal
-            self.assertEqual(Sim.replay(journal).obligations(), gen.sim.obligations())
+            config = gen.sim.config
+            self.assertEqual(Sim.replay(journal, **config).obligations(), gen.sim.obligations())
             cut = random.Random(seed + 1000).randrange(len(journal) + 1)
-            resumed = Sim.replay(journal[:cut])
+            resumed = Sim.replay(journal[:cut], **config)
             for target, method, args, kwargs in journal[cut:]:
                 resumed.try_do(target, method, *args, **kwargs)
             self.assertEqual(resumed.obligations(), gen.sim.obligations())
@@ -432,6 +457,13 @@ class Scripted:
         for _ in range(n):
             self.do("chain", "mine")
 
+    def final(self):
+        """d >= 150, then on until a root anchor covers the commitment."""
+        self.blocks(151)
+        ctl = self.sim.controller
+        while any(ctl._certificates(b) == "awaiting_anchor" for b in ctl.batches.values()):
+            self.do("chain", "mine", [])
+
     def remove(self, txid):
         depth = self.sim.chain.conf(txid)
         self.do("chain", "reorg", depth, [[] for _ in range(depth + 1)])
@@ -454,7 +486,7 @@ class ScriptedScenarios(unittest.TestCase):
                 sc.do("sim", "set_offhost", True)
                 sc.do("controller", "resume", bid)
                 sc.do("controller", "resume", bid, refused=True)
-                sc.blocks(151)
+                sc.final()
                 sc.do("controller", "publish", bid, ["o1"])
                 sc.do("controller", "confirm_delivery", bid, "o1")
                 self.assertEqual(sc.sim.store.orders["o1"].status, "fulfilled")
@@ -502,7 +534,7 @@ class ScriptedScenarios(unittest.TestCase):
                 bid = sc.prepared()
                 sc.do("controller", "check_and_issue", bid)
                 sc.do("sim", "set_offhost", False, "controller")
-                sc.blocks(151)
+                sc.final()
                 if delivered:
                     sc.do("controller", "publish", bid, ["o1"])
                     sc.do("controller", "confirm_delivery", bid, "o1")

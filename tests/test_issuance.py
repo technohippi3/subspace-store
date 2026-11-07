@@ -1,8 +1,9 @@
-"""Named cases X1 to X9, B1 to B7, J1 to J10, L1 to L5 and N12 (fixed-price
+"""Named cases X1 to X10, B1 to B7, J1 to J10, L1 to L8 and N12 (fixed-price
 issuance).
 
 B6, B7, J3 to J10 and L1 to L5 are regressions from the model review of
-2026-11-07: each replays a sequence the earlier model got wrong.
+2026-11-07: each replays a sequence the earlier model got wrong. L6 to L8
+come from the first regtest findings (R10, R11) and are still model cases.
 
 Model only: `subs` is reduced to single steps and a commitment is a simulated
 transaction spending the delegate output.
@@ -11,14 +12,14 @@ transaction spending the delegate output.
 import unittest
 
 from model.store import Refused
-from tests.helpers import (FEE, PRICE, converted_order, mine, mine_empty,
-                           new_sim, refund_due_order, refund_tx)
+from tests.helpers import (FEE, PRICE, converted_order, cover, lose_finality, mine,
+                           mine_empty, new_sim, refund_due_order, refund_tx)
 
 NAMES = ("n1", "n2", "n3", "n4")
 
 
-def setup(paid=PRICE, orders=1, depth=10):
-    sim = new_sim(names=NAMES)
+def setup(paid=PRICE, orders=1, depth=10, **config):
+    sim = new_sim(names=NAMES, **config)
     for i in range(orders):
         converted_order(sim, oid=f"o{i + 1}", name=NAMES[i], paid=paid, depth=depth)
     return sim
@@ -37,8 +38,10 @@ def issue(sim, bid, outcome="ok"):
 
 
 def finalize(sim):
+    """Mine the commitment to d >= 150, then on until an anchor covers it."""
     mine(sim)
     mine_empty(sim, 150)
+    cover(sim)
 
 
 class CancellationAgainstIssuance(unittest.TestCase):
@@ -136,6 +139,49 @@ class CancellationAgainstIssuance(unittest.TestCase):
         self.assertEqual(sim.store.orders["o1"].status, "fulfilled")
         with self.assertRaises(Refused):
             sim.do("store", "cancel", "o1")
+
+    def test_X10_reversed_supersession_locks_members_again(self):
+        # Found by a 300-seed generated run (seed 5): a supersession settled at
+        # 6 conf, then a deeper reorg removed it.
+        def superseded(cancel):
+            sim = setup()
+            bid = prepare(sim)
+            issue(sim, bid)
+            sim.do("controller", "owner_supersede", bid, "rollback-1")
+            sim.do("chain", "mine", ["rollback-1"])
+            mine_empty(sim, 5)
+            self.assertEqual(sim.controller.batches[bid].state, "superseded")
+            if cancel:
+                sim.do("store", "cancel", "o1")
+            return sim, bid
+
+        def undo(sim):
+            depth = sim.chain.conf("rollback-1")
+            sim.do("chain", "reorg", depth, [[] for _ in range(depth + 1)])
+            sim.do("chain", "drop", "rollback-1")
+
+        # A paid member is locked again, and nothing else may spend the
+        # delegate output while the old commitment can still confirm.
+        sim, bid = superseded(cancel=False)
+        nb = prepare(sim)
+        undo(sim)
+        self.assertEqual(sim.controller.batches[bid].state, "broadcast")
+        self.assertIn(("supersession_reversed", bid), sim.controller.alerts)
+        self.assertEqual(sim.store.orders["o1"].status, "issuing")
+        with self.assertRaises(Refused):
+            sim.do("store", "cancel", "o1")
+        with self.assertRaises(Refused):
+            issue(sim, nb)
+        self.assertFalse(sim.chain.in_mempool(f"commit-{nb}"))
+        sim.do("controller", "rebroadcast_commitment", bid)
+        finalize(sim)
+        self.assertEqual(sim.store.orders["o1"].status, "ready")
+        # A member already cancelled keeps its status, with an incident.
+        sim, bid = superseded(cancel=True)
+        undo(sim)
+        o1 = sim.store.orders["o1"]
+        self.assertEqual(o1.status, "cancelled")
+        self.assertEqual(o1.incident.kinds, ["supersession_reversed"])
 
     def test_X9_excess_refund_while_issuing(self):
         sim = setup(paid=13_000)
@@ -465,7 +511,7 @@ class FinalityPublicationDelivery(unittest.TestCase):
     def test_L1_lost_finality_reverts_ready_and_blocks_delivery(self):
         # Below d >= 150, still mined.
         sim, bid = self._final()
-        sim.do("chain", "reorg", 5, [])
+        lose_finality(sim, f"commit-{bid}")
         self.assertEqual(sim.controller.batches[bid].state, "mined")
         self.assertIn(("finality_lost", bid), sim.controller.alerts)
         self.assertEqual(sim.store.orders["o1"].status, "issuing")
@@ -484,9 +530,9 @@ class FinalityPublicationDelivery(unittest.TestCase):
 
     def test_L2_regained_finality_resumes_publication(self):
         sim, bid = self._final()
-        sim.do("chain", "reorg", 5, [])
+        removed = lose_finality(sim, f"commit-{bid}")
         self.assertEqual(sim.store.orders["o1"].status, "issuing")
-        mine_empty(sim, 5)
+        mine_empty(sim, removed)
         self.assertEqual(sim.controller.batches[bid].state, "final")
         self.assertEqual(sim.store.orders["o1"].status, "ready")
         self.assertEqual(sim.do("controller", "publish", bid, ["o1"]), 1)
@@ -532,7 +578,7 @@ class FinalityPublicationDelivery(unittest.TestCase):
         sim.do("controller", "confirm_delivery", bid, "o1")
         self.assertTrue(sim.controller.certificate_current("o1"))
         self.assertIsNone(sim.store.orders["o1"].incident)
-        sim.do("chain", "reorg", 5, [])
+        removed = lose_finality(sim, f"commit-{bid}")
         o1 = sim.store.orders["o1"]
         self.assertFalse(sim.controller.certificate_current("o1"))
         self.assertEqual(o1.incident.kinds, ["finality_lost"])
@@ -542,7 +588,7 @@ class FinalityPublicationDelivery(unittest.TestCase):
         self.assertEqual(o1.incident.kinds, ["finality_lost"])
         # Regaining finality makes the certificate current, but only the
         # operator closes the incident.
-        mine_empty(sim, 5)
+        mine_empty(sim, removed)
         self.assertTrue(sim.controller.certificate_current("o1"))
         self.assertIsNone(o1.incident.resolution)
         with self.assertRaises(Refused):
@@ -554,6 +600,88 @@ class FinalityPublicationDelivery(unittest.TestCase):
         self.assertEqual(o1.status, "fulfilled")
         with self.assertRaises(Refused):
             sim.do("store", "resolve_incident", "o1", "again")
+
+    def test_L6_ready_waits_for_anchor_coverage(self):
+        # Regtest R11: at d = 150 the newest root anchor can trail by up to 35
+        # blocks, and the certificate then verifies as pending.
+        sim = setup()
+        bid = prepare(sim)
+        while (sim.chain.tip + 1 + 150) % 36 != 12:
+            mine_empty(sim)
+        issue(sim, bid)
+        mine(sim)
+        mine_empty(sim, 150)
+        ctl = sim.controller
+        h = sim.chain.position(f"commit-{bid}")[0]
+        self.assertEqual(ctl.batches[bid].state, "final")
+        self.assertEqual(ctl.newest_anchor() - h, 138)
+        self.assertEqual(ctl.certificate_status("o1"), "awaiting_anchor")
+        self.assertEqual(sim.store.orders["o1"].status, "issuing")
+        self._refused_until_final(sim, bid)
+        # Waiting, not a failed verification: nothing is paused.
+        self.assertIsNone(ctl.paused_at)
+        self.assertFalse(any(a[0] in ("rebuilds", "recovery_paused") for a in ctl.alerts))
+        mine_empty(sim, 23)
+        self.assertEqual(ctl.certificate_status("o1"), "awaiting_anchor")
+        mine_empty(sim, 1)
+        self.assertEqual(ctl.newest_anchor() - h, 174)
+        self.assertEqual(ctl.certificate_status("o1"), "verified")
+        self.assertEqual(sim.store.orders["o1"].status, "ready")
+        self.assertEqual(sim.do("controller", "publish", bid, ["o1"]), 1)
+
+    def test_L7_lost_commitment_returns_from_journaled_bytes(self):
+        # Regtest R10: after a deep reorg the commitment was in no mempool.
+        sim, bid = self._final()
+        txid = f"commit-{bid}"
+        raw = sim.controller.offhost["batches"][bid].raw
+        self.assertEqual(raw, sim.chain.txs[txid])
+        depth = sim.chain.conf(txid)
+        sim.do("chain", "reorg", depth, [[] for _ in range(depth + 1)])
+        sim.do("chain", "drop", txid)
+        self.assertFalse(sim.chain.in_mempool(txid))
+        self.assertEqual(sim.controller.batches[bid].state, "broadcast")
+        with self.assertRaises(Refused):
+            sim.do("controller", "retry_broadcast", bid)
+        sim.do("controller", "rebroadcast_commitment", bid)
+        self.assertTrue(sim.chain.in_mempool(txid))
+        self.assertEqual(sim.chain.txs[txid], raw)
+        self.assertEqual([t for t in sim.chain.txs if t.startswith("commit-")], [txid])
+        with self.assertRaises(Refused):
+            sim.do("controller", "rebroadcast_commitment", bid)
+        finalize(sim)
+        self.assertEqual(sim.controller.batches[bid].state, "final")
+        self.assertEqual(sim.store.orders["o1"].status, "ready")
+
+    def test_L8_without_journaled_bytes_recovery_pauses(self):
+        # Answer lost, then evicted before any readback saw it: no bytes.
+        sim = setup()
+        bid = prepare(sim)
+        issue(sim, bid, outcome="lost")
+        sim.do("chain", "drop", f"commit-{bid}")
+        self.assertFalse(sim.do("controller", "readback", bid))
+        with self.assertRaises(Refused):
+            sim.do("controller", "rebroadcast_commitment", bid)
+        b = sim.controller.batches[bid]
+        self.assertTrue(b.recovery_paused)
+        self.assertIn(("recovery_paused", bid), sim.controller.alerts)
+        self.assertTrue(sim.controller.offhost["batches"][bid].recovery_paused)
+        for call in (("controller", "retry_broadcast", bid),
+                     ("store", "cancel", "o1"),
+                     ("controller", "freeze")):
+            with self.assertRaises(Refused):
+                sim.do(*call)
+        self.assertEqual(sim.store.orders["o1"].status, "issuing")
+        self.assertFalse(sim.chain.in_mempool(f"commit-{bid}"))
+        # With the prepare/send split (U1(c)) the bytes are journaled before
+        # the send, and the same failure is recoverable without the owner.
+        sim = setup(journal_bytes_before_send=True)
+        bid = prepare(sim)
+        issue(sim, bid, outcome="unsent")
+        self.assertIsNotNone(sim.controller.offhost["batches"][bid].raw)
+        sim.do("controller", "rebroadcast_commitment", bid)
+        self.assertTrue(sim.do("controller", "readback", bid))
+        finalize(sim)
+        self.assertEqual(sim.store.orders["o1"].status, "ready")
 
 
 class ControllerRestore(unittest.TestCase):

@@ -1,4 +1,4 @@
-# Subspace store payment specification (draft 9, 2026-11-07)
+# Subspace store payment specification (draft 10, 2026-11-07)
 
 MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
 auction section, its cases D1 to D35, case N6, and the auction evidence
@@ -28,7 +28,11 @@ acknowledged off-host, every sending path checks its journal entry
 immediately before the call, a batch resumed before its first transmission
 repeats the binding check, one commitment per space is in flight, and a
 commitment that loses finality is tracked, with a recovery incident for a
-member already fulfilled (B6, B7, J3 to J10, L1 to L5).
+member already fulfilled (B6, B7, J3 to J10, L1 to L5). Draft 10 applies
+the first regtest findings, R10 and R11 of the regtest harness: a member is
+ready only once its certificate verifies as sovereign, which can trail
+`d >= 150`, and a commitment that lost finality returns to the chain only
+from its journaled signed bytes (L6 to L8), and a supersession that a deeper reorg undoes is tracked (X10).
 
 ## Terms, depth arithmetic and thresholds
 
@@ -80,6 +84,16 @@ to the buyer. It is fulfilled only after its publication to the relay
 network is confirmed for its handle individually (see the controller
 design).
 
+Readiness has two gates. The commitment is at `d >= 150` on the current
+chain, and the member's certificate verifies as sovereign. The verifier
+judges sovereignty from the newest root anchor, which `spaced` computes
+every 36 blocks, and needs that anchor 144 blocks past the commitment. So it
+can report a certificate as pending for up to 35 blocks after `d >= 150`.
+Pending at `d >= 150` is waiting for anchor coverage, not a failed
+verification. The member stays `issuing`, nothing is paused, and it is
+verified again once an anchor covers the commitment (L6). Publication and
+delivery need both gates.
+
 Finality can be lost. If a reorg later takes a final commitment below
 `d >= 150`, or off the best chain, the batch returns to `mined` or
 `broadcast` and the owner is alerted. Its ready members return to `issuing`
@@ -87,6 +101,15 @@ and stay non-cancellable, as for any commitment that loses depth.
 Publication and delivery wait until the commitment is at `d >= 150` on the
 current chain again, and each is checked against the live chain immediately
 before it happens.
+
+A commitment taken off the best chain may not come back into any mempool
+(regtest R10). The controller then rebroadcasts its identical signed bytes
+from the journal, after the same journal check as the first broadcast. It
+never repeats the wallet's build-and-send, which could build a different
+transaction. If no signed bytes were journaled, recovery pauses and the
+owner is alerted. Only the same bytes found elsewhere, such as in a peer's
+mempool, or the owner's safe supersession resolve it, and the members stay
+non-cancellable meanwhile (L7, L8).
 
 A member already fulfilled stays fulfilled, because that status records a
 delivery that happened. It doesn't say the certificate is still valid. The
@@ -575,6 +598,15 @@ or time passing are not supersession. A rollback or replacement is an
 on-chain action, and the controller never takes one by itself; it needs the
 owner's explicit decision.
 
+Safe supersession rests on settled depth, so a deeper reorg can undo it. If
+the superseding spend leaves the best chain, the batch is live again,
+because its own commitment can confirm. It returns to `broadcast`, the owner
+is alerted, and its members that are still paid are marked `issuing` again.
+A member already cancelled, refunded or in another live batch keeps its
+status and gets a recovery incident. No commitment is issued from a delegate
+output that an earlier attempted commitment also spends, unless that one is
+safely superseded (X10).
+
 ## Refunds
 
 A refund goes to an address the buyer supplies through the order link, never
@@ -777,6 +809,7 @@ Cancellation against issuance:
 | X7 | a conflicting spend of the delegate output settles and `spaced` shows no commitment with the root | cancellation requested | allowed; order back to paid first |
 | X8 | order fulfilled | cancellation requested | refused |
 | X9 | order `issuing` with excess | excess refund requested | allowed; price reserve stays |
+| X10 | X7 done, the member paid again, or cancelled | a reorg deeper than settled depth removes the superseding spend | batch `broadcast` again; owner alerted; a paid member `issuing` again and a new batch refused for that delegate output; a cancelled member keeps its status with a recovery incident |
 
 Refund obligation groups:
 
@@ -848,6 +881,9 @@ Finality, publication and delivery (with `CONTROLLER-DESIGN.md`):
 | L3 | batch final, a member not yet published | its delivery is confirmed | refused until its handle is published |
 | L4 | member fulfilled; a reorg then takes the commitment off the chain | the owner's supersession settles | batch superseded; member stays fulfilled; nothing unissued or refunded; the order's recovery incident is open and the owner alerted |
 | L5 | L4 | the certificate is queried, then the operator resolves | not current while the batch isn't final; the incident stays open until a resolution is recorded, and resolving changes no status, refund or reservation |
+| L6 | batch final at `d >= 150`, newest root anchor 138 blocks past the commitment | certificate verified | pending: member stays `issuing`, waiting for anchor coverage; nothing paused; publish and delivery refused; ready once an anchor is 144 past the commitment |
+| L7 | final commitment, its signed bytes journaled; a reorg takes it off the chain and it is in no mempool | recovery | identical bytes rebroadcast after the journal check; never `/broadcast`; final and ready again once mined to `d >= 150` and covered |
+| L8 | broadcast answer lost and the transaction evicted before any readback, so no bytes were journaled | recovery | refused; recovery paused and owner alerted; members `issuing` and non-cancellable; with U1(c), bytes journaled before the send make the same case recoverable |
 
 Eligibility cases (altered name, altered recipient, wrong scope, replay, and
 a quota race between two orders with the same nullifier) are listed under

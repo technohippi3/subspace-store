@@ -3,8 +3,9 @@
 Status: the reference model exists in `model/` and its named cases run in
 `tests/`, in this public repository under the Apache 2.0 licence. No store,
 registry or integration code exists yet. This file defines the states,
-events, checks and case mapping of an executable reference model of `PAYMENT-SPEC.md` (draft
-9) and of the controller's journal rules in `CONTROLLER-DESIGN.md` (draft 5).
+events, checks and case mapping of an executable reference model of
+`PAYMENT-SPEC.md` (draft 10) and of the controller's journal rules in
+`CONTROLLER-DESIGN.md` (draft 6).
 
 A model result shows that the rules hold in a simulation. It is not evidence
 that real Bitcoin transactions, the upstream software, or buyers behave that
@@ -111,6 +112,9 @@ Run after every event:
 - a final batch is at `d >= 150` on the current chain, every member of a
   batch that may have escaped is non-cancellable, and every delivery
   happens at `d >= 150` on the current chain after its handle is published;
+- a member is ready only while its batch is final and a root anchor covers
+  the commitment, and a commitment is rebroadcast only from its identical
+  journaled bytes;
 - no `/broadcast` or `/rollback-local` effect follows an uncertain broadcast
   for the same commitment;
 - before conversion, the provisional winner is the earliest qualifying
@@ -189,10 +193,10 @@ identifier as the test name.
 | G1 to G11 | obligation groups | yes |
 | R1 to R16 | refund reconciliation | yes, with simulated transactions |
 | D1 to D35 | Dutch auction | yes |
-| X1 to X9 | cancellation against issuance | yes |
+| X1 to X10 | cancellation against issuance and reversed supersession | yes |
 | B1 to B7 | batch entry, binding check and one commitment per space | yes, against a simulated `subs` |
 | J1 to J10 | restore against reservations and both journals | yes, with simulated host loss and independent journal outages |
-| L1 to L5 | finality, publication, delivery and recovery incidents | yes, with reorgs across `d >= 150` |
+| L1 to L8 | finality, anchor coverage, publication, delivery, recovery incidents and commitment rebroadcast | yes, with reorgs across `d >= 150` and simulated root anchors |
 | E1 to E4 | evidence and disclosure | yes, with a real signature library for receipts |
 | eligibility (README) | proof binding and quotas | yes, with a stubbed verifier; local ZKPassport verification is an integration test |
 

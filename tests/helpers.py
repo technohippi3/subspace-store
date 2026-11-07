@@ -7,8 +7,8 @@ PRICE = 10_000
 FEE = 300
 
 
-def new_sim(price=PRICE, names=("n1",)):
-    sim = Sim()
+def new_sim(price=PRICE, names=("n1",), **config):
+    sim = Sim(**config)
     for name in names:
         sim.do("store", "list_name", name, price)
     return sim
@@ -59,3 +59,23 @@ def refund_due_order(sim, oid="o1", paid=PRICE, settle_depth=10):
     mine_empty(sim, settle_depth - 1)
     assert store.orders[oid].status == "refund_due", store.orders[oid].status
     return store.orders[oid]
+
+
+def cover(sim, limit=36):
+    """Mine until a root anchor covers every final commitment, so its
+    certificates verify as sovereign. The tip-based d >= 150 alone isn't
+    enough (L6)."""
+    ctl = sim.controller
+    for _ in range(limit + 1):
+        if not any(ctl._certificates(b) == "awaiting_anchor" for b in ctl.batches.values()):
+            return
+        mine_empty(sim)
+    raise AssertionError("no anchor covered the commitment")
+
+
+def lose_finality(sim, txid):
+    """A reorg that leaves the commitment mined but at d = 149. Returns the
+    number of blocks removed, which mining again restores."""
+    depth = sim.chain.conf(txid) - 150
+    sim.do("chain", "reorg", depth, [])
+    return depth

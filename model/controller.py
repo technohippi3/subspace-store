@@ -30,6 +30,10 @@ from .chain import Tx
 from .store import SETTLED, Refused
 
 FINAL_D = 150  # tip - mined_height, subs' operational finality
+# Certificate sovereignty, as libveritas judges it: the newest root anchor,
+# which spaced computes every 36 blocks, must be 144 past the commitment.
+ANCHOR_INTERVAL = 36
+SOVEREIGN_D = 144
 MAX_REBUILDS = 3
 MAX_CHUNK = 100
 GENESIS_DELEGATE = ("delegate-genesis", 0)
@@ -54,6 +58,11 @@ class Batch:
     # Set immediately before the broadcast call. Local knowledge only: after a
     # host loss it can't be trusted, and a journaled intent is uncertain.
     attempted: bool = False
+    # The signed commitment transaction, once the controller has it: journaled
+    # before the send with a prepare/send split (U1(c)), otherwise captured
+    # from the node or the wallet as soon as the transaction is seen.
+    raw: object = None
+    recovery_paused: bool = False
     supersedes: object = None
     published: set = field(default_factory=set)
     delivered: set = field(default_factory=set)
@@ -62,7 +71,8 @@ class Batch:
 class Controller:
     DURABLE = ("batches", "delegate", "rebuilds_in_a_row", "paused_at", "alerts", "n")
 
-    def __init__(self, chain, store):
+    def __init__(self, chain, store, journal_bytes_before_send=False):
+        self.journal_bytes_before_send = journal_bytes_before_send
         self.chain = chain
         self.store = store
         self.batches = {}
@@ -186,6 +196,36 @@ class Controller:
         pos = self.chain.position(b.txid) if b.txid else None
         return pos is not None and self.chain.tip - pos[0] >= FINAL_D
 
+    def newest_anchor(self):
+        return self.chain.tip // ANCHOR_INTERVAL * ANCHOR_INTERVAL
+
+    def _anchor_covers(self, b):
+        pos = self.chain.position(b.txid) if b.txid else None
+        return pos is not None and self.newest_anchor() - pos[0] >= SOVEREIGN_D
+
+    def _certificates(self, b):
+        """"verified": final at d >= 150 and an anchor covers the commitment.
+        "awaiting_anchor": final, but the verifier would still say pending.
+        That is waiting, not a failed verification. "not_final" otherwise."""
+        if b.state != "final" or not self._live_final(b):
+            return "not_final"
+        return "verified" if self._anchor_covers(b) else "awaiting_anchor"
+
+    def certificate_status(self, oid):
+        for b in self.batches.values():
+            if oid in b.members and b.state in LIVE:
+                return self._certificates(b)
+        return "not_final"
+
+    def _build(self, b):
+        return Tx(f"commit-{b.bid}", (b.delegate_in,),
+                  (("delegate", 0), (f"op_return:{b.root}", 0)))
+
+    def _capture_bytes(self, b):
+        if b.raw is None and b.txid and (self.chain.position(b.txid) is not None
+                                         or self.chain.in_mempool(b.txid)):
+            b.raw = self.chain.txs[b.txid]
+
     def _commitment_seen(self, b):
         """A transaction carrying the batch's root that spends its delegate
         output, mined or in the mempool."""
@@ -199,7 +239,15 @@ class Controller:
         return None
 
     def _other_active(self, b):
-        return any(o is not b and o.state not in PREPARING for o in self._open())
+        """Another batch is past preparation, or an earlier commitment that was
+        attempted spends the delegate output this one would spend. Unless that
+        commitment is safely superseded, the output would already be spent by
+        the superseding transaction, so it could still confirm."""
+        if any(o is not b and o.state not in PREPARING for o in self._open()):
+            return True
+        live = self._live_delegate()
+        return any(o is not b and o.attempted and o.delegate_in == live
+                   for o in self.batches.values())
 
     # Cycle
 
@@ -279,6 +327,8 @@ class Controller:
         b.delegate_in = self._live_delegate()
         b.state = "issuing"
         b.intent = True
+        if self.journal_bytes_before_send:
+            b.raw = self._build(b)
         self._journal_issuance(b)
         self._broadcast(b, outcome)
         return bid
@@ -305,6 +355,7 @@ class Controller:
             return self._rebuild_unsent(b, failing)
         b.delegate_in = self._live_delegate()
         b.intent = True
+        b.raw = self._build(b) if self.journal_bytes_before_send else None
         self._journal_issuance(b)
         self._broadcast(b, outcome)
         return bid
@@ -325,13 +376,13 @@ class Controller:
         if not self._issuance_acknowledged(b):
             raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
         b.attempted = True
-        tx = Tx(f"commit-{b.bid}", (b.delegate_in,),
-                (("delegate", 0), (f"op_return:{b.root}", 0)))
+        tx = b.raw if b.raw is not None else self._build(b)
         if outcome in ("ok", "lost"):
             self.chain.add(tx)
         if outcome == "ok":
             b.txid = tx.txid
             b.state = "broadcast"
+            self._capture_bytes(b)
         else:
             b.state = "broadcast_uncertain"
         self.ack_journal()
@@ -355,7 +406,31 @@ class Controller:
         return nb
 
     def retry_broadcast(self, bid):
+        """The wallet's build-and-send, again. Never: it could build a different
+        transaction for a commitment that may already exist."""
         raise Refused("never repeat a broadcast whose outcome is unknown")
+
+    def rebroadcast_commitment(self, bid):
+        """Send the identical journaled bytes of a commitment that is in no
+        mempool and not on the best chain, as after a deep reorg or an
+        eviction. Without journaled bytes the recovery pauses for the owner."""
+        b = self.batches[bid]
+        if b.state not in ("broadcast", "broadcast_uncertain"):
+            raise Refused("nothing to recover")
+        if self._commitment_seen(b):
+            raise Refused("the commitment is still on the chain or in the mempool")
+        acked = (self.offhost or {}).get("batches", {}).get(bid)
+        if b.raw is None or acked is None or acked.raw != b.raw:
+            if not b.recovery_paused:
+                b.recovery_paused = True
+                self.alerts.append(("recovery_paused", bid))
+                self.ack_journal()
+            raise Refused("no journaled commitment bytes: recovery paused for the owner")
+        if not self._issuance_acknowledged(b):
+            raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
+        self.chain.add(b.raw)
+        b.recovery_paused = False
+        self.ack_journal()
 
     def rollback_local(self, bid):
         """`/rollback-local`, only before `issuing` and only while nothing
@@ -379,6 +454,7 @@ class Controller:
             return False
         b.txid = txid
         b.state = "broadcast"
+        self._capture_bytes(b)
         self.ack_journal()
         return True
 
@@ -407,6 +483,8 @@ class Controller:
             if b.state == "final":
                 self._mark_ready(b)
                 continue
+            if b.state == "superseded" and not self._superseded(b):
+                self._supersession_reversed(b)
             if b.state not in WATCHED:
                 continue
             if self._superseded(b):
@@ -426,6 +504,9 @@ class Controller:
                         self.alerts.append(("fulfilled_superseded", m))
                         self.store.open_incident(m, "superseded", b.bid)
                 continue
+            self._capture_bytes(b)
+            if b.recovery_paused and self._commitment_seen(b):
+                b.recovery_paused = False
             if b.txid and self.chain.position(b.txid):
                 b.state = "mined"
                 if self._live_final(b):
@@ -447,9 +528,33 @@ class Controller:
         self.ack_journal()
 
     def _mark_ready(self, b):
+        """Two gates: final at d >= 150, and a certificate that verifies as
+        sovereign, which needs a root anchor 144 past the commitment."""
+        covered = self._anchor_covers(b)
         for m in b.members:
-            if self.store.orders[m].status == "issuing":
+            status = self.store.orders[m].status
+            if covered and status == "issuing":
                 self.store.mark_ready(m)
+            elif not covered and status == "ready":
+                self.store.unready(m)
+            elif not covered and status == "fulfilled":
+                self.store.open_incident(m, "certificate_pending", b.bid)
+
+    def _supersession_reversed(self, b):
+        """A reorg deeper than settled depth removed the superseding spend, so
+        the batch's own commitment can confirm again. Its members were paid
+        again: lock the ones still paid, and open an incident for any already
+        cancelled, refunded or delivered elsewhere."""
+        b.state = "broadcast" if b.txid else "broadcast_uncertain"
+        self.alerts.append(("supersession_reversed", b.bid))
+        for m in b.members:
+            o = self.store.orders[m]
+            elsewhere = any(x is not b and m in x.members and x.state in LIVE
+                            for x in self.batches.values())
+            if o.status == "converted" and not elsewhere:
+                self.store.restore_issuing(m)
+            else:
+                self.store.open_incident(m, "supersession_reversed", b.bid)
 
     def _superseded(self, b):
         spender = self.chain.spender(b.delegate_in)
@@ -461,19 +566,19 @@ class Controller:
         return not any(spk == f"op_return:{b.root}" for spk, _ in tx.outputs)
 
     def certificate_current(self, oid):
-        """True only while the order's batch is final on the current chain.
-        Fulfilled alone records a past delivery, not a valid certificate."""
-        return any(oid in b.members and b.state == "final" and self._live_final(b)
-                   for b in self.batches.values())
+        """True only while the order's certificate verifies on the current
+        chain. Fulfilled alone records a past delivery, not a valid one."""
+        return self.certificate_status(oid) == "verified"
 
     # Publication
 
     def publish(self, bid, handles):
         """One `/publish` call. Immediately before it, the live chain must
-        carry the batch's commitment at d >= 150."""
+        carry the batch's commitment at d >= 150, and its certificates must
+        verify, which needs an anchor that covers it."""
         b = self.batches[bid]
-        if b.state != "final" or not self._live_final(b):
-            raise Refused("not final on the current chain")
+        if self._certificates(b) != "verified":
+            raise Refused("certificates not verified on the current chain")
         if not handles:
             return 0  # an empty list would mean "all unpublished" upstream
         if len(handles) > MAX_CHUNK:
@@ -484,8 +589,8 @@ class Controller:
 
     def confirm_delivery(self, bid, oid):
         b = self.batches[bid]
-        if b.state != "final" or not self._live_final(b):
-            raise Refused("not final on the current chain")
+        if self._certificates(b) != "verified":
+            raise Refused("certificates not verified on the current chain")
         if oid not in b.members:
             raise Refused("not a member")
         if oid not in b.published:

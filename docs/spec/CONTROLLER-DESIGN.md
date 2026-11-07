@@ -1,4 +1,4 @@
-# Subspace store issuance controller design (draft 5, 2026-11-07)
+# Subspace store issuance controller design (draft 6, 2026-11-07)
 
 Status: draft design. Nothing is built. Payment, reservation, cancellation
 and refund rules are in `PAYMENT-SPEC.md`, including the depth arithmetic
@@ -10,7 +10,9 @@ the `subs` publishing behaviour, read the same day. Draft 4 makes
 publication complete per handle and corrects the reading of the 144-block
 rule. Draft 5 applies the model review of 2026-11-07: both journals before a
 broadcast, the check at the moment of every send, one commitment per space,
-and lost finality.
+and lost finality. Draft 6 applies the first regtest findings (R10, R11):
+readiness waits for root-anchor coverage, and a commitment's signed bytes are
+journaled so it can be rebroadcast after a deep reorg.
 
 ## Pinned upstream versions
 
@@ -151,11 +153,13 @@ pass):
   restore needs when the snapshot predates the broadcast;
 - (c) preferably, a split into "prepare" (build and sign, store the raw
   transaction and `txid`) and "send", so the exact bytes can be journaled
-  before anything escapes.
+  before anything escapes. That also makes a commitment that was never seen
+  after its send, or was evicted, recoverable from its own bytes (L8).
 
 Until U1 exists, the controller wraps `/broadcast` in an adapter with one
 rule: a `/broadcast` call without a recorded answer is an uncertain broadcast.
-For that commitment the controller never calls `/broadcast` or
+Rebroadcasting the identical journaled bytes is not a `/broadcast` call and
+stays allowed. For that commitment the controller never calls `/broadcast` or
 `/rollback-local` again. It reads back the evidence below, pauses the space
 and alerts the owner. Resolving it means either adopting the `txid` (which
 needs U1(b), or a repair the owner authorizes) or safe supersession (see
@@ -281,14 +285,20 @@ back after it, and never repeat an effect whose outcome is unknown.
    intent is journaled again, and the send goes ahead as above.
 9. Record. A returned `txid` is journaled and the batch becomes `broadcast`.
    No answer makes it `broadcast_uncertain`, which follows the adapter rule
-   above.
+   above. The signed transaction is read by its `txid` from the controller's
+   node, or from the operator wallet, and journaled as soon as it is seen.
+   With U1(c) it is journaled before the send.
 10. Watch until `d >= 150`. Use `/commit/status` together with the
     controller's own lookup of the `txid` and the root, because `confirmed`
     there doesn't check the `txid`. A commitment that loses depth stays
     non-cancellable unless it is safely superseded. A final commitment that
     falls below `d >= 150`, or off the best chain, loses finality: the batch
     returns to `mined` or `broadcast`, its ready members return to
-    `issuing`, publication and delivery wait, and the owner is alerted.
+    `issuing`, publication and delivery wait, and the owner is alerted. A
+    commitment in no mempool and off the best chain is rebroadcast from its
+    journaled signed bytes, after the journal check of step 8. That is never
+    a `/broadcast` call. Without journaled bytes, recovery pauses and alerts
+    the owner.
 11. Final. Call `/registry/notify` and verify each member's certificate. A
     verified member becomes "ready", and its certificate is shown to the
     buyer. Then publish through the procedure above. A member becomes
@@ -381,6 +391,18 @@ For each member of a batch at `d >= 150`, fetch the certificate from `subs`
 - it names the expected handle and the order's `script_pubkey`;
 - it proves inclusion in the batch's root and absence from earlier roots;
 - that root is the one in the mined transaction recorded for the batch.
+
+A member's certificate must also verify as sovereign. libveritas judges
+that from the newest root anchor it is given, and `spaced` computes one every
+36 blocks, so a certificate can verify as pending for up to 35 blocks after
+`d >= 150` (regtest R11). Pending is waiting for anchor coverage. The member
+stays `issuing`, nothing is paused, and verification runs again once an
+anchor is 144 blocks past the commitment. Only then is the member "ready".
+
+The committed root is checked on the space's zone of the verified message,
+together with its height, against the batch's root and mined height. The
+handle's zone carries the `script_pubkey` and sovereignty, not the root
+(regtest R9).
 
 A relay's `/peek` output is never evidence. A failed verification pauses the
 space and alerts the owner.

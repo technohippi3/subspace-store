@@ -283,10 +283,11 @@ class Store:
         self.observe()
 
     def open_incident(self, oid, kind, bid):
-        """Open or extend the recovery incident for a fulfilled order whose
-        commitment lost finality or was superseded. The status stays
-        fulfilled: it records the delivery, not a currently valid
-        certificate."""
+        """Open or extend an order's recovery incident: a fulfilled order whose
+        commitment lost finality or was superseded, or a member released by a
+        supersession that a deeper reorg then undid. The status stays as it
+        is. For a fulfilled order it records the delivery, not a currently
+        valid certificate."""
         o = self.orders[oid]
         if o.incident is None or o.incident.resolution is not None:
             o.incident = Incident(bid)

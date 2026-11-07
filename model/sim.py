@@ -11,10 +11,13 @@ from .store import Refused, Store
 
 
 class Sim:
-    def __init__(self):
+    def __init__(self, journal_bytes_before_send=False):
+        """journal_bytes_before_send models the prepare/send split asked of
+        `subs` (U1(c)): the signed commitment is journaled before the send."""
+        self.config = {"journal_bytes_before_send": journal_bytes_before_send}
         self.chain = Chain()
         self.store = Store(self.chain)
-        self.controller = Controller(self.chain, self.store)
+        self.controller = Controller(self.chain, self.store, journal_bytes_before_send)
         self.journal = []
 
     def do(self, target, method, *args, **kwargs):
@@ -54,8 +57,8 @@ class Sim:
             return False
 
     @classmethod
-    def replay(cls, journal):
-        sim = cls()
+    def replay(cls, journal, **config):
+        sim = cls(**config)
         for target, method, args, kwargs in journal:
             sim.try_do(target, method, *args, **kwargs)
         return sim
