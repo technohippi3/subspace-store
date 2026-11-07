@@ -64,6 +64,10 @@ class Chain:
                     spends[op] = txid
         return spends
 
+    def mined_spends(self):
+        """Every mined spend on the best chain: outpoint -> spending txid."""
+        return self._mined_spends()
+
     def spender(self, outpoint):
         """The mined transaction spending an outpoint, or None."""
         return self._mined_spends().get(outpoint)

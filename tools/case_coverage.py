@@ -1,8 +1,11 @@
 """Report which named specification cases have model tests.
 
 Reads the case tables in docs/spec/PAYMENT-SPEC.md and the test names in
-tests/, and prints implemented and missing case identifiers. It is a
-report, not a gate.
+tests/, and prints implemented and missing case identifiers.
+
+With --check it is also a gate: it exits non-zero when a fixed-price MVP
+case has no model test, or a test names a case the specification doesn't
+have. Deferred auction cases are reported but never fail the check.
 """
 
 import pathlib
@@ -28,7 +31,9 @@ def tested_cases():
 DEFERRED_AFTER_MVP = lambda c: c[0] in "DE" or c == "N6"
 
 
-def main():
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    strict = "--check" in argv
     spec = spec_cases()
     tested = tested_cases()
     mvp = [c for c in spec if not DEFERRED_AFTER_MVP(c)]
@@ -43,6 +48,9 @@ def main():
           + (": " + " ".join(mvp_missing) if mvp_missing else ""))
     if unknown:
         print("tests naming unknown cases:", " ".join(unknown))
+        return 1
+    if strict and mvp_missing:
+        print("check failed: every fixed-price MVP case needs a model test")
         return 1
     return 0
 

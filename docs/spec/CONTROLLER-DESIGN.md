@@ -1,4 +1,4 @@
-# Subspace store issuance controller design (draft 4, 2026-11-06)
+# Subspace store issuance controller design (draft 5, 2026-11-07)
 
 Status: draft design. Nothing is built. Payment, reservation, cancellation
 and refund rules are in `PAYMENT-SPEC.md`, including the depth arithmetic
@@ -8,7 +8,9 @@ interfaces in draft 1 with the behaviour of the pinned source, read on
 2026-11-06. Draft 3 records the `spaces` v0.5.0 calls and finality rule, and
 the `subs` publishing behaviour, read the same day. Draft 4 makes
 publication complete per handle and corrects the reading of the 144-block
-rule.
+rule. Draft 5 applies the model review of 2026-11-07: both journals before a
+broadcast, the check at the moment of every send, one commitment per space,
+and lost finality.
 
 ## Pinned upstream versions
 
@@ -127,7 +129,9 @@ Publication procedure:
 6. Confirm delivery per handle with a verified lookup through the relay
    network, using the verifying client from the buyer gate. It must return
    the expected final certificate: handle, `script_pubkey` and root. A
-   relay's `/peek` output doesn't count.
+   relay's `/peek` output doesn't count. Only a published handle is
+   confirmed, and the live-commitment check of step 4 runs again immediately
+   before the confirmation.
 
 HTTP success, `handles_published`, `remaining = 0` and
 `publish_status = "final"` are all signals, not proof of delivery. Only step
@@ -228,7 +232,9 @@ after its evidence is stored.
 The rule throughout is to journal the intent before any external effect, read
 back after it, and never repeat an effect whose outcome is unknown.
 
-1. Freeze. Choose the members (batch entry in `PAYMENT-SPEC.md`), compute the
+1. Freeze. Only when no other batch of the space is open, from `frozen` up
+   to `final`: one commitment per space is in flight, which `subs` also
+   requires for its next local commit. Choose the members (batch entry in `PAYMENT-SPEC.md`), compute the
    digest and store the batch.
 2. Stage. Call `/registry/sync`. Read back `filter=staged`. Park every
    unparked staged handle that isn't a member, which works because they are
@@ -262,14 +268,27 @@ back after it, and never repeat an effect whose outcome is unknown.
    every member `issuing`, and record the broadcast intent: `batch_id`, root,
    prior root, the delegate output read from `spaced`, and the fee rate. This
    is the transaction that cancellation serializes against. Append the intent
-   to the off-host journal and confirm it. Only then call `/broadcast` once.
+   to the off-host journal together with the members' `issuing` marks, and
+   confirm both. Immediately before the call, check that both are confirmed
+   for exactly this root and delegate output. Only then call `/broadcast`
+   once. If either is unconfirmed, nothing is sent and the batch stays
+   `issuing` until a resume finds both confirmed. A resume is refused once
+   the call has been attempted. Before the first transmission, a resume
+   repeats the database side of the binding check with fresh depths and
+   eligibility, and reads the delegate output again. If a member fails, the
+   batch is journaled as `rebuilt` before its members return to paid, and
+   the cycle continues from step 6 without the failing member. Otherwise the
+   intent is journaled again, and the send goes ahead as above.
 9. Record. A returned `txid` is journaled and the batch becomes `broadcast`.
    No answer makes it `broadcast_uncertain`, which follows the adapter rule
    above.
 10. Watch until `d >= 150`. Use `/commit/status` together with the
     controller's own lookup of the `txid` and the root, because `confirmed`
     there doesn't check the `txid`. A commitment that loses depth stays
-    non-cancellable unless it is safely superseded.
+    non-cancellable unless it is safely superseded. A final commitment that
+    falls below `d >= 150`, or off the best chain, loses finality: the batch
+    returns to `mined` or `broadcast`, its ready members return to
+    `issuing`, publication and delivery wait, and the owner is alerted.
 11. Final. Call `/registry/notify` and verify each member's certificate. A
     verified member becomes "ready", and its certificate is shown to the
     buyer. Then publish through the procedure above. A member becomes
@@ -289,8 +308,12 @@ The journal is an append-only log of every intent and outcome, kept off-host:
 - batch state changes.
 
 Nothing that can escape the host is sent until its journal entry is
-confirmed off-host. That covers a broadcast, a refund broadcast and a PSBT
-export. The journal is what covers the time between snapshots.
+confirmed off-host. That covers a broadcast, a resumed broadcast, a refund
+broadcast or rebroadcast, and a PSBT export. Each path checks its entry
+immediately before the call, not after it. For a commitment the entry is the
+broadcast intent together with the members' `issuing` marks, so a lagging
+registry journal blocks the broadcast too. The journal is what covers the
+time between snapshots.
 
 A coordinated snapshot:
 1. take the controller lock;
@@ -331,6 +354,19 @@ exported all involve credentials, so the owner decides them.
      commitment, from the snapshot, with no `txid`. Read back the chain. If
      the root is on chain or a spend of the delegate output carries it,
      adopt the `txid` (U1(b)). Otherwise the batch is `broadcast_uncertain`;
+   - a batch with a journaled intent, a `txid` or a later state has every
+     member marked `issuing` in the registry again before any cancellation
+     is accepted, even where the registry's journal lagged;
+   - a batch whose members are `issuing` but whose intent was never
+     confirmed was never sent, because the send checks both. It is resumed
+     from step 8, and its intent is journaled before the call;
+   - a batch not yet checkpointed whose members are missing from the
+     restored registry is rebuilt;
+   - an order that the registry shows as `issuing` or ready, but that is in
+     no live batch of the controller's journal, was never sent or was
+     superseded, and returns to paid. A fulfilled one keeps its status and
+     gets a recovery incident;
+   - `/rollback-local` is only for a batch before `issuing`;
    - never call `/broadcast` or `/rollback-local` for a commitment with a
      journaled broadcast intent.
 3. For each refund family, look up every member before doing anything. Keep

@@ -1,10 +1,10 @@
-# Reference model plan (draft, 2026-11-06)
+# Reference model plan (draft, 2026-11-07)
 
-Status: preparation only. No product code exists, and none is written until
-the owner decides the repository home and licence (open decision 6). Public
-visibility is also a proposal. This file defines the states, events, checks
-and case mapping of an executable reference model of `PAYMENT-SPEC.md` (draft
-8) and of the controller's journal rules in `CONTROLLER-DESIGN.md` (draft 4).
+Status: the reference model exists in `model/` and its named cases run in
+`tests/`, in this public repository under the Apache 2.0 licence. No store,
+registry or integration code exists yet. This file defines the states,
+events, checks and case mapping of an executable reference model of `PAYMENT-SPEC.md` (draft
+9) and of the controller's journal rules in `CONTROLLER-DESIGN.md` (draft 5).
 
 A model result shows that the rules hold in a simulation. It is not evidence
 that real Bitcoin transactions, the upstream software, or buyers behave that
@@ -103,7 +103,14 @@ Run after every event:
   only a larger deficit raises it again, for the difference (N11, N13);
 - `reserved` equals the sum of open group maxima, recomputed from the journal;
 - on every chain the simulator can build, at most one attempt per group pays;
-- no effect is emitted without an earlier acknowledged journal entry;
+- no effect is emitted without an earlier acknowledged journal entry,
+  checked at the moment of transmission rather than against a later
+  snapshot. For a commitment the entry is the intent and the members'
+  `issuing` marks, in their two journals;
+- no two commitments spend the same delegate output;
+- a final batch is at `d >= 150` on the current chain, every member of a
+  batch that may have escaped is non-cancellable, and every delivery
+  happens at `d >= 150` on the current chain after its handle is published;
 - no `/broadcast` or `/rollback-local` effect follows an uncertain broadcast
   for the same commitment;
 - before conversion, the provisional winner is the earliest qualifying
@@ -151,7 +158,13 @@ more appear in every long run. It also has scripted patterns:
 - payments at the last block of a quote window;
 - rounding plateaus and early floors;
 - quotes outstanding when an auction ends;
-- crashes between journal write and acknowledgment.
+- crashes between journal write and acknowledgment;
+- the store's and the controller's journals failing together or
+  independently, and recovering;
+- resumed broadcasts, refund rebroadcasts and local rollbacks attempted at
+  any point;
+- reorgs across commitment finality, which drop the commitment or mine it
+  again later.
 
 A failing run is saved as its seed and the shortest failing prefix of events,
 found by truncation, and is added as a named regression case.
@@ -160,7 +173,8 @@ Required round trips include:
 - a payment backing a refund reservation moving from six confirmations to
   five and back (R11, R15);
 - a settled refund attempt moving from six to five and back (R16);
-- a winner's payment moving from three to two and back (D28, N4).
+- a winner's payment moving from three to two and back (D28, N4);
+- a final commitment falling below `d >= 150` and returning (L1, L2).
 
 ## Case mapping
 
@@ -176,8 +190,9 @@ identifier as the test name.
 | R1 to R16 | refund reconciliation | yes, with simulated transactions |
 | D1 to D35 | Dutch auction | yes |
 | X1 to X9 | cancellation against issuance | yes |
-| B1 to B5 | batch entry and binding check | yes, against a simulated `subs` |
-| J1, J2 | restore against reservations | yes, with simulated host loss |
+| B1 to B7 | batch entry, binding check and one commitment per space | yes, against a simulated `subs` |
+| J1 to J10 | restore against reservations and both journals | yes, with simulated host loss and independent journal outages |
+| L1 to L5 | finality, publication, delivery and recovery incidents | yes, with reorgs across `d >= 150` |
 | E1 to E4 | evidence and disclosure | yes, with a real signature library for receipts |
 | eligibility (README) | proof binding and quotas | yes, with a stubbed verifier; local ZKPassport verification is an integration test |
 
@@ -233,8 +248,12 @@ lives in the product repository too.
 
 ## Next steps
 
-1. The owner decides the repository home, licence and visibility.
-2. Then create the repository, and write the model and the case tables as
-   tests in the order of the mapping table: payments, refunds, auctions,
-   batches, restore.
-3. Report results by case identifier, labelled "model".
+1. Keep the model as the oracle for the registry: a rule change lands in
+   the specification and the model together, with its named case.
+2. Build the smallest regtest flow against the real software: recipient
+   request, quote, payment, issuance and an independently verified
+   certificate. Then a second commitment that needs a proof, lost responses
+   and a restore.
+3. Report results by case identifier, labelled "model", "regtest" or
+   "integration", and never one as another.
+4. The Dutch auction cases stay deferred until after the MVP.

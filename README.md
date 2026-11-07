@@ -29,9 +29,9 @@ upstream Spaces software or buyers behave that way.
   `chain.py` simulates a Bitcoin chain with real spends, conflicts and
   reorgs. `store.py` holds the fixed-price payment, reservation and refund
   rules. `controller.py` simulates batch issuance: the binding check,
-  `issuing`, uncertain broadcasts, supersession, finality and the off-host
-  journal. `sim.py` journals every call, and simulates journal outages and
-  host loss.
+  `issuing`, uncertain broadcasts, supersession, finality and its loss, and
+  the off-host journal. `sim.py` journals every call, and simulates outages
+  of the two off-host journals, together or independently, and host loss.
 - `tests/`: the named specification cases, one test per case identifier.
   Every fixed-price MVP case has one. There are also seeded generated
   sequences with invariant, replay and cut-and-resume checks.
@@ -42,7 +42,7 @@ upstream Spaces software or buyers behave that way.
 With Python 3.10 or later, from the repository root:
 
     python3 -m unittest discover -s tests -t .
-    python3 tools/case_coverage.py
+    python3 tools/case_coverage.py --check
 
 `SUBSPACE_MODEL_RUNS` and `SUBSPACE_MODEL_STEPS` lengthen the generated runs.
 

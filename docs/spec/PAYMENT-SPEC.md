@@ -1,4 +1,4 @@
-# Subspace store payment specification (draft 8, 2026-11-06)
+# Subspace store payment specification (draft 9, 2026-11-07)
 
 MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
 auction section, its cases D1 to D35, case N6, and the auction evidence
@@ -22,7 +22,13 @@ accounting group-based throughout. Draft 7 is a narrow consistency edit (N8,
 P4, an explicit in-flight rule, finality from the `spaces` source, and
 refund-depth round trips). Draft 8 corrects the finality reading, defines how
 a recorded merchant loss suppresses repeat alerts, and ties fulfillment to
-per-handle publication.
+per-handle publication. Draft 9 applies the model review of 2026-11-07:
+issuance waits until the order locks and the broadcast intent are both
+acknowledged off-host, every sending path checks its journal entry
+immediately before the call, a batch resumed before its first transmission
+repeats the binding check, one commitment per space is in flight, and a
+commitment that loses finality is tracked, with a recovery incident for a
+member already fulfilled (B6, B7, J3 to J10, L1 to L5).
 
 ## Terms, depth arithmetic and thresholds
 
@@ -73,6 +79,29 @@ An order is "ready" once its certificate is verified at `d >= 150` and shown
 to the buyer. It is fulfilled only after its publication to the relay
 network is confirmed for its handle individually (see the controller
 design).
+
+Finality can be lost. If a reorg later takes a final commitment below
+`d >= 150`, or off the best chain, the batch returns to `mined` or
+`broadcast` and the owner is alerted. Its ready members return to `issuing`
+and stay non-cancellable, as for any commitment that loses depth.
+Publication and delivery wait until the commitment is at `d >= 150` on the
+current chain again, and each is checked against the live chain immediately
+before it happens.
+
+A member already fulfilled stays fulfilled, because that status records a
+delivery that happened. It doesn't say the certificate is still valid. The
+store opens a durable recovery incident on the order, shown to the owner and
+on the order, and reports the certificate as not current while its batch
+isn't final on the current chain. If the batch is later safely superseded,
+its fulfilled members still stay fulfilled, and nothing is unissued,
+refunded or reallocated automatically. The incident stays open until the
+operator records a resolution (L1 to L5).
+
+The same holds after a restore. A member that the store's journal shows as
+ready is ready only while its batch is final on the current chain (J8). A
+ready or `issuing` member of a superseded batch, or of no live batch in the
+controller's journal, returns to paid, and a fulfilled one gets an incident
+(J10).
 
 ## Ledger
 
@@ -493,6 +522,11 @@ A member removed this way keeps its fulfillment reservation, enters
 `reconciling`, and is batched again once it passes. It is never cancelled or
 replaced automatically.
 
+One commitment per space is in flight. No batch is frozen while another is
+open, from `frozen` up to `final`, and only a rebuild replaces an open batch
+before `issuing`. The delegate output a commitment spends is read from
+`spaced` when the batch is marked `issuing`, not when it is frozen (B6, B7).
+
 ## Cancellation
 
 An order is cancellable until its issuance transaction can escape. The
@@ -503,6 +537,14 @@ the order is not `issuing`, not fulfilled, and not a member of a commitment
 whose issuance transaction may exist. The two transactions are serialized,
 so exactly one wins.
 
+The `issuing` marks and the broadcast intent are acknowledged off-host
+together before `/broadcast` is called, and the call checks both immediately
+before it is made. If either is missing, nothing is sent and the batch waits
+in `issuing`. After a restore, every member of a batch with a journaled
+intent, a `txid` or a later state is marked `issuing` again before any
+cancellation is accepted, even if the store's own journal lagged behind
+(J3, J4).
+
 A cancellation is committed before any refund is built. A cancelled order
 never enters a batch again. If it is in a batch that hasn't reached
 `issuing`, that batch is rebuilt without it.
@@ -510,7 +552,15 @@ never enters a batch again. If it is in a batch that hasn't reached
 After `issuing`, the order stays non-cancellable until one of these:
 - it is fulfilled, and then it is never cancellation-refunded;
 - its fulfillment is safely superseded, as defined below, and then it
-  returns to paid and may be cancelled or batched again.
+  returns to paid and may be cancelled or batched again;
+- its batch is known never to have been sent, and the member fails the
+  binding check that is repeated before the first transmission. The batch
+  is journaled as rebuilt first, and then its members return to paid (J9).
+
+A batch is known never to have been sent when this host never attempted the
+call, or when its broadcast intent never reached the off-host journal, since
+no call is made without it. Once a call may have been made, only the
+uncertainty path applies.
 
 Safely superseded means one of these is true on the best chain, at settled
 depth, and `spaced` reports a commitment state that does not include the
@@ -573,7 +623,8 @@ Lifecycle of an attempt:
    its `txid`. With an owner-signed PSBT, store the PSBT. Journal it off-host
    before it is exported.
 3. Broadcast. Record the attempt as broadcast before calling the node and
-   record the answer after.
+   record the answer after. A rebroadcast of the same transaction needs the
+   same acknowledged journal entry, checked immediately before the call (J5).
 4. Reconcile on every block and restart, by looking every family member up
    in the mempool and the chain.
 
@@ -710,6 +761,8 @@ Batch entry and the binding check:
 | B3 | every member passes | check runs | members marked `issuing` |
 | B4 | restart between checkpoint and `issuing` | controller resumes | check runs again first |
 | B5 | three rebuilds in a row fail | chain keeps reorganizing | wait one block; owner alerted; nothing broadcast |
+| B6 | a batch is open, not yet broadcast, and another order converts | a second batch is frozen | refused until the first is final, rebuilt or superseded; no two commitments spend one delegate output |
+| B7 | batch frozen; a safe supersession then settles and moves the delegate output | batch marked `issuing` | the intent records the delegate output read then, and the commitment spends it |
 
 Cancellation against issuance:
 
@@ -777,6 +830,24 @@ Restore against reservations (with `CONTROLLER-DESIGN.md`):
 | --- | --- | --- | --- |
 | J1 | refund family journaled off-host, host lost before broadcast | restore and reconcile | family and reservation present; transaction looked up before anything is rebroadcast |
 | J2 | journal acknowledgment missing | refund export or broadcast attempted | blocked until the journal acknowledges |
+| J3 | store's journal unavailable, controller's available | batch marked `issuing` | nothing broadcast; batch stays `issuing`; one broadcast after both journals acknowledge |
+| J4 | J3 setup, intent journaled by the controller; the store's journal still shows the members paid | host lost and restored | members `issuing` again before anything else; cancellation refused |
+| J5 | refund attempt not acknowledged off-host | rebroadcast requested | refused; nothing sent |
+| J6 | members' `issuing` marks journaled, broadcast intent not (controller's journal down) | host lost, restored and resumed | intent acknowledged before the one send; `/rollback-local` refused afterwards |
+| J7 | intent not acknowledged when `issuing` was entered; the journal later recovers; no restart | resumed | sent once; a second resume is refused as uncertain |
+| J8 | broadcast answer lost; readback adopted the `txid` but the controller's journal missed it; batch final, member ready in the store's journal | host lost and restored | chain read back first; `txid` adopted; batch final and member ready; a member is never ready while its batch isn't final |
+| J9 | batch `issuing`, broadcast never attempted (journal outage, with or without a host loss); a member's payment is then reorged out | resumed | binding check repeated with fresh depths, eligibility and delegate output; nothing sent; batch rebuilt without the member, which is paid again and `reconciling` (issuance) |
+| J10 | the controller's journal is stale at `broadcast` while the store's shows the member ready; the commitment is then reorged out and the owner's supersession settles | host lost and restored | batch superseded; member back to paid, never ready |
+
+Finality, publication and delivery (with `CONTROLLER-DESIGN.md`):
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| L1 | batch final, members ready | a reorg takes the commitment below `d >= 150` or off the chain | batch `mined` or `broadcast`; owner alerted; members `issuing` and non-cancellable; publish and delivery refused |
+| L2 | L1 | the commitment returns to `d >= 150` | batch final again; members ready; publish and delivery proceed |
+| L3 | batch final, a member not yet published | its delivery is confirmed | refused until its handle is published |
+| L4 | member fulfilled; a reorg then takes the commitment off the chain | the owner's supersession settles | batch superseded; member stays fulfilled; nothing unissued or refunded; the order's recovery incident is open and the owner alerted |
+| L5 | L4 | the certificate is queried, then the operator resolves | not current while the batch isn't final; the incident stays open until a resolution is recorded, and resolving changes no status, refund or reservation |
 
 Eligibility cases (altered name, altered recipient, wrong scope, replay, and
 a quota race between two orders with the same nullifier) are listed under

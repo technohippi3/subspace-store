@@ -1,6 +1,6 @@
 """Fixed-price payments, reservations and refunds.
 
-A reference model of PAYMENT-SPEC.md draft 8 (docs/spec). It covers
+A reference model of PAYMENT-SPEC.md draft 9 (docs/spec). It covers
 fixed-price holds, conversion to a fulfillment reservation, late payments,
 cancellation, the price reserve, the two sufficiency rules, the
 `reconciling` reasons with recorded losses, refund obligation groups, and
@@ -72,6 +72,15 @@ class Hold:
 
 
 @dataclass
+class Incident:
+    """A durable recovery incident on an order, visible to the owner and on
+    the order. Only the operator closes it, by recording a resolution."""
+    bid: str
+    kinds: list = field(default_factory=list)
+    resolution: object = None
+
+
+@dataclass
 class Order:
     oid: str
     name: str
@@ -83,6 +92,7 @@ class Order:
     eligible: bool = True
     reasons: set = field(default_factory=set)
     losses: dict = field(default_factory=dict)
+    incident: object = None
 
 
 @dataclass
@@ -207,6 +217,13 @@ class Store:
                 and "issuance" not in o.reasons
                 and self.sum_at(o, BATCHABLE) >= o.price_reserve)
 
+    def issuing_recheck_ok(self, o):
+        """The binding check repeated for a member already marked `issuing`
+        whose batch is known never to have been sent: the same payment and
+        eligibility conditions as batch entry, with fresh depths."""
+        return (o.status == "issuing" and o.eligible
+                and self.sum_at(o, BATCHABLE) >= o.price_reserve)
+
     def invalidate_eligibility(self, oid):
         self.orders[oid].eligible = False
         self.observe()
@@ -222,11 +239,31 @@ class Store:
         self.observe()
 
     def unissue(self, oid):
-        """Only after safe supersession is proven: the order is paid again."""
+        """The order is paid again. Only after safe supersession is proven, or
+        once the batch is journaled as rebuilt because it was known never to
+        have been sent."""
         o = self.orders[oid]
         if o.status != "issuing":
             raise Refused("not issuing")
         o.status = "converted"
+        self.observe()
+
+    def restore_issuing(self, oid):
+        """Restore only: the controller's journal shows a batch with this member
+        that may have escaped, but the store's journal lagged behind."""
+        o = self.orders[oid]
+        if o.status != "converted":
+            raise Refused("not converted")
+        o.status = "issuing"
+        self.observe()
+
+    def unready(self, oid):
+        """The batch lost finality: the certificate no longer verifies at
+        d >= 150 on the current chain. Still non-cancellable."""
+        o = self.orders[oid]
+        if o.status != "ready":
+            raise Refused("not ready")
+        o.status = "issuing"
         self.observe()
 
     def mark_ready(self, oid):
@@ -243,6 +280,29 @@ class Store:
         if o.status != "ready":
             raise Refused("not ready")
         o.status = "fulfilled"
+        self.observe()
+
+    def open_incident(self, oid, kind, bid):
+        """Open or extend the recovery incident for a fulfilled order whose
+        commitment lost finality or was superseded. The status stays
+        fulfilled: it records the delivery, not a currently valid
+        certificate."""
+        o = self.orders[oid]
+        if o.incident is None or o.incident.resolution is not None:
+            o.incident = Incident(bid)
+        if kind not in o.incident.kinds:
+            o.incident.kinds.append(kind)
+            self.alerts.append((oid, "incident", kind))
+        self.observe()
+
+    def resolve_incident(self, oid, resolution):
+        """The operator's decision. Nothing is refunded or reallocated here."""
+        o = self.orders[oid]
+        if o.incident is None or o.incident.resolution is not None:
+            raise Refused("no open incident")
+        if not resolution:
+            raise Refused("a resolution must be recorded")
+        o.incident.resolution = resolution
         self.observe()
 
     def record_loss(self, oid, reason):
@@ -337,7 +397,13 @@ class Store:
         return rebroadcast
 
     def rebroadcast(self, gid, txid):
-        self.chain.add(self.groups[gid].attempt(txid).tx)
+        """Send the same signed transaction again. The same precondition as the
+        first broadcast, checked immediately before transmission."""
+        a = self.groups[gid].attempt(txid)
+        if not self._acked_attempt(gid, txid):
+            raise Refused("journal entry not acknowledged off-host")
+        a.attempted = True
+        self.chain.add(a.tx)
         self.observe()
 
     # Evaluation

@@ -32,9 +32,12 @@ class Sim:
 
     # Faults
 
-    def _set_offhost(self, available):
-        self.store.offhost_available = available
-        self.controller.offhost_available = available
+    def _set_offhost(self, available, which="both"):
+        """Make the off-host journals available or not, together or alone."""
+        if which in ("both", "store"):
+            self.store.offhost_available = available
+        if which in ("both", "controller"):
+            self.controller.offhost_available = available
 
     def _host_loss(self):
         """Lose the host: keep the chain, restore state from the off-host

@@ -32,6 +32,9 @@ than it does. In particular:
 Before every commit, from the repository root:
 
     python3 -m unittest discover -s tests -t .
+    python3 tools/case_coverage.py --check
+
+CI runs both on every push and pull request (`.github/workflows/model.yml`).
 
 Run tooling from this repository, never from the operator's staging
 directory.
@@ -46,5 +49,7 @@ and transaction identifiers are made-up strings.
 
 ## Visibility
 
-The repository is private for now. Before it becomes public, review its full
-history for private operational details.
+The repository is public on GitHub, as the workspace_owner authorized.
+Everything committed is published, history included: before each push,
+check the commits for private operational details, secrets and personal
+names.
