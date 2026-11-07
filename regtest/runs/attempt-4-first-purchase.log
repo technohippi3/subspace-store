@@ -1,0 +1,28 @@
+[regtest] 1. first purchase  recipient request for one@test10000: {"oid": "o1", "script_pubkey": "5120498f8cec0eb92698116b947b29b4e1e0f3b4453d71c7d74ed212af4852406602"} | model: null | -
+[regtest] 1. first purchase  fixed-price quote for o1: {"price_sats": 10000, "address": "bcrt1pgw6clyn6hajlnuk3q2s9wghgwezfmu7z3m8cgv0njap6ecs0ld5sz3my5f"} | model: {"quoted": true} | agrees
+[regtest] 1. first purchase Q1 second quote for the held name: {"quoted": false, "why": "taken for now"} | model: {"quoted": false, "why": "taken for now"} | agrees
+[regtest] 1. first purchase  payment at 1 conf: {"o1": "quoted"} | model: {"o1": "quoted"} | agrees
+[regtest] 1. first purchase P1 payment at 3 conf converts the hold: {"o1": "converted"} | model: {"o1": "converted"} | agrees
+[regtest] 1. first purchase  freeze b1: {"members": ["o1"], "state": "frozen"} | model: {"members": ["o1"]} | agrees
+[regtest] 1. first purchase  stage b1 with readback: {"staged": {"one": "5120498f8cec0eb92698116b947b29b4e1e0f3b4453d71c7d74ed212af4852406602"}, "parked": [], "sync": {"success": true, "pu... | model: null | -
+[regtest] 1. first purchase  local commit b1 with readback: {"root": "ee0ffa1205b6b057c09b645a307ff8315b15c21c739f9f55e854e10fb5bef54e", "prev_root": null, "is_initial": true, "handles": 1} | model: {"state": "committed_local"} | agrees
+[regtest] 1. first purchase  prove b1: {"seconds": 0.0, "proving": "skipped", "proof_total": null} | model: {"state": "proved"} | agrees
+[regtest] 1. first purchase  checkpoint b1 (coordinated snapshot): {"dir": "regtest/.run/fp3/offhost/snapshots/001-b1", ... | model: {"state": "checkpointed"} | agrees
+[regtest] 1. first purchase B3 binding check passes; members issuing: {"o1": "issuing"} | model: {"o1": "issuing"} | agrees
+[regtest] 1. first purchase B3 b1 broadcast: {"state": "broadcast", "txid": "ff9f9225f40dedd6fef101331a9e206942f5b012b10f17fed0837a1526af3d8c"} | model: {"state": "broadcast"} | agrees
+[regtest] 1. first purchase X3 cancellation after issuing: {"cancelled": false, "why": "not cancellable once issuing"} | model: {"cancelled": false, "why": "not cancellable once issuing"} | agrees
+[regtest] 1. first purchase  b1 mined at d = 0: {"state": "mined", "position": [3454, 0]} | model: {"state": "mined"} | agrees
+[regtest] 1. first purchase  b1 at d = 149: {"state": "mined"} | model: {"state": "mined"} | agrees
+[regtest] 1. first purchase  b1 at d = 150: {"state": "final", "subs_commit_status": {"status": "finalized", "txid": null, "block_height": 3454, "confirmations": null}} | model: {"state": "final"} | agrees
+[regtest] 1. first purchase  certificates for b1 verified with libveritas: {"notify": true, "results": {"o1": {"ok": true, "checks": {"verified": true, "handle": true, "script_pubkey": true, "root": true, "root_h... | model: null | agrees
+[regtest] 1. first purchase  b1 members after verification: {"o1": "ready"} | model: {"o1": "ready"} | agrees
+[regtest] 1. first purchase L1 b1 after a 151-block reorg drops the commitment: {"state": "broadcast", "in_mempool": false, "getcommitment": null, "subs_commit_status": {"status": "pending", "txid": "ff9f9225f40dedd6f... | model: {"state": "broadcast"} | agrees
+[regtest] 1. first purchase L1 members while finality is lost: {"o1": "issuing"} | model: {"o1": "issuing"} | agrees
+[regtest] 1. first purchase L1 cancellation while finality is lost: {"cancelled": false, "why": "not cancellable once issuing"} | model: {"cancelled": false, "why": "not cancellable once issuing"} | agrees
+[regtest] 1. first purchase L1 certificate verification while not final: {"allowed": false, "why": "not final"} | model: {"allowed": false} | agrees
+[regtest] 1. first purchase L1 commitment back in the node's mempool after the reorg: {"in_mempool": false, "testmempoolaccept": false} | model: {"in_mempool": true} | DISAGREES
+[regtest] 1. first purchase  harness resubmits the identical signed commitment (stand-in for a peer): {"in_mempool": true} | model: null | -
+[regtest] 1. first purchase L1 b1 mined again at d = 0: {"state": "mined", "position": [3606, 0]} | model: {"state": "mined"} | agrees
+[regtest] 1. first purchase L2 b1 back at d >= 150: {"state": "final", "subs_commit_status": {"status": "finalized", "txid": null, "block_height": 3606, "confirmations": null}} | model: {"state": "final"} | agrees
+[regtest] 1. first purchase  certificates for b1 verified with libveritas: {"notify": true, "results": {"o1": {"ok": false, "checks": {"verified": true, "handle": true, "script_pubkey": true, "root": true, "root_... | model: null | DISAGREES
+[regtest] 1. first purchase  b1 members after verification: {"o1": "issuing"} | model: {"o1": "ready"} | DISAGREES

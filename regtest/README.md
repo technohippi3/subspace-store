@@ -1,0 +1,87 @@
+# Regtest harness
+
+This directory runs the subspace store's issuance path against the real
+upstream software on a local regtest network: the pinned `subs`, `spaced`
+v0.5.0 and Bitcoin Core. It is the smallest flow from a public recipient
+request to an independently verified certificate, plus a second commitment
+that needs a proof, a lost broadcast response and a host restore.
+
+Results from here are labelled "regtest". They are not model results,
+integration results, mainnet results or buyer-acceptance evidence, and the
+report never calls them that.
+
+## What it needs
+
+Rust (stable), Python 3.10 or later, a C++ compiler for the RISC Zero
+kernels, `unshare` and `ip` (util-linux and iproute2) with unprivileged user
+namespaces enabled, and network access only while `fetch.sh` fetches the
+pinned versions. It needs no credentials. Every run executes inside a new
+unprivileged user and network namespace with loopback only (`in-netns.sh`),
+so nothing outside the host can reach `subs`, which binds every interface,
+and the stack can reach nothing outside. Setting that up changes no host
+firewall, system or security setting. No mainnet, testnet or signet coins
+are involved.
+
+The space it operates (`@test10000`, and `@test9999` for the lost-broadcast
+scenario), the operator wallet (`wallet_99`) and the funding wallet
+(`default`) come from the preset regtest chain that ships in the spaces
+repository's test utilities. They are upstream test fixtures, unpacked into
+`.cache/` and never copied into this repository. The buyer, miner and store
+wallets are made fresh for each run inside `.run/`.
+
+## Files
+
+- `pins.env`: the pinned upstream versions and the Bitcoin Core checksum.
+- `fetch.sh`: clones and builds the pins into `.cache/` (not committed).
+- `in-netns.sh`: runs a command in the isolated namespace.
+- `run-id.sh`: makes a fresh run id. Run ids are never reused, and the
+  harness never deletes a run directory.
+- `start.sh [prefix]`: starts a stack in the namespace and opens a shell
+  there. Leaving the shell stops it. `stop.sh <run id>` stops a run's
+  processes.
+- `run-first-purchase.sh [prefix]`: the first purchase end to end on a
+  fresh network, then stop. This is the milestone script.
+- `run-all.sh [prefix]`: every scenario in order. CPU proving makes it
+  slow.
+- `harness/`: the harness, standard-library Python.
+  - `procs.py`: the processes and their ports.
+  - `faultproxy.py`: a proxy in front of `spaced` and one in front of
+    `subs`, each able to lose one response after the upstream call happened.
+  - `registry.py`: a minimal fixed-price registry, with the endpoints `subs`
+    polls.
+  - `controller.py`: the issuance cycle of `CONTROLLER-DESIGN.md` against the
+    real `subs` and `spaced`.
+  - `journal.py`: the two off-host journals, simulated by a directory
+    outside the host's state.
+  - `oracle.py`: drives the reference model through the same events, so the
+    report can set the model's expectation beside each regtest result.
+  - `scenarios.py`: the scenarios, and `report.py` the report.
+- `verifier/`: a small Rust program that verifies a certificate message with
+  `libveritas` 0.4.4, the version `subs` locks, against root anchors read
+  from `spaced` directly.
+- `REPORT.md`: the report of the last committed run, labelled "regtest".
+
+## Running
+
+    regtest/run-first-purchase.sh
+
+or, for everything:
+
+    regtest/run-all.sh
+
+Each run writes `.run/<run id>/report.md` and `report.json`. It keeps the
+logs of every process under `logs/`, and every certificate verification
+(message, anchors and libveritas output) under `certs/`.
+
+Every step is "required" or "informational". The scripts exit 0 when every
+required step agrees with the reference model, 1 when one disagrees, 2 on
+an error, and 3 when the harness refuses to run, for example outside the
+namespace or on a reused run id.
+
+## Limits
+
+The registry and controller here are harness code written for these
+scenarios, not the product. They cover the steps the scenarios take, and the
+report lists what was not exercised. Publication to relays is not exercised:
+a `subs` built without its `test-rig` feature seeds the public relay network,
+which this harness must not contact.

@@ -1,0 +1,15 @@
+[package]
+name = "subspace-regtest-verifier"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Independent certificate check for the regtest harness, using the libveritas version that subs pins."
+
+[dependencies]
+# The exact versions in subs' Cargo.lock at the pinned commit.
+libveritas = { version = "=0.4.4" }
+spaces_nums = { version = "=0.4.2", features = ["serde"] }
+serde_json = "1.0"
+hex = "0.4"
+
+[workspace]

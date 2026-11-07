@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .venv/
+regtest/.cache/
+regtest/.run/
+regtest/verifier/target/
