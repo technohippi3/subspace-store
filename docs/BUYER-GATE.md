@@ -95,13 +95,40 @@ the phone with Nacho's "Copy request" and pass the checker, with distinct
 scripts. Nacho exports a request only through that button, as
 pretty-printed JSON with the same two members; its menu for a request
 offers only "Import certificate" and "Remove handle". The throwaway
-space chosen in the transaction plan is another space, so P1 is repeated
-for it, with two fresh requests.
+space chosen in the transaction plan is another space, so P1 was repeated
+for it.
+
+Repeated on 2026-11-08: two fresh Nacho requests for two names under the
+chosen space pass the checker, with distinct scripts, neither of them one
+of the earlier requests'. They are kept in the operator's private records
+with the other transaction plan choices.
 
 P2. Set up a test operator on the workspace_owner's own machine, never on
 the production operator host: `spaced` v0.5.0 with a fresh data directory,
 a new operator wallet, and `subs` at `4dcc923`, reachable from localhost
 only (R7).
+
+`buyer-gate/operator.sh` does this. It runs the pinned builds from
+`regtest/.cache/bin` inside an unprivileged user, network and mount
+namespace, with slirp4netns giving it outbound access only: nothing
+outside can connect in, it can't reach the host's loopback, and no port
+is forwarded. No host firewall, system or security setting changes. Its
+state, including the Bitcoin RPC URL, sits in a private directory outside
+the repository, and the URL reaches `spaced` through its environment, not
+its command line.
+
+Started on 2026-11-08. `spaced` v0.5.0 began syncing mainnet from a fresh
+data directory, through a remote Bitcoin RPC, at about 1.5 blocks a
+second, so it reaches the tip about 19 hours later. The checks then
+showed no listener on the host and none reachable from it, and no route
+from the namespace to the host's own services. Still to do, in order:
+- the workspace_owner creates the operator wallet in their own terminal,
+  never in an agent session, because `createwallet` prints its recovery
+  phrase: `buyer-gate/operator.sh cli --wallet operator createwallet`;
+- once `spaced` is at the tip, `buyer-gate/operator.sh start-subs`, and a
+  check that `subs` answers inside the namespace only;
+- the chain check of the throwaway space, from this node, immediately
+  before M1.
 
 P3. Find a client or library call that verifies a signed record against a
 certificate without trusting a relay (client question 5).
@@ -302,9 +329,9 @@ other candidates were ruled out:
 The space, the wallet that holds it, the operator machine (the
 workspace_owner's workstation, P2) and where the evidence is kept are
 recorded in the operator's private records, because they identify the
-workspace_owner's spaces. The handles, and the M10 and M11 recipients, are
-fresh Nacho requests made at each step. The public relay is the one the
-M6 lookup used, as its evidence records. Still blank: the latest date for
+workspace_owner's spaces. The handles are the two from the repeated P1.
+The M10 and M11 recipients are fresh Nacho requests made at each step.
+The public relay is the one the M6 lookup used, as its evidence records. Still blank: the latest date for
 M1, every amount and every fee limit. The workspace_owner is asked before
 each step that spends sats, and the chain check is repeated immediately
 before M1.

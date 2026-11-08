@@ -76,6 +76,9 @@ upstream Spaces software or buyers behave that way.
   sequences with invariant, replay and cut-and-resume checks, and the
   service run beside the model on those sequences (`test_service_twin.py`).
 - `docs/BUYER-GATE.md`: the plan for the buyer acceptance gate with Nacho.
+  `buyer-gate/operator.sh` runs its test operator: the pinned `spaced` and
+  `subs` on mainnet in their own unprivileged namespaces, with outbound
+  access only. It holds no credentials and signs nothing.
 - `tools/case_coverage.py`: reports which named cases have tests.
   `tools/check_request.py` checks the format of a public recipient request,
   such as a Nacho export, as `POST /requests` does before reading any state.
