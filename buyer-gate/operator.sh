@@ -24,10 +24,14 @@
 #   buyer-gate/operator.sh cli ARGS...   space-cli inside the namespace
 #   buyer-gate/operator.sh stop          stop everything
 #
-# The operator wallet is created by the workspace_owner in their own
-# terminal, never in an agent session, because createwallet prints its
-# recovery phrase:
-#   buyer-gate/operator.sh cli --wallet operator createwallet
+# The operator wallet is created by the workspace_owner in a terminal
+# outside the Claude app, never through an agent session, the app's shell
+# input or its Terminal panel, because createwallet prints its recovery
+# phrase and anything shown there becomes part of the session:
+#   buyer-gate/operator.sh cli --wallet "$SUBSPACE_TEST_OPERATOR_WALLET" createwallet
+# $SUBSPACE_TEST_OPERATOR_WALLET names the wallet subs uses (default
+# operator-2: the first `operator` wallet's phrase was shown in a session
+# on 2026-11-08, so it is exposed and never used).
 #
 # Nothing here signs or broadcasts. Every mainnet transaction in the buyer
 # gate is a separate, authorized step.
@@ -39,9 +43,11 @@ RUN="$DIR/run"
 LOGS="$DIR/logs"
 SPACED_PORT=7225
 SUBS_PORT=7777
-WALLET=operator
+WALLET="${SUBSPACE_TEST_OPERATOR_WALLET:-operator-2}"
+[ "$WALLET" = operator ] && die_early=1 || die_early=0
 
 die() { echo "operator: $*" >&2; exit 1; }
+[ "$die_early" = 1 ] && die "the wallet named operator is exposed (its phrase was shown in a session); use another name"
 
 ns_pid() { [ -f "$RUN/ns.pid" ] && kill -0 "$(cat "$RUN/ns.pid")" 2>/dev/null && cat "$RUN/ns.pid"; }
 
@@ -128,5 +134,5 @@ case "${1:-}" in
   status) status ;;
   cli) shift; cli "$@" ;;
   stop) stop ;;
-  *) sed -n '2,33p' "$0"; exit 2 ;;
+  *) sed -n '2,38p' "$0"; exit 2 ;;
 esac
