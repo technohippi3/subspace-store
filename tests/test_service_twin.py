@@ -1,6 +1,7 @@
 """The service's ledger against the reference model, on the model's own
 seeded generated sequences (tests/test_generated.py), with a process restart
-of the service every few steps.
+of the service every few steps, and with the generator's host losses, where
+the service is restored from its off-host journal alone (case H7).
 
 After every step the two must agree on every name, order, refund group,
 attempt, authorization and alert, and on whether each call was refused.
@@ -29,10 +30,6 @@ class ServiceTwin(unittest.TestCase):
             twin = TwinStore(sim.store, sim.chain, wd)
             sim.store = twin
             sim.controller.store = twin
-            # Host loss restores the model from its off-host journal. The
-            # service has no restore from the journal yet, so it isn't
-            # twinned: a host loss is skipped on both sides.
-            sim._host_loss = lambda: None
             for name, n in twin.model.names.items():
                 twin.service.list_name(f"{name}@twin", n.price)
             for i in range(STEPS):
@@ -49,9 +46,9 @@ class ServiceTwin(unittest.TestCase):
             twin.service.close()
             return gen, twin
 
-    def test_service_agrees_with_the_model_on_generated_sequences(self):
+    def test_H7_service_restored_from_its_journal_agrees_with_the_model(self):
         covered = {"converted": 0, "refund_groups": 0, "closed_groups": 0, "fulfilled": 0,
-                   "restarts": 0}
+                   "restarts": 0, "host_losses": 0}
         for seed in range(RUNS):
             with self.subTest(seed=seed):
                 gen, twin = self.run_seed(seed)
@@ -62,6 +59,7 @@ class ServiceTwin(unittest.TestCase):
                 covered["closed_groups"] += sum(bool(g.closed_by) for g in st.groups.values())
                 covered["fulfilled"] += sum(o.status == "fulfilled" for o in st.orders.values())
                 covered["restarts"] += twin.restarts
+                covered["host_losses"] += twin.host_losses
         # The sequences must reach the paths the comparison is about.
         for key, count in covered.items():
             self.assertGreater(count, 0, key)

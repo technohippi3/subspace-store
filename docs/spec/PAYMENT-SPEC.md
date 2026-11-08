@@ -1,4 +1,4 @@
-# Subspace store payment specification (draft 12, 2026-11-07)
+# Subspace store payment specification (draft 13, 2026-11-08)
 
 MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
 auction section, its cases D1 to D35, case N6, and the auction evidence
@@ -40,7 +40,9 @@ the strict request rules from the buyer-gate handoff into this file, as
 launch blocker. Within draft 12, a review found that a first-come binding let
 an unsigned request claim someone else's script for good, and that stored
 orders skipped validation. A script is now claimed only by a paid order, and
-every start audits stored recipients.
+every start audits stored recipients. Draft 13 adds "Host loss and restore"
+and cases H1 to H7: the store restores from its off-host journal alone, and
+never starts empty over an existing journal.
 
 ## Terms, depth arithmetic and thresholds
 
@@ -795,6 +797,59 @@ Release rules:
   mempool never releases a reservation. The controller rebroadcasts the same
   transaction or replaces it within the family.
 
+## Host loss and restore
+
+The store's database can be lost with its host. This section is the store's
+own recovery from its off-host journal alone. The controller's recovery, the
+`subs` data and the coordinated snapshot are in `CONTROLLER-DESIGN.md`, and a
+restore from a snapshot plus the journal since it is later work.
+
+What the journal holds. Every change to a name, an order, a refund group
+with its attempts, an alert or a refund authorization is journaled as that
+record's whole state. The latest acknowledged entry of each record is the
+store's acknowledged state. An order's entry carries the SHA-256 of its
+order link token, never the token, so a restored link still opens its order
+and nobody can derive a link from the journal. Payment outputs are not
+journaled: balances always come from the chain, so a restore recomputes
+them, and only the history of an output that had already left the chain is
+lost. The frozen batch and `subs`' committed roots belong to the
+controller's recovery and are not restored here.
+
+One entry per write. Every record changed since the last acknowledgment is
+written in a single journal entry, which is acknowledged whole or not at
+all. Records that didn't change keep their earlier acknowledged state, so
+the acknowledged state is always a state the store was really in, as in the
+model, where the off-host copy is the whole durable state.
+
+Restore is an explicit operator step, into a path where no database exists.
+It never overwrites a database. It refuses a journal with no records, which
+is what a wrong or unmounted journal directory looks like, and one whose
+latest state is inconsistent: an entry of an unknown kind, a record with a field the store
+doesn't have, an order without its link hash or whose name has no entry, a
+refund group whose order has none, or an alert or authorization that names
+a missing order or group. It builds the database beside the target
+and moves it into place only once it is complete, so a refused or
+interrupted restore leaves nothing behind. Every restored attempt counts as
+journaled, since its group's entry was acknowledged.
+
+After a restore the store starts as it does after any restart: it reconciles
+every refund attempt against the chain, rebroadcasts an attempted one that
+the node doesn't know as the same signed bytes, and evaluates against the
+chain before it serves anything (J1).
+
+What a host loss undoes. A change that was never acknowledged is lost. A
+payment seen meanwhile is a fact on the chain and is found again. A refund
+group that was never acknowledged was never exported or broadcast, since
+both wait for the acknowledgment (J2, J5). A cancellation that was never
+acknowledged is undone, and the order returns to its last acknowledged
+state; whether a cancellation should be reported only once acknowledged is
+an open point.
+
+No empty start over a history. A start that finds no database, or one with
+no names and no orders, while the journal has entries refuses to serve and
+writes nothing. An empty store started over an existing journal would hand
+out order ids again and could sell held or reserved names twice.
+
 ## Executable cases
 
 Each case runs against a simulated chain and mempool with controllable reorgs
@@ -979,6 +1034,22 @@ tests are the service's API tests over a simulated chain, not model results.
 | V15 | orders stored with an OP_RETURN recipient (one converted and already frozen, one already `issuing`, one requested) and one whose recipient is a store destination script, from a database without the audit column | the service starts | each flagged and alerted once, also across a second start; records unchanged; no quote; the converted one fails batch entry and the recheck, can't be marked `issuing` or frozen, and isn't served by `/pending`; the `issuing` one fails the issuing recheck |
 | V16 | two converted orders for different handles, stored on one script | the service starts | both alerted; neither passes batch entry; records unchanged |
 
+Service restore ("Host loss and restore"). The model restores whole from its
+journal (J1 and its generated host losses); these are the service's own
+restore. H1 to H6 are service API tests over a simulated chain. H7 runs the
+service beside the model and is a model-twin result. None is regtest
+evidence.
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| H1 | a converted order with a refund address, a cancelled order with a hot-wallet refund group, and their alerts and authorizations, all acknowledged; then the host's database is lost | restored from the journal alone into a fresh path, and started | names, orders, groups, attempts, alerts and authorizations as acknowledged; each attempt journaled; both order links open their orders; balances recomputed from the chain |
+| H2 | the store's journal is down while a payment converts an order, another order is cancelled and a refund group is built for a third; then the host is lost | restored and started | the payment is found again and the order converts; the cancellation is undone; the refund group is absent and was never broadcast |
+| H3 | the journal has entries, and the database is missing or has no names and no orders | the service starts | refused before serving; no database file is created and nothing is written |
+| H4 | a database already exists at the restore target | restore | refused; the existing database unchanged |
+| H5 | a journal with no records, an entry of an unknown kind, a record with an unknown field, an order without its link hash or whose name has no entry, or a refund group whose order has none | restore, and separately a restore killed partway | refused naming the record; no database created at the target or beside it; the killed restore leaves no database at the target, and a later restore succeeds |
+| H6 | two acknowledged hot-wallet refund groups: one attempt mined, the other attempted but unknown to the node; the host is lost | restored and started | both reconciled before anything is served; only the unknown attempt is rebroadcast, as the same signed bytes; reservations and refunded totals as before the loss |
+| H7 | the model's generated sequences, with host losses | at each loss the service is restored from its own journal | after every step it agrees with the model's restore on every name, order, group, attempt, authorization and alert |
+
 Evidence:
 
 | Case | Given | When | Then |
@@ -1028,6 +1099,9 @@ gate doesn't count them.
 These stay proposals until decided:
 - the hold-abuse rule under "Fixed-price sales", for proof-gated and for
   public names; it blocks any public pilot;
+- whether a cancellation is reported only once acknowledged off-host;
+  today a host loss before the acknowledgment undoes it ("Host loss and
+  restore");
 - refund funding (an owner-signed PSBT or a capped hot wallet) and the refund
   deadline;
 - the 15-minute hold, the excess minimum, and refunds net of fee;

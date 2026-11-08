@@ -7,12 +7,15 @@ regtest (regtest/harness/service.py). It is neither model nor regtest
 evidence about the store's rules.
 
 The `test_V*` tests are the recipient-request cases V1 to V16 of
-PAYMENT-SPEC.md. The model has no recipient requests, so these are service
-API results, not model results.
+PAYMENT-SPEC.md, and the `test_H*` tests are its service restore cases H1
+to H6. The model has neither recipient requests nor the service's database,
+so these are service API results, not model results.
 """
 
 import json
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 import urllib.error
@@ -22,13 +25,28 @@ from pathlib import Path
 from model.chain import Chain, Tx
 from service.app import Service
 from service.journal import Journal
-from service.ledger import Ledger, Policy, valid_p2tr
+from service.ledger import (Ledger, Policy, RestoreRefused, RestoreRequired,
+                            restore_from_journal, valid_p2tr)
 from tests.service_twin import ModelChainView, recipient
 
 SPK = "5120" + "ab" * 32
 SPK2 = "5120" + "ee" * 32
 # A harmless placeholder: never a real key, in tests or anywhere else.
 PLACEHOLDER = "placeholder-not-a-key-7f3e"
+# Restores the test's journal, and exits like a killed process after the
+# first record is written.
+KILLED_RESTORE = """
+import os, sys
+from pathlib import Path
+import service.ledger as ledger
+from service.journal import Journal
+insert = ledger._insert
+def die_after_first(*args):
+    insert(*args)
+    os._exit(9)
+ledger._insert = die_after_first
+ledger.restore_from_journal(Path(sys.argv[1]) / "restored.db", Journal(Path(sys.argv[1]) / "offhost"))
+"""
 OPERATOR, SUBS = "operator-token-" + "x" * 24, "subs-token-" + "y" * 24
 
 
@@ -421,6 +439,212 @@ class Api(unittest.TestCase):
         self.assertFalse(self.entry(o1)["batch_entry"])
         self.assertFalse(self.entry(o2)["batch_entry"])
         self.assertEqual(self.rows(), stored)
+
+    # Host loss and restore from the journal alone (H1 to H6)
+
+    def lose_host(self):
+        """The host and its database are gone; the off-host journal stays."""
+        self.stop()
+        for f in self.dir.glob("store.db*"):
+            f.unlink()
+
+    def restore(self):
+        return restore_from_journal(self.dir / "store.db", Journal(self.dir / "offhost"))
+
+    def table(self, name):
+        return [dict(r) for r in self.service.ledger.db.execute(f"select * from {name} order by 1")]
+
+    def durable(self):
+        return {t: self.table(t) for t in ("names", "orders", "groups", "attempts", "alerts",
+                                           "authorizations")}
+
+    def paid(self, handle, script, settled=False):
+        """An order paid in full; settled if asked. Returns (oid, link)."""
+        oid, link = self.order(handle, script)
+        self.pay(self.service.ledger.operator_view(oid)["dest_script"], 10_000,
+                 n=6 if settled else 3)
+        self.op("POST", "/operator/observe")
+        return oid, link
+
+    def refund_group(self, gid, oid, link, txid):
+        """A cancellation and its hot-wallet refund group, through the
+        ledger: the simulated chain has no wallet to sign with."""
+        self.assertEqual(self.c.call("POST", link + "/refund-address", {"address": "bcrt1-" + oid})[0], 200)
+        self.assertEqual(self.op("POST", f"/operator/orders/{oid}/cancel")[0], 200)
+        led = self.service.ledger
+        payment = led.outputs(oid)[0]["outpoint"]
+        tx = {"txid": txid, "inputs": [tuple(payment)],
+              "outputs": [(led.operator_view(oid)["refund_spk"], 9_700)],
+              "raw": "02" + txid.encode().hex()}
+        led.open_group(gid, oid, "cancellation", tx, 9_700, 300)
+        return tx
+
+    def recording_sends(self):
+        sent, send = [], self.view.send
+
+        def record(tx):
+            sent.append(dict(tx))
+            return send(tx)
+        self.view.send = record
+        return sent
+
+    def test_H1_a_lost_database_is_restored_from_the_journal_alone(self):
+        self.list("one@space", "two@space")
+        o1, link1 = self.paid("one@space", SPK)
+        self.assertEqual(self.c.call("POST", link1 + "/refund-address", {"address": "bcrt1-one"})[0], 200)
+        o2, link2 = self.paid("two@space", SPK2, settled=True)
+        self.refund_group("g1", o2, link2, "refund-h1")
+        self.c.call("POST", "/ack", {"handles": [{"handle": "one@space",
+                                                  "outcome": "already_staged_different_spk"}]}, SUBS)
+        self.assertEqual(self.service.ledger.db.execute(
+            "select count(*) from journal_backlog").fetchone()[0], 0)
+        before = self.durable()
+        self.assertTrue(before["alerts"] and before["authorizations"] and before["attempts"])
+        self.assertTrue(all(a["journaled"] for a in before["attempts"]))
+        views = {oid: self.service.ledger.operator_view(oid) for oid in (o1, o2)}
+        self.lose_host()
+        self.restore()
+        self.start()
+        self.assertEqual(self.durable(), before)
+        for oid, link in ((o1, link1), (o2, link2)):
+            self.assertEqual(self.c.call("GET", link)[1]["status"], views[oid]["status"])
+            v = self.service.ledger.operator_view(oid)
+            for k in ("sums", "available", "reserved", "refunded_total"):
+                self.assertEqual(v[k], views[oid][k], (oid, k))
+
+    def test_H2_a_host_loss_undoes_only_what_was_never_acknowledged(self):
+        self.list("one@space", "two@space", "three@space")
+        o3, link3 = self.paid("three@space", recipient("h2-c"), settled=True)
+        self.assertEqual(self.c.call("POST", link3 + "/refund-address", {"address": "bcrt1-3"})[0], 200)
+        self.assertEqual(self.op("POST", f"/operator/orders/{o3}/cancel")[0], 200)
+        o1, _ = self.order("one@space", SPK)
+        o2, _ = self.paid("two@space", SPK2)
+        sent = self.recording_sends()
+        journal = self.service.ledger.journal
+        journal.set_available(False)
+        # While the journal is down: a payment, a cancellation, a refund group.
+        self.pay(self.service.ledger.operator_view(o1)["dest_script"], 10_000)
+        self.op("POST", "/operator/observe")
+        self.assertEqual(self.service.ledger.operator_view(o1)["status"], "converted")
+        self.assertEqual(self.op("POST", f"/operator/orders/{o2}/cancel")[0], 200)
+        led = self.service.ledger
+        payment = led.outputs(o3)[0]["outpoint"]
+        led.open_group("g1", o3, "cancellation",
+                       {"txid": "refund-h2", "inputs": [tuple(payment)],
+                        "outputs": [(led.operator_view(o3)["refund_spk"], 9_700)], "raw": "02ab"},
+                       9_700, 300)
+        self.assertEqual(self.op("POST", "/operator/refunds/g1/broadcast")[0], 409)
+        self.lose_host()
+        journal.set_available(True)
+        self.restore()
+        self.start()
+        led = self.service.ledger
+        self.assertEqual(led.operator_view(o1)["status"], "converted")
+        self.assertEqual(led.operator_view(o2)["status"], "converted")
+        self.assertEqual(led._name("two@space")["fulfillment_order"], o2)
+        self.assertEqual(led.operator_view(o3)["status"], "cancelled")
+        self.assertEqual(self.table("groups"), [])
+        self.assertEqual(sent, [])
+
+    def test_H3_no_empty_start_over_an_existing_journal(self):
+        self.list("one@space")
+        self.order("one@space", SPK)
+        self.lose_host()
+        with self.assertRaises(RestoreRequired):
+            self.start()
+        self.assertEqual(list(self.dir.glob("store.db*")), [])
+        # A database with the schema but no names and no orders is empty too.
+        empty = self.dir / "store.db"
+        Ledger(empty, self.view, Journal(self.dir / "elsewhere"), Policy()).close()
+        image = empty.read_bytes()
+        with self.assertRaises(RestoreRequired):
+            self.start()
+        self.assertEqual(empty.read_bytes(), image)
+        self.assertEqual(sorted(f.name for f in self.dir.glob("store.db*")), ["store.db"])
+        empty.unlink()
+        self.restore()
+        self.start()
+
+    def test_H4_a_restore_never_overwrites_a_database(self):
+        self.list("one@space")
+        self.order("one@space", SPK)
+        self.stop()
+        image = (self.dir / "store.db").read_bytes()
+        with self.assertRaises(RestoreRefused):
+            self.restore()
+        self.assertEqual((self.dir / "store.db").read_bytes(), image)
+        self.start()
+
+    def test_H5_an_inconsistent_journal_is_refused(self):
+        self.list("one@space")
+        o1, _ = self.order("one@space", SPK)
+        led = self.service.ledger
+        name = led._snapshot("name", "one@space")
+        order = led._snapshot("order", o1)
+        group = {"gid": "g1", "oid": "o9", "kind": "excess", "closed_by": None, "seq": 1,
+                 "needs_rebuild": 0, "paused": 0, "attempts": []}
+        bad = {
+            "empty journal": [],
+            "unknown kind": [{"kind": "bogus", "key": "x", "state": {}}],
+            "unknown field": [{"kind": "name", "key": "one@space", "state": dict(name, colour="red")}],
+            "no link hash": [{"kind": "name", "key": "one@space", "state": name},
+                             {"kind": "order", "key": o1,
+                              "state": {k: v for k, v in order.items() if k != "token_hash"}}],
+            "order without its name": [{"kind": "order", "key": o1, "state": order}],
+            "group without its order": [{"kind": "name", "key": "one@space", "state": name},
+                                        {"kind": "order", "key": o1, "state": order},
+                                        {"kind": "group", "key": "g1", "state": group}],
+        }
+        for what, records in bad.items():
+            with self.subTest(what):
+                d = self.dir / what.replace(" ", "-")
+                if records:
+                    Journal(d / "offhost").append("state", records=records)
+                with self.assertRaises(RestoreRefused) as e:
+                    restore_from_journal(d / "store.db", Journal(d / "offhost"))
+                key = (o1 if what == "order without its name" else
+                       records[-1]["key"] if records else "no records")
+                self.assertIn(key, str(e.exception))
+                self.assertEqual([f.name for f in d.iterdir()], ["offhost"])
+        # A restore killed partway leaves no database at the target, so no
+        # start can take a partial store for a whole one.
+        self.stop()
+        killed = subprocess.run([sys.executable, "-c", KILLED_RESTORE, str(self.dir)],
+                                cwd=Path(__file__).resolve().parent.parent)
+        self.assertEqual(killed.returncode, 9)
+        self.assertFalse((self.dir / "restored.db").exists())
+        restore_from_journal(self.dir / "restored.db", Journal(self.dir / "offhost"))
+        self.assertEqual(sorted(f.name for f in self.dir.glob("restored.db*")), ["restored.db"])
+        self.start()
+
+    def test_H6_a_restored_service_reconciles_refunds_before_serving(self):
+        self.list("one@space", "two@space")
+        o1, link1 = self.paid("one@space", SPK, settled=True)
+        o2, link2 = self.paid("two@space", SPK2, settled=True)
+        a = self.refund_group("g1", o1, link1, "refund-h6a")
+        b = self.refund_group("g2", o2, link2, "refund-h6b")
+        sent = self.recording_sends()
+        led = self.service.ledger
+        led.broadcast("g1", a["txid"])
+        self.chain.add(Tx(a["txid"], tuple(a["inputs"]), tuple(a["outputs"])))
+        self.chain.mine()
+        self.view.send_mode = "lost"
+        led.broadcast("g2", b["txid"])
+        self.view.send_mode = "ok"
+        self.op("POST", "/operator/observe")
+        before = {oid: {k: led.operator_view(oid)[k] for k in ("reserved", "refunded_total", "available")}
+                  for oid in (o1, o2)}
+        del sent[:]
+        self.lose_host()
+        self.restore()
+        self.start()
+        self.assertEqual(self.service.startup["rebroadcast"], [b["txid"]])
+        self.assertEqual([(t["txid"], t["raw"]) for t in sent], [(b["txid"], b["raw"])])
+        led = self.service.ledger
+        self.assertTrue(led._attempt(a["txid"])["acknowledged"])
+        for oid in (o1, o2):
+            self.assertEqual({k: led.operator_view(oid)[k] for k in before[oid]}, before[oid])
+
 
 if __name__ == "__main__":
     unittest.main()

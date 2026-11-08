@@ -383,6 +383,17 @@ still work with the new code. It doesn't exercise the new rules: cases V1 to
 V16 are tested by the service's API tests over a simulated chain, not on
 regtest.
 
+`service-20261108T102328Z-fef5b8` is the same script rerun after draft 13
+changed how the service writes its off-host journal: one entry per write,
+acknowledged whole, now also carrying alerts, authorizations and each
+order link's hash. Verdict pass, exit 0. All 43 required steps agree with
+the model, 10 are informational, and the service was killed and started
+again six times, including scenario 8's J5 step, a broadcast refused while
+the journal is down. The run shows that the purchase and refund paths work
+with the new journal. It doesn't exercise a restore from the journal: cases
+H1 to H7 are tested over a simulated chain and beside the model, not on
+regtest.
+
 ## The tightened harness
 
 Since fp4:

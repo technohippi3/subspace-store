@@ -8,9 +8,9 @@ durable state. The service is a separate implementation, so agreement here
 is evidence that it follows the model's rules on these sequences, and only
 that: it is a model-twin result, not regtest evidence.
 
-Host loss and restore from the off-host journal are not twinned yet: the
-service restores from its own durable database, and a restore from the
-journal alone is later work (docs/SERVICE.md).
+A host loss is twinned too (case H7): the model keeps what its off-host
+journal acknowledged, and the service is rebuilt from its own journal
+alone into a fresh database file, then both evaluate.
 """
 
 import hashlib
@@ -21,7 +21,8 @@ from pathlib import Path
 from model.chain import Tx
 from model.store import Refused as ModelRefused
 from service.journal import MemoryJournal
-from service.ledger import Ledger, Policy, Refused, SendFailed, SendUncertain, valid_p2tr
+from service.ledger import (Ledger, Policy, Refused, SendFailed, SendUncertain,
+                            restore_from_journal, valid_p2tr)
 
 SPACE = "@twin"
 
@@ -114,6 +115,8 @@ class TwinStore:
         object.__setattr__(self, "service", self._open())
         object.__setattr__(self, "mismatches", [])
         object.__setattr__(self, "restarts", 0)
+        object.__setattr__(self, "host_losses", 0)
+        object.__setattr__(self, "workdir", Path(workdir))
 
     def _open(self):
         return Ledger(self.db_path, self.view, self.journal, Policy(),
@@ -124,6 +127,21 @@ class TwinStore:
         self.service.close()
         object.__setattr__(self, "service", self._open())
         object.__setattr__(self, "restarts", self.restarts + 1)
+
+    def restore_from_offhost(self):
+        """A host loss. The model restores its acknowledged state, which
+        also sets its clock back to the acknowledged one; the clock is an
+        input here, so the service's follows. The service's database is
+        dropped and rebuilt from its journal alone."""
+        self.model.restore_from_offhost()
+        object.__setattr__(self, "minutes", self.model.now)
+        self.service.close()
+        n = self.host_losses + 1
+        object.__setattr__(self, "host_losses", n)
+        object.__setattr__(self, "db_path", self.workdir / f"service-restored-{n}.db")
+        restore_from_journal(self.db_path, self.journal)
+        object.__setattr__(self, "service", self._open())
+        self.service.observe()
 
     def __getattr__(self, name):
         attr = getattr(self.model, name)

@@ -36,8 +36,11 @@ delivery while the service was killed and restarted four times, and a
 cancellation refund was paid to the buyer by a real refund transaction.
 `docs/SERVICE.md` records its choices and what it doesn't do yet.
 
-There is still no real controller, no checkout page, no restore from the
-off-host journal alone and no installer. Nothing here is fit for selling
+The service can rebuild its own database from its off-host journal alone
+after a host loss, shown over a simulated chain and beside the model, not
+yet on regtest. There is still no real controller, no checkout page, no
+restore of the controller and `subs` together with the store, and no
+installer. Nothing here is fit for selling
 names, and paid sales stay closed until the buyer and operator acceptance
 gates in the specification pass. The service runs on regtest only.
 `regtest/REPORT.md` says what has and hasn't been exercised.

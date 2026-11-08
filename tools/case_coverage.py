@@ -2,9 +2,10 @@
 
 Reads the case tables in docs/spec/PAYMENT-SPEC.md and the test names in
 tests/, and prints implemented and missing case identifiers. Most cases are
-tested against the reference model. The recipient-request cases (V) are
-rules of the service's boundary, which the model doesn't have; their tests
-are service API tests and are reported separately, never as model results.
+tested against the reference model. The recipient-request cases (V) and
+the service restore cases (H) are the service's own; their tests are
+service API tests or, for H7, a model-twin test, and they are reported
+separately, never as model results.
 
 With --check it is also a gate: it exits non-zero when a fixed-price MVP
 case has no test, or a test names a case the specification doesn't
@@ -32,7 +33,7 @@ def tested_cases():
 
 
 DEFERRED_AFTER_MVP = lambda c: c[0] in "DE" or c == "N6"
-SERVICE_BOUNDARY = lambda c: c[0] == "V"
+SERVICE_CASES = lambda c: c[0] in "VH"
 
 
 def main(argv=None):
@@ -45,10 +46,10 @@ def main(argv=None):
     unknown = sorted(tested - set(spec))
     missing = [c for c in spec if c not in tested]
     done = [c for c in spec if c in tested]
-    service = [c for c in spec if SERVICE_BOUNDARY(c)]
+    service = [c for c in spec if SERVICE_CASES(c)]
     print(f"spec cases: {len(spec)}, with tests: {len(done)}, without: {len(missing)}")
     print("with tests:", " ".join(done))
-    print(f"of which service API tests, not model results: "
+    print(f"of which service tests (API or model twin), not model results: "
           f"{len([c for c in service if c in tested])} of {len(service)}")
     print("without:", " ".join(missing))
     print(f"fixed-price MVP cases: {len(mvp)}, without tests: {len(mvp_missing)}"

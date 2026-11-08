@@ -18,8 +18,14 @@ pass.
   17 steps. This is a model-twin result.
 - `tests/test_service_api.py` exercises the HTTP boundaries and a restart
   over a simulated chain. Its `test_V*` tests are the recipient-request
-  cases V1 to V16 of `spec/PAYMENT-SPEC.md`. They are service API results,
-  not model results: the model has no recipient requests.
+  cases V1 to V16 of `spec/PAYMENT-SPEC.md`, and its `test_H1` to
+  `test_H6` are the restore cases H1 to H6. They are service API results,
+  not model results: the model has neither recipient requests nor the
+  service's database.
+- The twin test also runs the generator's host losses (case H7). At each
+  one the model keeps what its off-host journal acknowledged, and the
+  service's database is dropped and rebuilt from its journal alone; the
+  two must then agree as before. This is a model-twin result.
 - `regtest/run-service.sh` runs the service as its own process against
   Bitcoin Core, `spaced` and `subs` on regtest, restarting it with SIGKILL
   along the way (scenarios 7 and 8 in `regtest/harness/service.py`). Its
@@ -72,8 +78,21 @@ These are this milestone's choices, recorded so that they can be changed.
   another. The broadcast is refused until the group's journal entry is
   acknowledged off-host.
 - The off-host journal is a directory that the operator puts on another
-  volume. Each append is fsynced and read back. While it is down, changes
-  are backlogged and written again at the next evaluation.
+  volume. Each append is fsynced and read back. Every write is one entry
+  holding the whole current state of every record changed since the last
+  acknowledgment: names, orders (with the order link's SHA-256, never the
+  link), refund groups with their attempts, alerts and authorizations. While
+  the journal is down, changes are backlogged and written again at the next
+  evaluation.
+- Restore. After a host loss, `python3 -m service restore <config.json>`
+  rebuilds the database from the journal alone, into the configured path,
+  which must hold no database. It refuses an empty or inconsistent journal,
+  builds beside the target and moves the result into place only when
+  complete. Payment outputs, the frozen batch and `subs`' committed roots
+  aren't restored: balances come from the chain, and the other two belong
+  to the controller's recovery. A start that finds no store database, or
+  one with no names and no orders, while the journal has entries refuses to
+  serve and writes nothing.
 - Start-up reconciles every refund attempt against the chain before
   serving anything, and rebroadcasts an attempted one that the node doesn't
   know as the same signed transaction.
@@ -92,9 +111,12 @@ These are this milestone's choices, recorded so that they can be changed.
 
 ## Not in this milestone
 
-- Restore from the off-host journal alone, after losing the host's
-  database (the operator gate's restoration). The service restarts from
-  its own durable database only.
+- Restore from a snapshot plus the journal since it, and the operator
+  gate's full restoration with the controller and `subs`. The service
+  restores only its own database, from its journal alone, and not yet on
+  regtest.
+- A cancellation is reported before it is acknowledged off-host, so a host
+  loss in between undoes it (an open point in `spec/PAYMENT-SPEC.md`).
 - An owner-signed PSBT for refunds, fee bumps and replacement families
   through the API (the ledger implements both rules, and the twin tests
   them), and a refund after an earlier refund spent the order's payment

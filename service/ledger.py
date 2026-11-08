@@ -14,19 +14,26 @@ totals are derived from the journaled attempts.
 
 Evaluation order follows the model: an operation evaluates the store
 (`observe`), runs its own database transaction, then evaluates again. Each
-evaluation commits, then writes the off-host journal backlog. A refund
-attempt counts as journaled only once its group's entry is acknowledged, and
-nothing is exported or broadcast before that.
+evaluation commits, then writes the off-host journal backlog as one entry,
+acknowledged whole or not at all. A refund attempt counts as journaled only
+once its group's entry is acknowledged, and nothing is exported or broadcast
+before that.
+
+After a host loss the database is rebuilt from the journal alone
+(`restore_from_journal`, PAYMENT-SPEC.md "Host loss and restore"). A start
+never runs an empty store over a journal that has entries.
 """
 
 import hashlib
 import json
+import os
 import re
 import secrets
 import sqlite3
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 from .journal import JournalDown
 
@@ -71,6 +78,14 @@ class Refused(Exception):
 
 class Invalid(Exception):
     """A malformed input, refused before any state is read."""
+
+
+class RestoreRequired(Exception):
+    """No store database, but the off-host journal has entries."""
+
+
+class RestoreRefused(Exception):
+    """The journal can't be restored as it is, or the target isn't free."""
 
 
 @dataclass
@@ -190,8 +205,36 @@ def token_hash(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+# What the journal records, in the order a restore writes them back.
+RECORD_KINDS = ("name", "order", "group", "alert", "authorization")
+
+
+def _has_store(path):
+    """True if the database at `path` holds any name or order. Read-only:
+    it never creates or changes the file."""
+    if not path.exists():
+        return False
+    # Without a WAL file the main file is complete, and an immutable open
+    # creates nothing. With one, as after a crash, it must be read too.
+    wal = Path(str(path) + "-wal").exists()
+    try:
+        db = sqlite3.connect(path.resolve().as_uri() + ("?mode=ro" if wal else "?mode=ro&immutable=1"),
+                             uri=True)
+        try:
+            return any(db.execute(f"select 1 from {t} limit 1").fetchone()
+                       for t in ("names", "orders"))
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return False
+
+
 class Ledger:
     def __init__(self, db_path, chain, journal, policy=None, clock=time.time):
+        if journal.entries() and not _has_store(Path(db_path)):
+            raise RestoreRequired(
+                f"no store database at {db_path}, but the off-host journal has entries: "
+                "restore it first (python3 -m service restore <config>)")
         self.db = sqlite3.connect(str(db_path), isolation_level=None, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.execute("pragma journal_mode = wal")
@@ -241,8 +284,14 @@ class Ledger:
 
     def _snapshot(self, kind, key):
         if kind == "order":
-            row = self._order(key)
-            return {k: row[k] for k in row.keys() if k != "token_hash"}
+            # With the link's hash, never the link: a restored link still
+            # opens its order, and the journal can't give one away.
+            return dict(self._order(key))
+        if kind == "alert":
+            return dict(self.db.execute("select * from alerts where n = ?", (int(key),)).fetchone())
+        if kind == "authorization":
+            return dict(self.db.execute("select * from authorizations where n = ?",
+                                        (int(key),)).fetchone())
         if kind == "name":
             return dict(self._name(key))
         if kind == "group":
@@ -252,28 +301,35 @@ class Ledger:
         raise ValueError(kind)
 
     def flush_journal(self):
-        """Write every backlogged entity's current state to the off-host
-        journal. Stops at the first failure; the rest stays backlogged."""
+        """Write every backlogged record's current state to the off-host
+        journal as one entry, acknowledged whole or not at all. Records not
+        in the backlog are unchanged since their last acknowledgment, so the
+        acknowledged state is always one the store was in."""
         if not self.journal.available():
             return False
-        for row in self.db.execute("select kind, key from journal_backlog").fetchall():
-            snap = self._snapshot(row["kind"], row["key"])
-            try:
-                self.journal.append(row["kind"], key=row["key"], state=snap)
-            except JournalDown:
-                return False
-            with self.tx():
+        rows = self.db.execute("select kind, key from journal_backlog order by rowid").fetchall()
+        if not rows:
+            return True
+        records = [{"kind": r["kind"], "key": r["key"], "state": self._snapshot(r["kind"], r["key"])}
+                   for r in rows]
+        try:
+            self.journal.append("state", records=records)
+        except JournalDown:
+            return False
+        with self.tx():
+            for rec in records:
                 self.db.execute("delete from journal_backlog where kind = ? and key = ?",
-                                (row["kind"], row["key"]))
-                if row["kind"] == "group":
-                    for a in snap["attempts"]:
+                                (rec["kind"], rec["key"]))
+                if rec["kind"] == "group":
+                    for a in rec["state"]["attempts"]:
                         self.db.execute("update attempts set journaled = 1 where txid = ?",
                                         (a["txid"],))
         return True
 
     def _alert(self, oid, kind, detail):
-        self.db.execute("insert into alerts(oid, kind, detail, at) values (?, ?, ?, ?)",
-                        (oid, kind, _j(detail), self.clock()))
+        cur = self.db.execute("insert into alerts(oid, kind, detail, at) values (?, ?, ?, ?)",
+                              (oid, kind, _j(detail), self.clock()))
+        self._dirty("alert", str(cur.lastrowid))
 
     # Rows
 
@@ -684,12 +740,16 @@ class Ledger:
                 raise Refused("excess below the refund minimum")
             if charged > avail:
                 raise Refused("not enough settled funds")
-            self.db.execute("insert into authorizations(gid, amount, available) values (?, ?, ?)",
-                            (gid, charged, avail))
+            self._authorize(gid, charged, avail)
             self.db.execute("insert into groups(gid, oid, kind) values (?, ?, ?)", (gid, oid, kind))
             self._insert_attempt(gid, tx, to_buyer, fee, charged)
             self._dirty("group", gid)
         self.observe()
+
+    def _authorize(self, gid, amount, available):
+        cur = self.db.execute("insert into authorizations(gid, amount, available) "
+                              "values (?, ?, ?)", (gid, amount, available))
+        self._dirty("authorization", str(cur.lastrowid))
 
     def _insert_attempt(self, gid, tx, to_buyer, fee, charged):
         self.db.execute(
@@ -728,8 +788,7 @@ class Ledger:
                 avail = self.available(g["oid"])
                 if increase > avail:
                     raise Refused("not enough settled funds for the increase")
-                self.db.execute("insert into authorizations(gid, amount, available) "
-                                "values (?, ?, ?)", (gid, increase, avail))
+                self._authorize(gid, increase, avail)
                 self._insert_attempt(gid, tx, to_buyer, fee, charged)
                 self._set_group(gid, paused=0)
         if pause:
@@ -958,8 +1017,9 @@ class Ledger:
         """The order's status in its latest acknowledged journal entry."""
         status = None
         for e in self.journal.entries():
-            if e["kind"] == "order" and e["key"] == oid:
-                status = e["state"]["status"]
+            for rec in e.get("records", ()):
+                if rec["kind"] == "order" and rec["key"] == oid:
+                    status = rec["state"]["status"]
         return status
 
     def journal_order(self, oid):
@@ -1027,3 +1087,110 @@ class Ledger:
         with self.tx():
             for h in handles:
                 self.db.execute("insert or replace into committed values (?, ?)", (h, root))
+
+
+# Restore from the off-host journal alone (PAYMENT-SPEC.md, "Host loss and
+# restore")
+
+def acknowledged_records(journal):
+    """The latest acknowledged state of every record, by kind and key."""
+    latest = {k: {} for k in RECORD_KINDS}
+    try:
+        entries = journal.entries()
+    except ValueError as e:
+        raise RestoreRefused(f"the journal has an unreadable line: {e}")
+    for e in entries:
+        if e.get("kind") != "state":
+            raise RestoreRefused(f"journal entry {e.get('seq')} has unknown kind {e.get('kind')!r}")
+        for rec in e.get("records", ()):
+            kind = rec.get("kind")
+            if kind not in latest:
+                raise RestoreRefused(f"journal entry {e.get('seq')} has a record of unknown "
+                                     f"kind {kind!r}, key {rec.get('key')!r}")
+            latest[kind][str(rec["key"])] = rec["state"]
+    return latest
+
+
+def _check_restorable(latest):
+    names, orders, groups = latest["name"], latest["order"], latest["group"]
+    for oid, o in orders.items():
+        if not o.get("token_hash"):
+            raise RestoreRefused(f"order {oid} has no order link hash in the journal")
+        if o.get("name") not in names:
+            raise RestoreRefused(f"order {oid} names {o.get('name')!r}, which has no journal entry")
+    for gid, g in groups.items():
+        if g.get("oid") not in orders:
+            raise RestoreRefused(f"refund group {gid} belongs to order {g.get('oid')!r}, "
+                                 "which has no journal entry")
+    for n, a in latest["alert"].items():
+        if a.get("oid") is not None and a["oid"] not in orders:
+            raise RestoreRefused(f"alert {n} names order {a['oid']!r}, which has no journal entry")
+    for n, a in latest["authorization"].items():
+        if a.get("gid") not in groups:
+            raise RestoreRefused(f"authorization {n} names refund group {a.get('gid')!r}, "
+                                 "which has no journal entry")
+
+
+def _insert(db, table, what, state):
+    cols = {r[1] for r in db.execute(f"pragma table_info({table})")}
+    unknown = set(state) - cols
+    if unknown:
+        raise RestoreRefused(f"{what} has fields the store doesn't have: {sorted(unknown)}")
+    keys = sorted(state)
+    db.execute(f"insert into {table} ({', '.join(keys)}) values ({', '.join('?' * len(keys))})",
+               [state[k] for k in keys])
+
+
+def _database_files(path):
+    return [Path(str(path) + suffix) for suffix in ("", "-wal", "-shm", "-journal")]
+
+
+def restore_from_journal(db_path, journal):
+    """Rebuild the store's database from the off-host journal alone, into a
+    path where no database exists. Builds beside the target and moves the
+    result into place only once complete. Returns the record counts."""
+    target = Path(db_path)
+    if any(f.exists() for f in _database_files(target)):
+        raise RestoreRefused(f"a database already exists at {target}; a restore never overwrites")
+    latest = acknowledged_records(journal)
+    if not any(latest.values()):
+        # A wrong or unmounted journal directory looks like this: say so
+        # rather than create an empty store.
+        raise RestoreRefused("the journal has no records; nothing to restore")
+    _check_restorable(latest)
+    work = target.with_name(target.name + ".restoring")
+    for f in _database_files(work):
+        f.unlink(missing_ok=True)
+    try:
+        db = sqlite3.connect(str(work), isolation_level=None)
+        try:
+            db.execute("pragma foreign_keys = on")
+            db.executescript(SCHEMA)
+            db.execute("begin")
+            for key, state in latest["name"].items():
+                _insert(db, "names", f"name {key}", state)
+            for key, state in sorted(latest["order"].items(), key=lambda kv: kv[1].get("seq", 0)):
+                _insert(db, "orders", f"order {key}", state)
+            for key, state in sorted(latest["group"].items(), key=lambda kv: kv[1].get("seq", 0)):
+                state = dict(state)
+                attempts = state.pop("attempts", [])
+                _insert(db, "groups", f"refund group {key}", state)
+                for a in attempts:
+                    # In the journal, so journaled, whatever the copy said
+                    # when it was taken.
+                    _insert(db, "attempts", f"attempt {a.get('txid')} of {key}",
+                            dict(a, journaled=1))
+            for kind, table in (("alert", "alerts"), ("authorization", "authorizations")):
+                for key, state in sorted(latest[kind].items(), key=lambda kv: int(kv[0])):
+                    _insert(db, table, f"{kind} {key}", state)
+            db.execute("commit")
+        except sqlite3.Error as e:
+            raise RestoreRefused(f"the journal doesn't restore: {e}")
+        finally:
+            db.close()
+        os.replace(work, target)
+    except BaseException:
+        for f in _database_files(work):
+            f.unlink(missing_ok=True)
+        raise
+    return {kind: len(latest[kind]) for kind in RECORD_KINDS}

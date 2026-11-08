@@ -1,5 +1,13 @@
 """Run the store service: python3 -m service <config.json>
 
+After a host loss, rebuild its database from the off-host journal alone,
+into the configured path, which must not hold a database:
+
+    python3 -m service restore <config.json>
+
+A start that finds no store database while the journal has entries refuses
+to serve until this has been run (PAYMENT-SPEC.md, "Host loss and restore").
+
 The configuration names files and endpoints, never credentials:
 
     {
@@ -31,7 +39,7 @@ from pathlib import Path
 from .app import Service
 from .bitcoin import BitcoinChainView
 from .journal import Journal
-from .ledger import Ledger, Policy
+from .ledger import Ledger, Policy, RestoreRefused, RestoreRequired, restore_from_journal
 from .rpc import BitcoinRpc
 
 
@@ -79,14 +87,26 @@ def build(cfg):
                    poll_seconds=float(cfg.get("poll_seconds", 2)))
 
 
+def restore(cfg):
+    counts = restore_from_journal(cfg["db"], Journal(cfg["journal_dir"]))
+    print(f"restored {cfg['db']} from the off-host journal: {json.dumps(counts)}", flush=True)
+    return 0
+
+
 def main(argv):
+    if len(argv) == 3 and argv[1] == "restore":
+        try:
+            return restore(load(argv[2]))
+        except (ConfigError, RestoreRefused) as e:
+            print(f"refusing to restore: {e}", file=sys.stderr)
+            return 3
     if len(argv) != 2:
         print(__doc__, file=sys.stderr)
         return 2
     try:
         cfg = load(argv[1])
         service = build(cfg)
-    except ConfigError as e:
+    except (ConfigError, RestoreRequired) as e:
         print(f"refusing to start: {e}", file=sys.stderr)
         return 3
     service.start()
