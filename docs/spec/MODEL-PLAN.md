@@ -198,7 +198,7 @@ identifier as the test name.
 | J1 to J10 | restore against reservations and both journals | yes, with simulated host loss and independent journal outages |
 | L1 to L9 | finality, anchor coverage, publication, delivery under a later root, recovery incidents and commitment rebroadcast | yes, with reorgs across `d >= 150` and simulated root anchors |
 | E1 to E4 | evidence and disclosure | yes, with a real signature library for receipts |
-| eligibility (README) | proof binding and quotas | yes, with a stubbed verifier; local ZKPassport verification is an integration test |
+| eligibility (`ELIGIBILITY.md`) | proof binding and quotas | yes, with a stubbed verifier; local ZKPassport verification is an integration test |
 
 ## What the model can't establish
 

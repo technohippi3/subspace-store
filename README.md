@@ -28,11 +28,19 @@ That is regtest evidence, with two small patches to `subs` kept in
 imported a certificate, nothing has touched the public relay network, and
 the harness's registry and controller are test code.
 
-There is no store, no persistent registry, no payment or refund service, no
-real controller, no checkout and no installer. Nothing here is fit for
-selling names, and paid sales stay closed until the buyer and operator
-acceptance gates in the specification pass. `regtest/REPORT.md` says what
-has and hasn't been exercised.
+The first milestone of the store service is in `service/`: durable orders,
+quotes, recipient locking, holds and reservations, payment accounting,
+cancellation and refund obligations, behind an HTTP API with no-account
+checkout. On regtest, one purchase went through its API to verified
+delivery while the service was killed and restarted four times, and a
+cancellation refund was paid to the buyer by a real refund transaction.
+`docs/SERVICE.md` records its choices and what it doesn't do yet.
+
+There is still no real controller, no checkout page, no restore from the
+off-host journal alone and no installer. Nothing here is fit for selling
+names, and paid sales stay closed until the buyer and operator acceptance
+gates in the specification pass. The service runs on regtest only.
+`regtest/REPORT.md` says what has and hasn't been exercised.
 
 A passing model test shows that the specified rules are consistent on a
 simulated chain. It is not evidence that real Bitcoin transactions, the
@@ -49,9 +57,14 @@ upstream Spaces software or buyers behave that way.
   `issuing`, uncertain broadcasts, supersession, finality and its loss, and
   the off-host journal. `sim.py` journals every call, and simulates outages
   of the two off-host journals, together or independently, and host loss.
+- `service/`: the store service, standard-library Python and SQLite.
+  `ledger.py` holds the fixed-price rules, written separately from the
+  model; `bitcoin.py` reads Bitcoin Core and builds refunds; `app.py` is the
+  HTTP API. Run it with `python3 -m service <config.json>` (regtest only).
 - `tests/`: the named specification cases, one test per case identifier.
   Every fixed-price MVP case has one. There are also seeded generated
-  sequences with invariant, replay and cut-and-resume checks.
+  sequences with invariant, replay and cut-and-resume checks, and the
+  service run beside the model on those sequences (`test_service_twin.py`).
 - `tools/case_coverage.py`: reports which named cases have tests.
 
 ## Running the checks

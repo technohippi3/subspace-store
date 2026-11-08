@@ -68,6 +68,11 @@ wallets are made fresh for each run inside `.run/`.
   upstream patches (`.cache/bin/subs-combined`), and scenarios 1 to 6 in
   one run: recovery after a restore, continued issuance, publication and
   verified delivery.
+- `run-service.sh [prefix]`: the store service (`service/`) as its own
+  process in place of the harness registry, killed and restarted along the
+  way: a purchase through its API to verified delivery (scenario 7) and a
+  cancellation refund with a real refund transaction (scenario 8). It uses
+  the `subs-relay` build.
 - `keep-run.sh <run id>`: keeps a run's report and certificates in `runs/`
   and `evidence/`. It never replaces or removes anything already kept.
 - `verify-evidence.sh`: verifies every kept certificate offline.
@@ -88,6 +93,8 @@ wallets are made fresh for each run inside `.run/`.
     `CONTROLLER-DESIGN.md` against the local relay, with delivery checked
     by verifying the relay's `/query` answer with libveritas against root
     anchors read from `spaced`.
+  - `service.py`: scenarios 7 and 8, with `ServiceRegistry`, the
+    registry's interface served by the real service over HTTP.
 - `verifier/`: a small Rust program that verifies a certificate message with
   `libveritas` 0.4.4, the version `subs` locks, against root anchors read
   from `spaced` directly.
@@ -113,7 +120,8 @@ namespace or on a reused run id.
 ## Limits
 
 The registry and controller here are harness code written for these
-scenarios, not the product. They cover the steps the scenarios take, and the
+scenarios, not the product. Scenarios 7 and 8 replace the registry with the
+store service; the controller is still the harness's. They cover the steps the scenarios take, and the
 report lists what was not exercised. The pinned `subs`, built without its
 `test-rig` feature, seeds the public relay network, which this harness must
 not contact, so publication runs only with `subs-fabric-seed.patch` and one

@@ -1,10 +1,13 @@
-"""Report which named specification cases have model tests.
+"""Report which named specification cases have tests.
 
 Reads the case tables in docs/spec/PAYMENT-SPEC.md and the test names in
-tests/, and prints implemented and missing case identifiers.
+tests/, and prints implemented and missing case identifiers. Most cases are
+tested against the reference model. The recipient-request cases (V) are
+rules of the service's boundary, which the model doesn't have; their tests
+are service API tests and are reported separately, never as model results.
 
 With --check it is also a gate: it exits non-zero when a fixed-price MVP
-case has no model test, or a test names a case the specification doesn't
+case has no test, or a test names a case the specification doesn't
 have. Deferred auction cases are reported but never fail the check.
 """
 
@@ -29,6 +32,7 @@ def tested_cases():
 
 
 DEFERRED_AFTER_MVP = lambda c: c[0] in "DE" or c == "N6"
+SERVICE_BOUNDARY = lambda c: c[0] == "V"
 
 
 def main(argv=None):
@@ -41,16 +45,19 @@ def main(argv=None):
     unknown = sorted(tested - set(spec))
     missing = [c for c in spec if c not in tested]
     done = [c for c in spec if c in tested]
-    print(f"spec cases: {len(spec)}, with model tests: {len(done)}, without: {len(missing)}")
-    print("with model tests:", " ".join(done))
+    service = [c for c in spec if SERVICE_BOUNDARY(c)]
+    print(f"spec cases: {len(spec)}, with tests: {len(done)}, without: {len(missing)}")
+    print("with tests:", " ".join(done))
+    print(f"of which service API tests, not model results: "
+          f"{len([c for c in service if c in tested])} of {len(service)}")
     print("without:", " ".join(missing))
-    print(f"fixed-price MVP cases: {len(mvp)}, without model tests: {len(mvp_missing)}"
+    print(f"fixed-price MVP cases: {len(mvp)}, without tests: {len(mvp_missing)}"
           + (": " + " ".join(mvp_missing) if mvp_missing else ""))
     if unknown:
         print("tests naming unknown cases:", " ".join(unknown))
         return 1
     if strict and mvp_missing:
-        print("check failed: every fixed-price MVP case needs a model test")
+        print("check failed: every fixed-price MVP case needs a test")
         return 1
     return 0
 

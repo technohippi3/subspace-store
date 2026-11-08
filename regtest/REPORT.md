@@ -333,6 +333,56 @@ counted libveritas's "pending" as a mismatch and alerted, so those two rows
 disagreed with the model. `combined-20261107T114800Z-d17683` passed before
 L9 existed, with 169 required steps, and the U1(b) draft cites it.
 
+## The store service (run service-20261107T160513Z-6da944, 2026-11-07)
+
+Script: `regtest/run-service.sh`, from `main` at `7a28645` plus the
+service. The store service (`service/`, see `docs/SERVICE.md`) runs as its
+own process in place of the harness registry. The harness controller, the
+publication procedure and the model mirror are unchanged. The controller
+reaches the service through its operator API, `subs` polls its `/pending`
+with the registry token, and the buyer acts only through the public request
+and the private order link. `subs` is the `subs-relay` build. The service
+was killed with SIGKILL and started again six times.
+
+Verdict pass, exit 0. All 43 required steps agree with the model, and 10
+are informational.
+- Scenario 7, a purchase through the service. A second buyer got "taken
+  for now" (Q1). The service was killed with the payment at 1 conf and
+  came back with the order quoted and the hold kept. At 3 conf it
+  converted, and the order link showed it. The batch was issued, and a
+  cancellation after `issuing` was refused (X3). The service was killed
+  again while the member was `issuing` and while it was ready, and came
+  back in the same state each time. The handle was published to the local
+  relay, delivery was confirmed by a libveritas-verified lookup, and the
+  order reached "fulfilled". It was still fulfilled after a fourth kill.
+- Scenario 8, a cancellation refund. After the owner's cancellation and the
+  buyer's refund address through the order link, a refund at 3 conf was
+  refused, because nothing was settled (N2). At 6 conf it was built: 9,700
+  to the buyer, a 300 fee and 10,000 reserved. The store's off-host journal
+  was down while it was built, so broadcast was refused (J5) and nothing
+  reached the mempool. The service was killed then and came back with one
+  backlogged journal entry, which it wrote once the journal returned; then
+  the broadcast went out. After a further kill the attempt was found in the
+  mempool and not resent. The refund's group closed at 6 conf with 10,000
+  refunded, and the buyer's wallet received 9,700 at the address it gave.
+
+An earlier attempt, `service-20261107T160343Z-a53a79`, stopped with an
+error at the first checkpoint: the controller's coordinated snapshot backs
+up the registry's database, and the service client had none to give. The
+client now gives a read-only connection to the service's database. That
+run isn't kept.
+
+`service-20261107T185629Z-196ad6` is the same script rerun after the
+recipient-request rules of draft 12: strict request validation, script
+claims only by paid orders, and the audit of stored recipients at every
+start. Verdict pass, exit 0. All 43 required steps agree with the model, 10
+are informational, and the service was killed and started again six times.
+Both buyers' requests used fresh P2TR scripts from the buyer wallet and
+passed the new checks. The run shows that the purchase and refund paths
+still work with the new code. It doesn't exercise the new rules: cases V1 to
+V16 are tested by the service's API tests over a simulated chain, not on
+regtest.
+
 ## The tightened harness
 
 Since fp4:
@@ -358,6 +408,8 @@ Since fp4:
 ## Not exercised
 
 Not exercised on regtest:
+- a restore of the store service from its off-host journal alone, without
+  its own database (its restarts in scenarios 7 and 8 keep the database);
 - publication beyond one local relay: propagation between relays, the
   public relay network, chunks of more than one handle, an oversized chunk
   and its halving, temp certificates, a reorg between the live check
@@ -369,8 +421,9 @@ Not exercised on regtest:
   the relay's answer verified with the pinned libveritas);
 - a fulfilled order whose commitment then loses finality or is superseded
   (L4, L5);
-- refunds of any kind, late payments, hold extensions and eligibility
-  proofs;
+- refunds other than one cancellation refund through the store service
+  (excess refunds, fee bumps, replacement families, PSBT export), late
+  payments, hold extensions and eligibility proofs;
 - a lost answer between `subs` and the controller (only `spaced`'s answer to
   `subs` was dropped);
 - X10, a supersession undone by a reorg deeper than settled depth, and L8,
@@ -400,8 +453,8 @@ they're published, and a run id must be a plain name.
 runs, four continued runs and `publication-20261107T094250Z-76605c`. Four
 of the publication run's verifications, in its `-relay` directories, are
 the relay's `/query` answers from scenario 6: two from before publication
-and two from the delivery lookups. The four combined runs are kept as
-well, 133 messages in all. Each message is kept with its root anchors and
+and two from the delivery lookups. The four combined runs and the service
+run are kept as well, 136 messages in all. Each message is kept with its root anchors and
 libveritas output. `verify-evidence.sh` verifies them all offline, and
 `evidence/README.md` says how. fp4's certificate isn't kept in the repository,
 because its handle label was a personal name and is part of the signed

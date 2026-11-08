@@ -1,4 +1,4 @@
-# Subspace store payment specification (draft 11, 2026-11-07)
+# Subspace store payment specification (draft 12, 2026-11-07)
 
 MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
 auction section, its cases D1 to D35, case N6, and the auction evidence
@@ -34,7 +34,13 @@ ready only once its certificate verifies as sovereign, which can trail
 `d >= 150`, and a commitment that lost finality returns to the chain only
 from its journaled signed bytes (L6 to L8), and a supersession that a deeper reorg undoes is tracked (X10). Draft 11 adds L9 from regtest findings R23 and
 R24: a certificate built on a later commitment than its batch's is
-delivered only once that later root is final and covered.
+delivered only once that later root is final and covered. Draft 12 brings
+the strict request rules from the buyer-gate handoff into this file, as
+"Recipient requests" and cases V1 to V16, and records hold abuse as an open
+launch blocker. Within draft 12, a review found that a first-come binding let
+an unsigned request claim someone else's script for good, and that stored
+orders skipped validation. A script is now claimed only by a paid order, and
+every start audits stored recipients.
 
 ## Terms, depth arithmetic and thresholds
 
@@ -272,7 +278,7 @@ that wouldn't by itself make an operator issue a name. It is deferred.
 Eligibility is who may buy. It applies to either sale mode:
 - public: anyone;
 - proof-gated: a proof bound to the order, such as a ZKPassport nationality
-  check, with a quota per policy (see Eligibility in `README.md`);
+  check, with a quota per policy (see `ELIGIBILITY.md`);
 - allowlist: the owner approves a specific public request, meaning that
   exact `handle` and `script_pubkey`, before checkout can proceed. Fresh
   recipient keys don't prevent this, because the owner approves the request
@@ -290,6 +296,90 @@ Availability is whether the name can be bought at all:
 - in fulfillment;
 - issued.
 
+## Recipient requests
+
+A recipient request nominates who receives a name. It is public data: Nacho
+exports it as unsigned JSON with no private key, signature, nonce or expiry,
+and anyone may have seen it. Holding a request proves nothing, so the store
+treats it only as a nomination. These rules apply wherever the store accepts
+a request, before any order, quote or eligibility check exists for it.
+
+Shape. A request is a JSON object with exactly two members, `handle` and
+`script_pubkey`, both strings. A request with any other member, a repeated
+member or a missing one is refused whole; the store never strips a field
+and carries on. Upstream's `HandleRequest` type has an optional
+`dev_private_key` testing field, so a request carrying it, or anything else
+that might be a secret, is refused like any other extra member, and the
+refusal never stores, logs or echoes the request.
+
+Handle. `handle` is canonical `name@space`: two labels joined by `@`, each 1
+to 63 characters from `a` to `z`, `0` to `9` and `-`, neither starting nor
+ending with `-`, the space in punycode. Nothing is normalized: uppercase,
+surrounding whitespace, a trailing newline, a leading `@` or Unicode is
+refused, not corrected. The handle must also equal a name the store lists,
+or the request gets "not for sale".
+
+Recipient script. `script_pubkey` is lowercase hex of exactly 34 bytes: `51
+20` (witness version 1 and a 32-byte push) and then a 32-byte x-only key that
+is a valid BIP340 public key, meaning the coordinate is below the field size
+and `lift_x` finds a point on secp256k1. Any other script type or length,
+uppercase hex, or a key off the curve is refused. The store can't check that
+the buyer holds the key; the buyer gate tests that.
+
+Who may claim a script. A request is unsigned, so it carries no authority
+over its script: anyone who has seen a public request, or the script on the
+chain, can submit it for any handle. Submitting it, or quoting it, therefore
+claims nothing. Only a paid order claims a script.
+- Claim. An order claims its script for its handle while it is
+  `converted`, `issuing`, `ready` or `fulfilled`, that is, from the moment
+  its payment converts the hold. The claim is derived from the order's
+  status, not stored on its own, so it can't drift from the order.
+- Lifecycle. A claim ends when its order leaves those states without
+  issuance, by cancellation, including after a safe supersession. A
+  `fulfilled` order's claim never ends, because the name is on the chain
+  under that key.
+- Refusal. A request or a quote whose script another handle claims is
+  refused, and so is a request whose script is one of the store's own
+  destination scripts. The refusal says only that the script is already
+  used, never which handle or order holds it. It still tells the caller
+  that some paid order here carries the script.
+- Unpaid orders don't conflict. Orders for different handles may carry one
+  script until one of them converts.
+- Conflict. Two orders for different handles can both convert on one script
+  if both were quoted before either converted. Then neither enters a batch,
+  the owner is alerted once for each, and nothing else changes until the
+  owner cancels one. An order already `issuing` keeps its script: a later
+  conflicting order is refused at batch entry, and the issuing order's
+  recheck still passes. Two issuing orders on one script, possible only in
+  records from before these rules, both fail the recheck.
+- Retry. A request for the same handle with the same script creates a new
+  order with a new order link. It never returns, reveals or reuses an
+  earlier order's link, because a public request is no proof of holding
+  that order.
+
+The rule protects buyers from reusing a key across names, which would tie
+those names together and undermine independent transfers. Blocking someone
+else's script now costs the full price of a name, and that name then goes to
+the blocked script's owner. The store can't know whether a script is used
+elsewhere, so fresh keys from Nacho and the buyer gate's two-name test stay
+essential.
+
+Nothing on refusal. A refused request creates no order, order link, hold,
+alert or journal entry. A malformed request is refused before any state is
+read. A request refused for reuse is a conflict with stored state.
+
+Stored orders. Orders stored before these rules, or by a faulty version,
+may break them. At every start, before it serves anything, the store checks
+each stored order's recipient against the handle and script rules above,
+and against its own destination scripts. An order that fails is flagged
+with the reason, and the owner is alerted once. Its record is kept as it
+is: nothing is deleted, and no status, reservation or refund changes. A
+flagged order gets no quote. Once converted it fails batch entry and the
+issuing recheck, can't be put in the frozen batch, and is never served by
+`/pending`, even from a batch frozen before the start. Script conflicts
+among stored orders are alerted at the same check and follow the conflict
+rule. The owner resolves each one, usually by cancelling and refunding.
+
 ## Fixed-price sales
 
 A fixed-price name has at most one temporary hold and at most one
@@ -300,6 +390,18 @@ Quote and temporary hold. A quote fixes the price and takes the name's
 temporary hold. The hold has `quote_expires_at`, 15 minutes after the quote
 by the server's clock (proposal). A second buyer who asks for a held name
 gets "taken for now" and no quote.
+
+Open: hold abuse. A request and a quote cost nothing and need no account, so
+one caller can keep a name "taken for now" indefinitely by quoting again as
+each hold ends. A reproduction against the service's API over a simulated
+chain showed this on 2026-11-07; no committed test covers it. It is an open
+design issue and blocks any public pilot. A fix has to limit repeated
+acquisition, not only concurrent holds: a per-passport quota that counts
+active holds still lets the same holder take the name again after every
+expiry. Proof-gated names need a rule on how often one nullifier may hold a
+name. Public names have no identity to count, so they need an admission
+policy of their own. No case covers this yet, because the rule isn't
+decided.
 
 Extension. If one of the order's outputs is first seen before
 `quote_expires_at`, the store records `seen_height`, the tip height at that
@@ -531,7 +633,10 @@ An order joins a batch only if all of these hold:
 - no cancellation is recorded, and it isn't `reconciling` for issuance or
   for a retired generation. A refunds reason alone doesn't block issuance;
 - its eligibility evidence still verifies under its recorded policy version
-  and quota scope.
+  and quota scope;
+- its recipient isn't flagged by the stored-order audit, and no conflicting
+  claim holds its script (see "Recipient requests"). The model has no
+  recipients, so this condition is the service's alone.
 
 Immediately before the batch is marked `issuing`, after proving, local
 verification and the checkpoint, the controller checks every member again
@@ -850,6 +955,30 @@ Refund reconciliation:
 | R15 | R11 | the payment returns to 6 conf | the refunds reason clears; the reservation is unchanged; authorization resumes with the same `available` as before the reorg |
 | R16 | refund attempt settled at 6 conf, group closed | it falls to 5, then returns to 6 | group reopens, then closes again; `refunded_total` counts it once; `reserved` returns to its earlier value; no new attempt in between |
 
+Recipient requests. The model has no recipient requests: its orders start
+at the quote. These cases are rules of the service's boundary, and their
+tests are the service's API tests over a simulated chain, not model results.
+"Malformed" means refused before any state is read, with nothing created.
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| V1 | listed name | a request with exactly `handle` and `script_pubkey`, canonical, with a valid P2TR key | order created; a new private order link returned; the request claims nothing, so the script stays open to other handles until an order on it converts |
+| V2 | listed name | the request also carries `dev_private_key`, with a placeholder value | refused whole as malformed; no order, link, hold or journal entry; the value appears nowhere in the database or the journal |
+| V3 | listed name | the request has any other extra member, repeats a member, lacks one, or has a member that isn't a string | refused as malformed; nothing created |
+| V4 | listed name | the handle isn't canonical: uppercase, surrounding whitespace, a trailing newline, a label starting or ending with `-`, a leading `@`, Unicode, or no `@` | refused as malformed, never corrected; nothing created |
+| V5 | a canonical handle the store doesn't list | request | "not for sale"; nothing created |
+| V6 | listed name | the script isn't 34-byte P2TR: P2WPKH, OP_RETURN, 33 or 35 bytes, another witness version, or uppercase hex | refused as malformed; nothing created |
+| V7 | listed name | a P2TR script whose key is off the curve: the coordinate at or above the field size, or `x^3 + 7` not a square | refused as malformed; nothing created |
+| V8 | an order for `one` with script S has converted | a request for `two` with S, or a quote for an earlier `three` order with S | refused "script already used", naming no handle; nothing created or held |
+| V9 | orders for `two` (quoted, hold active, unpaid) and `three` (requested) carry S first | `one` requests, quotes and pays with S | accepted and converted, and `one` passes batch entry: an unsigned request or an unpaid quote claims nothing |
+| V10 | an order for `one` with script S | a second request for `one` with S | accepted as a retry: a new order and a new link; the first link still shows the first order and is never returned |
+| V11 | a quoted order whose destination script is D | a request with D as its recipient | refused "script already used"; nothing created |
+| V12 | `one` and `two` quoted on S; `one` converts and is frozen into `/pending`; then `two` converts | batch entry, marking `issuing`, setting the frozen batch, `/pending` | neither enters a batch; `/pending` stops serving `one`; the owner alerted once for each; cancelling `two` lets `one` enter |
+| V13 | `one` and `two` quoted on S; `one` converts and is `issuing`; then `two` converts | batch entry for `two`, issuing recheck for `one` | `two` refused and alerted; `one`'s recheck passes |
+| V14 | `one` converted on S | `one` cancelled, then `two` requests S; separately, an order on S2 fulfilled and the service restarted | `two` refused before the cancellation and accepted after it; a request for another handle on S2 refused after the restart |
+| V15 | orders stored with an OP_RETURN recipient (one converted and already frozen, one already `issuing`, one requested) and one whose recipient is a store destination script, from a database without the audit column | the service starts | each flagged and alerted once, also across a second start; records unchanged; no quote; the converted one fails batch entry and the recheck, can't be marked `issuing` or frozen, and isn't served by `/pending`; the `issuing` one fails the issuing recheck |
+| V16 | two converted orders for different handles, stored on one script | the service starts | both alerted; neither passes batch entry; records unchanged |
+
 Evidence:
 
 | Case | Given | When | Then |
@@ -888,13 +1017,17 @@ Finality, publication and delivery (with `CONTROLLER-DESIGN.md`):
 | L8 | broadcast answer lost and the transaction evicted before any readback, so no bytes were journaled | recovery | refused; recovery paused and owner alerted; members `issuing` and non-cancellable; with U1(c), bytes journaled before the send make the same case recoverable |
 | L9 | batch final and covered, a member published; a later commitment of the same space is mined, at `d = 149` | the member's delivery is confirmed | waits: the relay serves the certificate under the later root, so delivery is refused while that root is below `d >= 150` or no anchor covers it; nothing paused; confirmed once both hold (regtest R24) |
 
-Eligibility cases (altered name, altered recipient, wrong scope, replay, and
-a quota race between two orders with the same nullifier) are listed under
-"Eligibility" in `README.md` and run with ZKPassport's `verifierMode: "local"`.
+Eligibility has no cases here yet. `ELIGIBILITY.md` names the tests it
+requires: an altered name, an altered recipient, the wrong scope, a replay,
+and a quota race between two orders with the same nullifier, run with
+ZKPassport's `verifierMode: "local"`. None of them exists, and the coverage
+gate doesn't count them.
 
 ## Open points for the owner
 
 These stay proposals until decided:
+- the hold-abuse rule under "Fixed-price sales", for proof-gated and for
+  public names; it blocks any public pilot;
 - refund funding (an owner-signed PSBT or a capped hot wallet) and the refund
   deadline;
 - the 15-minute hold, the excess minimum, and refunds net of fee;
