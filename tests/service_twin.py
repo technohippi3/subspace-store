@@ -172,6 +172,12 @@ class TwinStore:
         if name == "reconcile_attempts" and model_refused is None and \
                 sorted(result) != sorted(service_result or []):
             self.mismatches.append(f"reconcile_attempts: model {result}, service {service_result}")
+        # What the caller is told: the payment address given out, and
+        # whether a cancellation is final (J11, J12).
+        if name in ("quote", "cancel") and model_refused is None and service_refused is None \
+                and result != service_result:
+            self.mismatches.append(f"{name}{args}: model answered {result!r}, "
+                                   f"service {service_result!r}")
         if model_refused:
             raise model_refused
         return result
@@ -191,10 +197,10 @@ class TwinStore:
     def _s_quote(self, oid, name, script):
         self.service.request(handle(name), recipient(oid), oid=oid)
         self.view.next_destination = script
-        self.service.quote(oid)
+        return self.service.quote(oid)["address"]
 
     def _s_cancel(self, oid):
-        self.service.cancel(oid)
+        return self.service.cancel(oid)
 
     def _s_mark_issuing(self, oid):
         self.service.mark_issuing(oid)
@@ -292,6 +298,9 @@ def differences(twin):
         cmp(f"{oid} available", m.available(o), v["available"])
         cmp(f"{oid} reserved", m.reserved(o), v["reserved"])
         cmp(f"{oid} refunded_total", m.refunded_total(o), v["refunded_total"])
+        cmp(f"{oid} payment instructions", m.instructions(oid), s.order_view(oid)["address"])
+        cmp(f"{oid} cancellation final", m.cancellation_final(oid),
+            v["journaled_status"] == "cancelled")
     for gid, g in m.groups.items():
         row = s._group(gid)
         cmp(f"{gid} order", g.oid, row["oid"])

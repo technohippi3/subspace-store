@@ -38,7 +38,9 @@ cancellation refund was paid to the buyer by a real refund transaction.
 
 The service can rebuild its own database from its off-host journal alone
 after a host loss, shown over a simulated chain and beside the model, not
-yet on regtest. There is still no real controller, no checkout page, no
+yet on regtest. It gives out a payment address, and reports a cancellation
+final, only once its off-host journal has acknowledged the order, so a host
+loss can't strand a payment or undo a cancellation it called final. There is still no real controller, no checkout page, no
 restore of the controller and `subs` together with the store, and no
 installer. Nothing here is fit for selling
 names, and paid sales stay closed until the buyer and operator acceptance

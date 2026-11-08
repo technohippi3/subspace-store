@@ -1,4 +1,4 @@
-"""Named cases X1 to X10, B1 to B7, J1 to J10, L1 to L9 and N12 (fixed-price
+"""Named cases X1 to X10, B1 to B7, J1 to J12, L1 to L9 and N12 (fixed-price
 issuance).
 
 B6, B7, J3 to J10 and L1 to L5 are regressions from the model review of
@@ -477,6 +477,46 @@ class RestoreAgainstReservations(unittest.TestCase):
         self.assertFalse(sim.controller.certificate_current("o1"))
         sim.do("sim", "set_offhost", True)
         sim.do("store", "cancel", "o1")
+
+    def test_J11_payment_instructions_wait_for_the_acknowledgment(self):
+        sim = new_sim(names=("n1", "n2"))
+        sim.do("store", "advance", 0)
+        # Known down: refused, with no order and no hold.
+        sim.do("sim", "set_offhost", False, "store")
+        with self.assertRaises(Refused):
+            sim.do("store", "quote", "o1", "n1", "s-o1")
+        self.assertNotIn("o1", sim.store.orders)
+        self.assertIsNone(sim.store.names["n1"].hold)
+        sim.do("sim", "set_offhost", True, "store")
+        # Recorded, but the acknowledgment doesn't arrive: no instructions.
+        sim.store.auto_ack = False
+        self.assertIsNone(sim.do("store", "quote", "o1", "n1", "s-o1"))
+        self.assertEqual(sim.store.orders["o1"].status, "quoted")
+        self.assertIsNone(sim.store.instructions("o1"))
+        sim.do("sim", "host_loss")
+        self.assertNotIn("o1", sim.store.orders)
+        self.assertIsNone(sim.store.names["n1"].hold)
+        # Acknowledged: the script is given out, and survives a loss.
+        sim.store.auto_ack = True
+        self.assertEqual(sim.do("store", "quote", "o2", "n2", "s-o2"), "s-o2")
+        sim.do("sim", "host_loss")
+        self.assertEqual(sim.store.instructions("o2"), "s-o2")
+        self.assertEqual(sim.store.names["n2"].hold.oid, "o2")
+
+    def test_J12_a_cancellation_is_final_only_once_acknowledged(self):
+        sim = setup(orders=2)
+        self.assertTrue(sim.do("store", "cancel", "o2"))
+        sim.do("sim", "set_offhost", False, "store")
+        self.assertFalse(sim.do("store", "cancel", "o1"))
+        self.assertFalse(sim.do("store", "cancel", "o1"))
+        self.assertEqual(sim.store.orders["o1"].status, "cancelled")
+        sim.do("sim", "host_loss")
+        self.assertEqual(sim.store.orders["o1"].status, "converted")
+        self.assertEqual(sim.store.names["n1"].fulfillment, "o1")
+        self.assertEqual(sim.store.orders["o2"].status, "cancelled")
+        self.assertIsNone(sim.store.names["n2"].fulfillment)
+        sim.do("sim", "set_offhost", True, "store")
+        self.assertTrue(sim.do("store", "cancel", "o1"))
 
     def test_N12_shortfall_never_replaces_an_escaped_commitment(self):
         sim = setup(depth=3)

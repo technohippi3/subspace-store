@@ -13,15 +13,16 @@ pass.
 - `tests/test_service_twin.py` runs the service's ledger beside the
   reference model, on the model's own seeded generated sequences, over the
   same simulated chain. After every step the two must agree on every name,
-  order, refund group, attempt, authorization and alert, and on which calls
-  were refused. The service is closed and reopened from its database every
+  order, refund group, attempt, authorization and alert, on the payment
+  address each order shows, on whether each cancellation is final, and on
+  which calls were refused. The service is closed and reopened from its database every
   17 steps. This is a model-twin result.
 - `tests/test_service_api.py` exercises the HTTP boundaries and a restart
   over a simulated chain. Its `test_V*` tests are the recipient-request
-  cases V1 to V16 of `spec/PAYMENT-SPEC.md`, and its `test_H1` to
-  `test_H6` are the restore cases H1 to H6. They are service API results,
-  not model results: the model has neither recipient requests nor the
-  service's database.
+  cases V1 to V17 of `spec/PAYMENT-SPEC.md`, and its `test_H*` tests are
+  the restore and acknowledgment cases H1 to H6 and H8 to H10. They are
+  service API results, not model results: the model has neither recipient
+  requests nor the service's database.
 - The twin test also runs the generator's host losses (case H7). At each
   one the model keeps what its off-host journal acknowledged, and the
   service's database is dropped and rebuilt from its journal alone; the
@@ -84,6 +85,18 @@ These are this milestone's choices, recorded so that they can be changed.
   link), refund groups with their attempts, alerts and authorizations. While
   the journal is down, changes are backlogged and written again at the next
   evaluation.
+- What callers are told waits for the journal too. A quote's address is
+  given out, by `/quote` or the order link, only once the order entry
+  carrying it is acknowledged; each order keeps `journaled_status`, its
+  status in its latest acknowledged entry. With the journal known to be
+  down, `/quote` answers 503 and takes nothing. If the acknowledgment
+  doesn't arrive, `/quote` answers 503 with no address, the link shows
+  `address_pending`, and asking again returns the same quote once it does.
+  A cancellation answers 200 and "final" only once acknowledged, otherwise
+  202 and "unconfirmed"; until then the buyer's order link shows the last
+  acknowledged status with `cancellation: "unconfirmed"`. Cancelling again
+  confirms it. A quote asked again goes through the same recipient checks
+  as a first quote, and a flagged order's link shows no address.
 - Restore. After a host loss, `python3 -m service restore <config.json>`
   rebuilds the database from the journal alone, into the configured path,
   which must hold no database. It refuses an empty or inconsistent journal,
@@ -115,8 +128,6 @@ These are this milestone's choices, recorded so that they can be changed.
   gate's full restoration with the controller and `subs`. The service
   restores only its own database, from its journal alone, and not yet on
   regtest.
-- A cancellation is reported before it is acknowledged off-host, so a host
-  loss in between undoes it (an open point in `spec/PAYMENT-SPEC.md`).
 - An owner-signed PSBT for refunds, fee bumps and replacement families
   through the API (the ledger implements both rules, and the twin tests
   them), and a refund after an earlier refund spent the order's payment

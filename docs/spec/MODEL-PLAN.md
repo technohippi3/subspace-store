@@ -108,6 +108,10 @@ Run after every event:
   checked at the moment of transmission rather than against a later
   snapshot. For a commitment the entry is the intent and the members'
   `issuing` marks, in their two journals;
+- payment instructions are effects too: the buyer sees an order's script
+  only once the order is acknowledged off-host, and pays only a script it
+  was shown. Every script shown, and every cancellation reported final,
+  survives every host loss (J11, J12);
 - no two commitments spend the same delegate output;
 - a final batch is at `d >= 150` on the current chain, every member of a
   batch that may have escaped is non-cancellable, and every delivery

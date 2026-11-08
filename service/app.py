@@ -6,7 +6,9 @@ Three kinds of caller, each with its own boundary:
   Any other member refuses the whole request (PAYMENT-SPEC.md, "Recipient
   requests"), and no request body is ever logged or echoed.
   Everything about an order, including its refund address, goes through that
-  link and shows only that order;
+  link and shows only that order. A payment address is shown only once
+  the off-host journal has acknowledged the order carrying it; until then
+  `/quote` answers 503 and gives none;
 - the operator and the controller, with the operator's bearer token;
 - `subs`, with the registry token, on `/health`, `/pending`, `/ack` and
   `/committed`. `/pending` serves only the frozen batch's handles and
@@ -25,7 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from .bitcoin import RefundBuilder
-from .ledger import ISSUED, Invalid, Refused
+from .ledger import ISSUED, Invalid, Refused, Unconfirmed
 
 TOKEN_RE = r"([A-Za-z0-9_-]{16,64})"
 OID_RE = r"(o\d+)"
@@ -178,6 +180,8 @@ class Service:
                 try:
                     with service.lock:
                         code, obj = self._route(method)
+                except Unconfirmed as e:
+                    code, obj = 503, {"error": str(e), "acknowledged": False}
                 except Refused as e:
                     missing = str(e) in ("no such order", "not for sale", "no such refund")
                     code, obj = (404 if missing else 409), {"error": str(e)}
@@ -234,7 +238,12 @@ class Service:
                 led.observe()
                 return 200, led.order_view(oid)
             if action == "/quote" and method == "POST":
-                return 200, led.quote(oid)
+                q = led.quote(oid)
+                if not q["acknowledged"]:
+                    return 503, {"error": "the quote is not yet acknowledged off-host; "
+                                          "no address is given. Ask again.",
+                                 "acknowledged": False}
+                return 200, q
             if action == "/refund-address" and method == "POST":
                 address = body().get("address") or ""
                 led.set_refund_address(oid, address, self.view.refund_script(address))
@@ -277,8 +286,15 @@ class Service:
             if action == "/journal":
                 return 200, {"acknowledged": led.journal_order(oid)}
             if action == "/cancel":
-                led.cancel(oid)
-                return 200, {"status": led.operator_view(oid)["status"]}
+                if led.cancel(oid):
+                    return 200, {"status": "cancelled", "cancellation": "final",
+                                 "acknowledged": True}
+                # Recorded here only: a host loss before the journal
+                # acknowledges it undoes it. Cancelling again confirms it.
+                return 202, {"cancellation": "unconfirmed", "acknowledged": False,
+                             "detail": "recorded locally, not yet acknowledged off-host; "
+                                       "not final, and a host loss before the "
+                                       "acknowledgment undoes it"}
             if action == "/transition":
                 to = body().get("action")
                 calls = {"unissue": led.unissue, "restore_issuing": led.restore_issuing,

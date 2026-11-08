@@ -36,6 +36,10 @@ class Generator:
         self.resumed = 0
         self.statuses = {}
         self.violations = []
+        # What the store gave out: payment instructions by order, and the
+        # cancellations it reported final. Both must survive host losses.
+        self.instructed = {}
+        self.final_cancels = set()
         self._hook_sends()
 
     def _hook_sends(self):
@@ -84,10 +88,17 @@ class Generator:
                    "deep_reorg": 0.3, "recover_commit": 1}
         op = r.choices(list(weights), weights=list(weights.values()))[0]
         if op == "quote":
-            s.try_do("store", "quote", self.uid("o"), r.choice(["n1", "n2"]),
-                     self.uid("s"))
-        elif op == "pay" and orders:
-            o = r.choice(orders)
+            oid = self.uid("o")
+            try:
+                shown = s.do("store", "quote", oid, r.choice(["n1", "n2"]), self.uid("s"))
+            except Refused:
+                shown = None
+            if shown is not None:
+                self.instructed[oid] = shown
+        elif op == "pay" and any(st.instructions(o.oid) for o in orders):
+            # A buyer pays only an address the store gave out (J11).
+            o = r.choice([o for o in orders if st.instructions(o.oid)])
+            self.instructed[o.oid] = st.instructions(o.oid)
             value = r.choice([PRICE, PRICE, PRICE // 2, PRICE + 3_000, PRICE + 3_000, 4_000])
             txid = self.uid("t")
             outs = ((o.script, value),)
@@ -147,7 +158,12 @@ class Generator:
             tx = Tx(self.uid("a"), (src,), (("refund-addr", a0.to_buyer),))
             s.try_do("store", "add_attempt", g.gid, tx, a0.to_buyer, a0.fee)
         elif op == "cancel" and orders:
-            s.try_do("store", "cancel", r.choice(orders).oid)
+            oid = r.choice(orders).oid
+            try:
+                if s.do("store", "cancel", oid):
+                    self.final_cancels.add(oid)
+            except Refused:
+                pass
         elif op == "loss" and orders:
             o = r.choice(orders)
             if o.reasons:
@@ -292,6 +308,13 @@ def check(gen, test):
                 if o.status == "cancelled":
                     test.assertTrue(reversed_, (m, b.bid))
     test.assertEqual(gen.violations, [])
+    # Payment instructions given out and cancellations reported final
+    # survive every host loss (J11, J12).
+    for oid, script in gen.instructed.items():
+        test.assertIn(oid, st.orders, f"{oid}'s payment instructions were given out, then lost")
+        test.assertEqual(st.orders[oid].script, script, oid)
+    for oid in gen.final_cancels:
+        test.assertEqual(st.orders[oid].status, "cancelled", f"{oid} reported cancelled, then undone")
     # One commitment per delegate output: no two commitment transactions known
     # to the simulated network spend the same outpoint.
     spent = {}

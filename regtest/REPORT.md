@@ -394,6 +394,17 @@ with the new journal. It doesn't exercise a restore from the journal: cases
 H1 to H7 are tested over a simulated chain and beside the model, not on
 regtest.
 
+`service-20261108T125955Z-8a921f` is the same script rerun after draft 14,
+under which an address is given out, and a cancellation reported final, only
+once acknowledged off-host, and a quote asked again rechecks its recipient
+(J11, J12, H8 to H10, V17). Verdict pass, exit 0. All 43 required steps
+agree with the model, 10 are informational, and the service was killed and
+started again six times, J5 included. The scenarios quote and cancel with
+the journal up, so the run shows that purchase, cancellation and refund
+still work with the new gates. It doesn't exercise them: no step quotes or
+cancels during an outage, and none restores from the journal. Those cases
+are tested over a simulated chain and beside the model, not on regtest.
+
 ## The tightened harness
 
 Since fp4:

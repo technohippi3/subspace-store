@@ -17,7 +17,10 @@ Evaluation order follows the model: an operation evaluates the store
 evaluation commits, then writes the off-host journal backlog as one entry,
 acknowledged whole or not at all. A refund attempt counts as journaled only
 once its group's entry is acknowledged, and nothing is exported or broadcast
-before that.
+before that. The same holds for what the buyer and the operator are told:
+an order's payment address is given out, and its cancellation reported
+final, only once the order's entry carrying it is acknowledged
+(`journaled_status`).
 
 After a host loss the database is rebuilt from the journal alone
 (`restore_from_journal`, PAYMENT-SPEC.md "Host loss and restore"). A start
@@ -78,6 +81,10 @@ class Refused(Exception):
 
 class Invalid(Exception):
     """A malformed input, refused before any state is read."""
+
+
+class Unconfirmed(Refused):
+    """Refused because the off-host journal can't acknowledge it now."""
 
 
 class RestoreRequired(Exception):
@@ -152,7 +159,8 @@ create table if not exists orders (
   refund_address text,
   subs_outcome text,
   created_at real not null,
-  recipient_problem text
+  recipient_problem text,
+  journaled_status text
 );
 create table if not exists payment_outputs (
   txid text not null, vout integer not null, oid text not null, value integer not null,
@@ -246,6 +254,13 @@ class Ledger:
             self.db.execute("alter table orders add column recipient_problem text")
         self.chain = chain
         self.journal = journal
+        if "journaled_status" not in cols:
+            # A database from before the column: take each order's status
+            # from its latest acknowledged entry.
+            self.db.execute("alter table orders add column journaled_status text")
+            for oid, status in self._journaled_statuses().items():
+                self.db.execute("update orders set journaled_status = ? where oid = ?",
+                                (status, oid))
         self.policy = policy or Policy()
         self.clock = clock
         self._depth = 0
@@ -285,8 +300,11 @@ class Ledger:
     def _snapshot(self, kind, key):
         if kind == "order":
             # With the link's hash, never the link: a restored link still
-            # opens its order, and the journal can't give one away.
-            return dict(self._order(key))
+            # opens its order, and the journal can't give one away. What the
+            # journal acknowledged is a fact about the journal, not the order.
+            state = dict(self._order(key))
+            del state["journaled_status"]
+            return state
         if kind == "alert":
             return dict(self.db.execute("select * from alerts where n = ?", (int(key),)).fetchone())
         if kind == "authorization":
@@ -324,6 +342,9 @@ class Ledger:
                     for a in rec["state"]["attempts"]:
                         self.db.execute("update attempts set journaled = 1 where txid = ?",
                                         (a["txid"],))
+                if rec["kind"] == "order":
+                    self.db.execute("update orders set journaled_status = ? where oid = ?",
+                                    (rec["state"]["status"], rec["key"]))
         return True
 
     def _alert(self, oid, kind, detail):
@@ -483,15 +504,28 @@ class Ledger:
 
     def quote(self, oid):
         """Fix the price and take the name's temporary hold, with a fresh
-        destination script from the payment wallet."""
+        destination script from the payment wallet.
+
+        The address is given out only once the order carrying it is
+        acknowledged off-host (PAYMENT-SPEC.md, "Payment instructions"). With
+        the journal known to be down the quote is refused before anything is
+        taken. If the acknowledgment doesn't arrive, the quote is recorded but
+        returned with no address and `acknowledged` false; asking again
+        returns the same quote while its hold lasts, after the same recipient
+        checks as a first quote."""
         self.observe()
         o = self._order(oid)
+        if o["status"] == "quoted" and self._name(o["name"])["hold_order"] == oid:
+            self._recipient_quotable(o)
+            return self._quote(oid)
         if o["status"] != "requested":
             raise Refused("already quoted")
         self._recipient_quotable(o)
         n = self._name(o["name"])
         if n["hold_order"] is not None or n["fulfillment_order"] is not None:
             raise Refused("taken for now")
+        if not self.journal.available():
+            raise Unconfirmed("the off-host journal is unavailable; no quote was made")
         address, script = self.chain.new_destination(oid)
         with self.tx():
             self._recipient_quotable(self._order(oid))
@@ -504,10 +538,21 @@ class Ledger:
                            hold_expires_at=self.clock() + self.policy.hold_seconds,
                            hold_seen_height=None, hold_latched=None)
         self.observe()
+        return self._quote(oid)
+
+    def instructions_given(self, o):
+        """Whether the order's payment address may be shown: its latest
+        acknowledged entry already carries it, which every status after
+        `requested` does."""
+        return o["journaled_status"] not in (None, "requested")
+
+    def _quote(self, oid):
         o = self._order(oid)
         n = self._name(o["name"])
-        return {"price_sats": o["price"], "address": o["dest_address"],
-                "expires_at": n["hold_expires_at"] if n["hold_order"] == oid else None}
+        given = self.instructions_given(o)
+        return {"price_sats": o["price"], "address": o["dest_address"] if given else None,
+                "expires_at": n["hold_expires_at"] if n["hold_order"] == oid else None,
+                "acknowledged": given}
 
     def set_refund_address(self, oid, address, script):
         """The buyer's refund destination, given through the order link."""
@@ -524,6 +569,9 @@ class Ledger:
     # Owner and controller
 
     def cancel(self, oid):
+        """Returns True once the cancellation is final: the order's latest
+        acknowledged entry has it cancelled. Until then it is recorded here
+        only, and a host loss undoes it."""
         self.observe()
         with self.tx():
             o = self._order(oid)
@@ -537,6 +585,7 @@ class Ledger:
                                hold_seen_height=None, hold_latched=None)
             self._set_order(oid, status="cancelled", price_reserve=0)
         self.observe()
+        return self._order(oid)["journaled_status"] == "cancelled"
 
     def batch_entry_ok(self, oid):
         o = self._order(oid)
@@ -985,9 +1034,26 @@ class Ledger:
                            "attempts": [{"txid": a["txid"], "to_buyer": a["to_buyer"],
                                          "fee": a["fee"], "broadcast": bool(a["attempted"])}
                                         for a in self._attempts(g["gid"])]})
+        given = self.instructions_given(o)
+        rejected = bool(o["recipient_problem"])
+        status, cancellation = o["status"], None
+        if status == "cancelled":
+            # A cancellation the journal hasn't acknowledged isn't shown as
+            # one: the buyer sees the last acknowledged status, which is
+            # what a host loss would bring back.
+            if o["journaled_status"] == "cancelled":
+                cancellation = "final"
+            else:
+                status, cancellation = o["journaled_status"], "unconfirmed"
         return {
             "handle": o["name"], "recipient_script_pubkey": o["recipient_spk"],
-            "status": o["status"], "price_sats": o["price"], "address": o["dest_address"],
+            "status": status, "cancellation": cancellation, "price_sats": o["price"],
+            # Never an address the journal hasn't acknowledged: a host loss
+            # would forget it while the buyer could still pay it. Never one
+            # for a recipient the store won't issue to.
+            "address": o["dest_address"] if given and not rejected else None,
+            "address_pending": bool(o["dest_address"]) and not given and not rejected,
+            "recipient_rejected": rejected,
             "hold_expires_at": n["hold_expires_at"] if n["hold_order"] == oid else None,
             "confirmed_sats": self.sum_at(oid, CONFIRMED),
             "batchable_sats": self.sum_at(oid, BATCHABLE),
@@ -1015,12 +1081,15 @@ class Ledger:
 
     def acknowledged_status(self, oid):
         """The order's status in its latest acknowledged journal entry."""
-        status = None
+        return self._order(oid)["journaled_status"]
+
+    def _journaled_statuses(self):
+        statuses = {}
         for e in self.journal.entries():
             for rec in e.get("records", ()):
-                if rec["kind"] == "order" and rec["key"] == oid:
-                    status = rec["state"]["status"]
-        return status
+                if rec.get("kind") == "order":
+                    statuses[str(rec["key"])] = rec["state"].get("status")
+        return statuses
 
     def journal_order(self, oid):
         """Journal the order's current state again. True once acknowledged."""
@@ -1170,7 +1239,10 @@ def restore_from_journal(db_path, journal):
             for key, state in latest["name"].items():
                 _insert(db, "names", f"name {key}", state)
             for key, state in sorted(latest["order"].items(), key=lambda kv: kv[1].get("seq", 0)):
-                _insert(db, "orders", f"order {key}", state)
+                # Restored from its acknowledged entry, so that is its
+                # journaled status.
+                _insert(db, "orders", f"order {key}",
+                        dict(state, journaled_status=state.get("status")))
             for key, state in sorted(latest["group"].items(), key=lambda kv: kv[1].get("seq", 0)):
                 state = dict(state)
                 attempts = state.pop("attempts", [])

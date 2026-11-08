@@ -1,4 +1,4 @@
-# Subspace store payment specification (draft 13, 2026-11-08)
+# Subspace store payment specification (draft 14, 2026-11-08)
 
 MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
 auction section, its cases D1 to D35, case N6, and the auction evidence
@@ -42,7 +42,14 @@ an unsigned request claim someone else's script for good, and that stored
 orders skipped validation. A script is now claimed only by a paid order, and
 every start audits stored recipients. Draft 13 adds "Host loss and restore"
 and cases H1 to H7: the store restores from its off-host journal alone, and
-never starts empty over an existing journal.
+never starts empty over an existing journal. Draft 14 closes two
+acknowledgment boundaries that a review reproduced against the service:
+a payment address is given out only once the order carrying it is
+acknowledged off-host, and a cancellation is reported final only then,
+to the operator and on the buyer's order link (J11, J12, H8 to H10). A
+second review found that a quote asked again skipped the recipient checks
+(V17). The cancellation reporting rule follows a reviewer's recommendation
+of 2026-11-08; the workspace_owner hasn't ruled on it (see the open points).
 
 ## Terms, depth arithmetic and thresholds
 
@@ -341,7 +348,7 @@ claims nothing. Only a paid order claims a script.
   `fulfilled` order's claim never ends, because the name is on the chain
   under that key.
 - Refusal. A request or a quote whose script another handle claims is
-  refused, and so is a request whose script is one of the store's own
+  refused, including a quote asked again for an order already quoted, and so is a request whose script is one of the store's own
   destination scripts. The refusal says only that the script is already
   used, never which handle or order holds it. It still tells the caller
   that some paid order here carries the script.
@@ -376,7 +383,8 @@ each stored order's recipient against the handle and script rules above,
 and against its own destination scripts. An order that fails is flagged
 with the reason, and the owner is alerted once. Its record is kept as it
 is: nothing is deleted, and no status, reservation or refund changes. A
-flagged order gets no quote. Once converted it fails batch entry and the
+flagged order gets no quote, not even again for a quote it already has, and
+its order link shows no payment address. Once converted it fails batch entry and the
 issuing recheck, can't be put in the frozen batch, and is never served by
 `/pending`, even from a batch frozen before the start. Script conflicts
 among stored orders are alerted at the same check and follow the conflict
@@ -392,6 +400,17 @@ Quote and temporary hold. A quote fixes the price and takes the name's
 temporary hold. The hold has `quote_expires_at`, 15 minutes after the quote
 by the server's clock (proposal). A second buyer who asks for a held name
 gets "taken for now" and no quote.
+
+Payment instructions. The quote's address is given to the buyer, by the
+quote or by the order link, only once the order entry carrying it is
+acknowledged off-host. Payment instructions are an effect that leaves the
+store, and a host loss forgets an unacknowledged quote: an address shown
+before the acknowledgment could be paid and then belong to no order. While
+the journal is known to be down, a quote is refused and takes no destination
+and no hold. If the acknowledgment doesn't arrive after the quote is
+recorded, the answer says so and gives no address, and the order link shows
+none, until it arrives; asking again then returns the same quote while its
+hold lasts. The hold's clock runs from the quote either way (J11, H8, H9).
 
 Open: hold abuse. A request and a quote cost nothing and need no account, so
 one caller can keep a name "taken for now" indefinitely by quoting again as
@@ -677,6 +696,17 @@ intent, a `txid` or a later state is marked `issuing` again before any
 cancellation is accepted, even if the store's own journal lagged behind
 (J3, J4).
 
+Reporting. A cancellation is reported final only once the order's cancelled
+state is acknowledged off-host. Until then the answer says it is
+unconfirmed, and doesn't give the cancelled status: the cancellation is
+recorded here only, and a host loss before the acknowledgment undoes it.
+The buyer's order link says the same: it shows the order's last
+acknowledged status with the cancellation marked unconfirmed, and shows
+`cancelled` only once that is acknowledged. Cancelling again once the
+journal is back confirms it (J12, H10). Provenance: adopted in draft 14 on a
+reviewer's recommendation of 2026-11-08, not on a ruling by the
+workspace_owner, who may still change it (open points).
+
 A cancellation is committed before any refund is built. A cancelled order
 never enters a batch again. If it is in a batch that hasn't reached
 `issuing`, that batch is rebuilt without it.
@@ -842,8 +872,9 @@ payment seen meanwhile is a fact on the chain and is found again. A refund
 group that was never acknowledged was never exported or broadcast, since
 both wait for the acknowledgment (J2, J5). A cancellation that was never
 acknowledged is undone, and the order returns to its last acknowledged
-state; whether a cancellation should be reported only once acknowledged is
-an open point.
+state; it was reported unconfirmed, never final (H10). A quote that was
+never acknowledged is undone too, and its address was never given out, so
+no payment can be stranded by it (H9).
 
 No empty start over a history. A start that finds no database, or one with
 no names and no orders, while the journal has entries refuses to serve and
@@ -1033,22 +1064,26 @@ tests are the service's API tests over a simulated chain, not model results.
 | V14 | `one` converted on S | `one` cancelled, then `two` requests S; separately, an order on S2 fulfilled and the service restarted | `two` refused before the cancellation and accepted after it; a request for another handle on S2 refused after the restart |
 | V15 | orders stored with an OP_RETURN recipient (one converted and already frozen, one already `issuing`, one requested) and one whose recipient is a store destination script, from a database without the audit column | the service starts | each flagged and alerted once, also across a second start; records unchanged; no quote; the converted one fails batch entry and the recheck, can't be marked `issuing` or frozen, and isn't served by `/pending`; the `issuing` one fails the issuing recheck |
 | V16 | two converted orders for different handles, stored on one script | the service starts | both alerted; neither passes batch entry; records unchanged |
+| V17 | a quoted order whose hold is active, on a script that another handle's order then converts on; separately, a quoted order with an active hold stored with an OP_RETURN recipient, from a database without the audit column | the quote is asked again; the service starts and the quote is asked again | the first refused "script already used"; the second flagged and alerted once, refused "recipient not accepted", and its order link shows no address; its record and hold unchanged |
 
 Service restore ("Host loss and restore"). The model restores whole from its
 journal (J1 and its generated host losses); these are the service's own
-restore. H1 to H6 are service API tests over a simulated chain. H7 runs the
-service beside the model and is a model-twin result. None is regtest
-evidence.
+restore. H1 to H6 and H8 to H10 are service API tests over a simulated
+chain. H7 runs the service beside the model and is a model-twin result.
+None is regtest evidence.
 
 | Case | Given | When | Then |
 | --- | --- | --- | --- |
 | H1 | a converted order with a refund address, a cancelled order with a hot-wallet refund group, and their alerts and authorizations, all acknowledged; then the host's database is lost | restored from the journal alone into a fresh path, and started | names, orders, groups, attempts, alerts and authorizations as acknowledged; each attempt journaled; both order links open their orders; balances recomputed from the chain |
-| H2 | the store's journal is down while a payment converts an order, another order is cancelled and a refund group is built for a third; then the host is lost | restored and started | the payment is found again and the order converts; the cancellation is undone; the refund group is absent and was never broadcast |
+| H2 | the store's journal is down while a payment converts an order, another order is cancelled and a refund group is built for a third; then the host is lost | restored and started | the payment is found again and the order converts; the cancellation, reported unconfirmed, is undone; the refund group is absent and was never broadcast |
 | H3 | the journal has entries, and the database is missing or has no names and no orders | the service starts | refused before serving; no database file is created and nothing is written |
 | H4 | a database already exists at the restore target | restore | refused; the existing database unchanged |
 | H5 | a journal with no records, an entry of an unknown kind, a record with an unknown field, an order without its link hash or whose name has no entry, or a refund group whose order has none | restore, and separately a restore killed partway | refused naming the record; no database created at the target or beside it; the killed restore leaves no database at the target, and a later restore succeeds |
 | H6 | two acknowledged hot-wallet refund groups: one attempt mined, the other attempted but unknown to the node; the host is lost | restored and started | both reconciled before anything is served; only the unknown attempt is rebroadcast, as the same signed bytes; reservations and refunded totals as before the loss |
-| H7 | the model's generated sequences, with host losses | at each loss the service is restored from its own journal | after every step it agrees with the model's restore on every name, order, group, attempt, authorization and alert |
+| H7 | the model's generated sequences, with host losses | at each loss the service is restored from its own journal | after every step it agrees with the model's restore on every name, order, group, attempt, authorization and alert, on the payment address each order shows, and on whether each cancellation is final |
+| H8 | a requested order, and the store's journal down | the buyer asks for a quote; then the host is lost and restored | 503, no address; no destination taken, no hold, the order still `requested` and the name available; after the restore the quote succeeds and the link shows its address |
+| H9 | two requested orders; the journal looks up but acknowledges nothing | each is quoted; the journal recovers between the two, and the host is lost after the second; then a database from before the journaled status restarts | 503 and no address from `/quote`, and none on the order link, for each while unacknowledged; after the recovery the first quote returns its recorded address; after the loss the second order is `requested` with no address and its name available, the first keeps its address; the old database takes the acknowledged statuses from the journal |
+| H10 | two converted orders | one cancelled with the journal down, which then recovers; the other cancelled twice with it down; then the host is lost and restored | the first 202 "unconfirmed", its order link `converted` with the cancellation unconfirmed, then `cancelled` and final once the journal recovers, and still after the loss; the second 202 "unconfirmed" both times, without the cancelled status, its link `converted` and unconfirmed, and undone by the loss: converted with its fulfillment reservation, the link showing no cancellation; cancelled again after the restore, it is final on both |
 
 Evidence:
 
@@ -1073,6 +1108,8 @@ Restore against reservations (with `CONTROLLER-DESIGN.md`):
 | J8 | broadcast answer lost; readback adopted the `txid` but the controller's journal missed it; batch final, member ready in the store's journal | host lost and restored | chain read back first; `txid` adopted; batch final and member ready; a member is never ready while its batch isn't final |
 | J9 | batch `issuing`, broadcast never attempted (journal outage, with or without a host loss); a member's payment is then reorged out | resumed | binding check repeated with fresh depths, eligibility and delegate output; nothing sent; batch rebuilt without the member, which is paid again and `reconciling` (issuance) |
 | J10 | the controller's journal is stale at `broadcast` while the store's shows the member ready; the commitment is then reorged out and the owner's supersession settles | host lost and restored | batch superseded; member back to paid, never ready |
+| J11 | a quote asked while the store's journal is down; separately, a quote recorded whose acknowledgment doesn't arrive | the host is lost | the first refused, with no order and no hold; the second gives no payment instructions, and the loss removes it and its hold; a quote acknowledged before a loss keeps its instructions and hold |
+| J12 | two converted orders | one cancelled with the store's journal up, the other twice with it down; the host is lost | the first reported final and still cancelled; the second reported unconfirmed both times and undone, its reservation back; cancelled again with the journal up, it is final |
 
 Finality, publication and delivery (with `CONTROLLER-DESIGN.md`):
 
@@ -1099,9 +1136,9 @@ gate doesn't count them.
 These stay proposals until decided:
 - the hold-abuse rule under "Fixed-price sales", for proof-gated and for
   public names; it blocks any public pilot;
-- whether a cancellation is reported only once acknowledged off-host;
-  today a host loss before the acknowledgment undoes it ("Host loss and
-  restore");
+- the cancellation reporting rule under "Cancellation" (final only once
+  acknowledged off-host, unconfirmed until then). Draft 14 adopted it on a
+  reviewer's recommendation; it awaits the workspace_owner's decision;
 - refund funding (an owner-signed PSBT or a capped hot wallet) and the refund
   deadline;
 - the 15-minute hold, the excess minimum, and refunds net of fee;

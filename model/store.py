@@ -192,9 +192,23 @@ class Store:
             raise Refused("order exists")
         if n.hold is not None or n.fulfillment is not None:
             raise Refused("taken for now")
+        if not self.offhost_available:
+            # Known down: no destination and no hold for a quote the buyer
+            # couldn't be shown.
+            raise Refused("journal unavailable")
         self.orders[oid] = Order(oid, name, n.price, script)
         n.hold = Hold(oid, self.now + HOLD_MINUTES)
         self.observe()
+        return self.instructions(oid)
+
+    def instructions(self, oid):
+        """The payment instructions the buyer may see: the order's script,
+        once the order is in the acknowledged off-host copy, else None. They
+        are an effect that leaves the store, so they wait for the
+        acknowledgment like any other (J11)."""
+        o = self.orders.get(oid)
+        acked = (self.offhost or {}).get("orders", {}).get(oid)
+        return o.script if o is not None and acked is not None and acked.script == o.script else None
 
     # Owner and controller
 
@@ -211,6 +225,14 @@ class Store:
         o.status = "cancelled"
         o.price_reserve = 0
         self.observe()
+        return self.cancellation_final(oid)
+
+    def cancellation_final(self, oid):
+        """A cancellation is reported final only once the acknowledged
+        off-host copy has the order cancelled. Until then a host loss undoes
+        it (J12)."""
+        acked = (self.offhost or {}).get("orders", {}).get(oid)
+        return acked is not None and acked.status == "cancelled"
 
     def batch_entry_ok(self, o):
         return (o.status == "converted" and o.eligible

@@ -6,9 +6,9 @@ code paths, not Bitcoin Core: refund building and real transactions are on
 regtest (regtest/harness/service.py). It is neither model nor regtest
 evidence about the store's rules.
 
-The `test_V*` tests are the recipient-request cases V1 to V16 of
+The `test_V*` tests are the recipient-request cases V1 to V17 of
 PAYMENT-SPEC.md, and the `test_H*` tests are its service restore cases H1
-to H6. The model has neither recipient requests nor the service's database,
+to H6 and H8 to H10. The model has neither recipient requests nor the service's database,
 so these are service API results, not model results.
 """
 
@@ -24,7 +24,7 @@ from pathlib import Path
 
 from model.chain import Chain, Tx
 from service.app import Service
-from service.journal import Journal
+from service.journal import Journal, JournalDown
 from service.ledger import (Ledger, Policy, RestoreRefused, RestoreRequired,
                             restore_from_journal, valid_p2tr)
 from tests.service_twin import ModelChainView, recipient
@@ -427,6 +427,28 @@ class Api(unittest.TestCase):
         self.assertEqual(self.alerts("recipient_invalid"), sorted([o1, o2, o4, o5]))
         self.assertEqual(self.rows(), stored)
 
+    def test_V17_a_quote_retry_rechecks_the_recipient(self):
+        self.list("one@space", "two@space", "three@space")
+        o1, link1 = self.order("one@space", SPK)
+        self.assertIsNotNone(self.c.call("GET", link1)[1]["address"])
+        # Two quoted orders on one script for different handles; one converts.
+        o2, _ = self.order("two@space", SPK2)
+        o3, link3 = self.order("three@space", SPK2)
+        self.convert(o2)
+        self.assertEqual(self.c.call("POST", link3 + "/quote"),
+                         (409, {"error": "script already used"}))
+        # A stored quote with an unsafe recipient, its hold still active.
+        self.rewrite_stored(("update orders set recipient_spk = '6a04deadbeef' where oid = ?", (o1,)))
+        stored = self.rows()
+        self.assertEqual(self.alerts("recipient_invalid"), [o1])
+        self.assertEqual(self.service.ledger._name("one@space")["hold_order"], o1)
+        self.assertEqual(self.c.call("POST", link1 + "/quote"),
+                         (409, {"error": "recipient not accepted"}))
+        view = self.c.call("GET", link1)[1]
+        self.assertEqual((view["status"], view["address"], view["address_pending"],
+                          view["recipient_rejected"]), ("quoted", None, False, True))
+        self.assertEqual(self.rows(), stored)
+
     def test_V16_a_stored_conflict_is_alerted_and_blocks_both(self):
         self.list("one@space", "two@space")
         o1, _ = self.order("one@space", SPK)
@@ -526,7 +548,7 @@ class Api(unittest.TestCase):
         self.pay(self.service.ledger.operator_view(o1)["dest_script"], 10_000)
         self.op("POST", "/operator/observe")
         self.assertEqual(self.service.ledger.operator_view(o1)["status"], "converted")
-        self.assertEqual(self.op("POST", f"/operator/orders/{o2}/cancel")[0], 200)
+        self.assertEqual(self.op("POST", f"/operator/orders/{o2}/cancel")[0], 202)
         led = self.service.ledger
         payment = led.outputs(o3)[0]["outpoint"]
         led.open_group("g1", o3, "cancellation",
@@ -645,6 +667,131 @@ class Api(unittest.TestCase):
         for oid in (o1, o2):
             self.assertEqual({k: led.operator_view(oid)[k] for k in before[oid]}, before[oid])
 
+    # Acknowledgment boundaries: what the buyer and the operator are told
+    # (H8 to H10)
+
+    def lost_acknowledgments(self, journal):
+        """The journal looks up, but no append is acknowledged."""
+        def lost(*args, **kwargs):
+            raise JournalDown("acknowledgment lost")
+        journal.append = lost
+
+    def test_H8_no_quote_while_the_journal_is_down(self):
+        self.list("one@space")
+        oid, link = self.order("one@space", SPK, quote=False)
+        journal = self.service.ledger.journal
+        journal.set_available(False)
+        destinations = self.n
+        self.assertEqual(self.c.call("POST", link + "/quote"),
+                         (503, {"error": "the off-host journal is unavailable; no quote was made",
+                                "acknowledged": False}))
+        self.assertEqual(self.n, destinations)
+        self.assertEqual(self.service.ledger.operator_view(oid)["status"], "requested")
+        self.assertTrue(self.c.call("GET", "/names/one@space")[1]["available"])
+        view = self.c.call("GET", link)[1]
+        self.assertEqual((view["address"], view["address_pending"]), (None, False))
+        # A host loss now forgets nothing the buyer was shown.
+        self.lose_host()
+        journal.set_available(True)
+        self.restore()
+        self.start()
+        code, q = self.c.call("POST", link + "/quote")
+        self.assertEqual((code, q["acknowledged"]), (200, True))
+        self.assertEqual(self.c.call("GET", link)[1]["address"], q["address"])
+
+    def test_H9_an_address_is_given_out_only_once_acknowledged(self):
+        self.list("one@space", "two@space")
+        o1, link1 = self.order("one@space", SPK, quote=False)
+        o2, link2 = self.order("two@space", SPK2, quote=False)
+        led = self.service.ledger
+        journal = led.journal
+        append = journal.append
+
+        def unacknowledged_quote(oid, link):
+            code, out = self.c.call("POST", link + "/quote")
+            self.assertEqual((code, out["acknowledged"]), (503, False))
+            self.assertNotIn("address", out)
+            self.assertEqual(led.operator_view(oid)["status"], "quoted")
+            view = self.c.call("GET", link)[1]
+            self.assertEqual((view["status"], view["address"], view["address_pending"]),
+                             ("quoted", None, True))
+            self.assertEqual(self.c.call("POST", link + "/quote")[0], 503)
+
+        self.lost_acknowledgments(journal)
+        unacknowledged_quote(o1, link1)
+        # The journal recovers: asking again gives the recorded address.
+        journal.append = append
+        code, q = self.c.call("POST", link1 + "/quote")
+        self.assertEqual((code, q["address"]), (200, led.operator_view(o1)["dest_address"]))
+        self.assertEqual(self.c.call("GET", link1)[1]["address"], q["address"])
+        # It fails again before the second quote is acknowledged, and the
+        # host is lost: that quote is undone, and its address was never shown.
+        self.lost_acknowledgments(journal)
+        unacknowledged_quote(o2, link2)
+        self.lose_host()
+        self.restore()
+        self.start()
+        led = self.service.ledger
+        view = self.c.call("GET", link2)[1]
+        self.assertEqual((view["status"], view["address"], view["address_pending"]),
+                         ("requested", None, False))
+        self.assertEqual(led.operator_view(o2)["dest_script"], None)
+        self.assertTrue(self.c.call("GET", "/names/two@space")[1]["available"])
+        self.assertEqual(self.c.call("GET", link1)[1]["address"], q["address"])
+        # A database from before the journaled status takes it from the
+        # journal at its next start.
+        self.stop()
+        db = sqlite3.connect(self.dir / "store.db")
+        db.execute("alter table orders drop column journaled_status")
+        db.commit()
+        db.close()
+        self.start()
+        self.assertEqual(self.c.call("GET", link1)[1]["address"], q["address"])
+        self.assertEqual(self.service.ledger.acknowledged_status(o2), "requested")
+
+    def test_H10_a_cancellation_is_final_only_once_acknowledged(self):
+        self.list("one@space", "two@space")
+        o1, link1 = self.paid("one@space", SPK)
+        o2, link2 = self.paid("two@space", SPK2)
+        journal = self.service.ledger.journal
+
+        def buyer(link):
+            view = self.c.call("GET", link)[1]
+            return view["status"], view["cancellation"]
+
+        # Unacknowledged, then acknowledged once the journal is back.
+        journal.set_available(False)
+        code, out = self.op("POST", f"/operator/orders/{o2}/cancel")
+        self.assertEqual((code, out["cancellation"], out["acknowledged"]),
+                         (202, "unconfirmed", False))
+        self.assertEqual(buyer(link2), ("converted", "unconfirmed"))
+        journal.set_available(True)
+        self.assertEqual(buyer(link2), ("cancelled", "final"))
+        self.assertEqual(self.op("GET", f"/operator/orders/{o2}")[1]["journaled_status"],
+                         "cancelled")
+        self.assertEqual(self.op("POST", f"/operator/orders/{o2}/cancel"),
+                         (200, {"status": "cancelled", "cancellation": "final",
+                                "acknowledged": True}))
+        # Unacknowledged when the host is lost: undone.
+        journal.set_available(False)
+        for _ in range(2):
+            code, out = self.op("POST", f"/operator/orders/{o1}/cancel")
+            self.assertEqual((code, out["cancellation"], out["acknowledged"]),
+                             (202, "unconfirmed", False))
+            self.assertNotIn("status", out)
+            self.assertEqual(buyer(link1), ("converted", "unconfirmed"))
+        self.assertEqual(self.op("GET", f"/operator/orders/{o1}")[1]["journaled_status"],
+                         "converted")
+        self.lose_host()
+        journal.set_available(True)
+        self.restore()
+        self.start()
+        led = self.service.ledger
+        self.assertEqual(buyer(link1), ("converted", None))
+        self.assertEqual(led._name("one@space")["fulfillment_order"], o1)
+        self.assertEqual(buyer(link2), ("cancelled", "final"))
+        self.assertEqual(self.op("POST", f"/operator/orders/{o1}/cancel")[0], 200)
+        self.assertEqual(buyer(link1), ("cancelled", "final"))
 
 if __name__ == "__main__":
     unittest.main()
