@@ -9,11 +9,21 @@
 //! zones are printed as JSON, and the caller compares them with what it
 //! expects (handle, script_pubkey, commitment root and sovereignty).
 //!
+//! Signed records are verified in the same call: libveritas attaches a
+//! record set to a zone only if its embedded BIP-340 signature verifies
+//! against the zone's current script_pubkey, for the zone's canonical name.
+//! A set that fails is dropped without failing the message, so the output
+//! lists, under `records`, each zone's verified records and whether the
+//! message carried a set for it that was dropped. A verified record proves
+//! only that the zone's key signed it; the caller compares the records with
+//! what it expects.
+//!
 //! Regtest harness tooling. A result from it is a regtest result.
 
 use libveritas::msg::{Message, QueryContext};
 use libveritas::{ProvableOption, Veritas, VERIFY_DEFAULT};
 use spaces_nums::RootAnchor;
+use subspace_regtest_verifier::{carried_records, records_json};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -33,6 +43,7 @@ fn main() {
         Ok(m) => m,
         Err(e) => fail(&format!("message does not decode: {}", e)),
     };
+    let carried = carried_records(&msg);
     let verified = match veritas.verify_with_options(&QueryContext::new(), msg, VERIFY_DEFAULT) {
         Ok(v) => v,
         Err(e) => fail(&format!("verification failed: {:?}", e)),
@@ -68,6 +79,19 @@ fn main() {
             "temporary": c.is_temporary(),
         }))
         .collect();
+    let records: Vec<serde_json::Value> = verified
+        .zones
+        .iter()
+        .map(|z| {
+            let was_carried = carried.iter().any(|(name, _)| name == &z.canonical);
+            serde_json::json!({
+                "handle": z.handle.to_string(),
+                "carried": was_carried,
+                "dropped": was_carried && z.records.is_empty(),
+                "verified": records_json(&z.records),
+            })
+        })
+        .collect();
     println!(
         "{}",
         serde_json::json!({
@@ -75,6 +99,7 @@ fn main() {
             "newest_anchor": veritas.newest_anchor(),
             "zones": zones,
             "certificates": certs,
+            "records": records,
         })
     );
 }

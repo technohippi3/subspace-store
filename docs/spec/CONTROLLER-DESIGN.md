@@ -472,6 +472,17 @@ On a throwaway space, with U1 in place:
    no reservation may disappear, and the restored tree's root must match the
    chain.
 4. Issue another test batch to `fulfilled` and verify its certificates.
+5. Record two times (added 2026-11-08): the store's replay from its journal,
+   and the complete recovery from the start of the restore until issuance
+   and refunds can safely resume. A fast replay alone doesn't show that they
+   can. Record with them the history they were measured on: the sales period
+   it stands for, the number of orders, refund groups and alerts, and the
+   journal's entries and bytes. The rehearsal's own few orders can't settle
+   whether a replay of the whole journal is fast enough, so the replay is
+   also timed on a journal sized for the planned sales period, built on
+   regtest or generated, and labelled as such. The targets for both times
+   are open points in `PAYMENT-SPEC.md`; if the store meets its target by
+   replaying the whole journal, the store needs no snapshot of its own.
 
 ## Still to confirm before building
 

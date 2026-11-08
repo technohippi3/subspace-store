@@ -22,6 +22,10 @@ broadcast answer. The `continued-u1b` run adds the fourth commitment of
 `publication` run adds the relay's answers: before publication (verified,
 with no zone for the handle) and for the delivery lookup (the handle's
 zone), for an initial commitment and for one with a step proof.
+The `records` run adds scenario 9's signed records: in each
+`-records-` directory, either a message the harness signed and sent to the
+relay (with its `records.json`) or the relay's answer read back. Their
+libveritas output also lists each zone's verified records.
 
 To check them again offline, build the verifier once (`cargo build
 --release` in `../verifier`) and run, from the repository root:
@@ -29,5 +33,6 @@ To check them again offline, build the verifier once (`cargo build
     regtest/verify-evidence.sh
 
 It verifies every message against its anchors and checks that the zones
-match the saved libveritas output. It needs no network and no running
+match the saved libveritas output, and the verified records too where the
+run saved them. It needs no network and no running
 stack.

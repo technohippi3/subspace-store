@@ -73,6 +73,12 @@ wallets are made fresh for each run inside `.run/`.
   way: a purchase through its API to verified delivery (scenario 7) and a
   cancellation refund with a real refund transaction (scenario 8). It uses
   the `subs-relay` build.
+- `run-records.sh [prefix]`: the first purchase, then scenario 9: a handle
+  sold to a script whose key the run holds, published and delivered
+  through the local relay, and record sets for it signed, sent to the
+  relay's `/message` and read back from its `/query`, each answer verified
+  with libveritas against root anchors read from `spaced`. It uses the
+  `subs-relay` build.
 - `keep-run.sh <run id>`: keeps a run's report and certificates in `runs/`
   and `evidence/`. It never replaces or removes anything already kept.
 - `verify-evidence.sh`: verifies every kept certificate offline.
@@ -93,11 +99,16 @@ wallets are made fresh for each run inside `.run/`.
     `CONTROLLER-DESIGN.md` against the local relay, with delivery checked
     by verifying the relay's `/query` answer with libveritas against root
     anchors read from `spaced`.
+  - `records.py`: scenario 9, signed records through the local relay.
   - `service.py`: scenarios 7 and 8, with `ServiceRegistry`, the
     registry's interface served by the real service over HTTP.
 - `verifier/`: a small Rust program that verifies a certificate message with
   `libveritas` 0.4.4, the version `subs` locks, against root anchors read
-  from `spaced` directly.
+  from `spaced` directly. The same call verifies the message's signed
+  records: it prints each zone's verified records and whether a set the
+  message carried was dropped. `subspace-regtest-records`, in the same
+  crate, makes a fresh regtest key and signs records for a handle, as a
+  client publishing them would.
 - `REPORT.md`: the report of the last committed run, labelled "regtest".
 
 ## Running

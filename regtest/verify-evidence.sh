@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Verify the kept certificate messages offline (regtest evidence).
-# Exit 0 if every message verifies and matches its saved libveritas output.
+# Exit 0 if every message verifies and matches its saved libveritas output:
+# its zones and, where the run saved them, its verified records.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 verifier="$here/verifier/target/release/subspace-regtest-verifier"
@@ -12,7 +13,9 @@ while IFS= read -r msg; do
 import json, sys
 got = json.loads(sys.argv[1])
 saved = json.load(open(sys.argv[2]))
-sys.exit(0 if got.get("verified") is True and got["zones"] == saved["zones"] else 1)
+# Older runs saved no "records"; where a run did, they must match too.
+same_records = "records" not in saved or got.get("records") == saved["records"]
+sys.exit(0 if got.get("verified") is True and got["zones"] == saved["zones"] and same_records else 1)
 PY
   then pass=$((pass + 1)); echo "ok   ${msg#$here/evidence/}"
   else fail=$((fail + 1)); echo "FAIL ${msg#$here/evidence/}"; fi

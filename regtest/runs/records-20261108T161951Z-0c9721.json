@@ -1,0 +1,1795 @@
+{
+ "meta": {
+  "label": "regtest",
+  "run": "records-20261108T161951Z-0c9721",
+  "scenarios": [
+   "first_purchase",
+   "records"
+  ],
+  "isolation": "unprivileged user and network namespace (unshare -rn), loopback only",
+  "subs_binary": ".cache/bin/subs-relay",
+  "pins": {
+   "SUBS_REPO": "https://github.com/spacesprotocol/subs",
+   "SUBS_COMMIT": "4dcc9237af3a807497d4b1532729842ee5dcdb68",
+   "SPACES_REPO": "https://github.com/spacesprotocol/spaces",
+   "SPACES_TAG": "spaces_client-v0.5.0",
+   "SPACES_COMMIT": "77653f01889ddc86337e4b27d7d3ae4fc334a117",
+   "BITCOIN_VERSION": "26.0",
+   "BITCOIN_TARBALL": "bitcoin-26.0-x86_64-linux-gnu.tar.gz",
+   "BITCOIN_URL": "https://bitcoincore.org/bin/bitcoin-core-26.0/bitcoin-26.0-x86_64-linux-gnu.tar.gz",
+   "BITCOIN_SHA256": "23e5ab226d9e01ffaadef5ffabe8868d0db23db952b90b0593652993680bb8ab",
+   "CERTRELAY_REPO": "https://github.com/spacesprotocol/certrelay",
+   "CERTRELAY_COMMIT": "fb446487af4f9702109999f96d2ec11d3dd0b0ef"
+  },
+  "completed": [
+   "first_purchase",
+   "records"
+  ],
+  "anchor_read_retries": 0
+ },
+ "verdict": "pass",
+ "steps": [
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "recipient request for one@test10000",
+   "regtest": {
+    "oid": "o1",
+    "script_pubkey": "5120a828b3777b10edf3afe2cd02e6a18eb8171456594121d0296d3683508cb97bed"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794154814.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "fixed-price quote for o1",
+   "regtest": {
+    "quoted": true,
+    "status": "quoted",
+    "price_sats": 10000,
+    "address": "bcrt1ptqz74vccwmwrnn852an0nlt59e832n4cm55sqt3pcq7s0h3cun9suhfqz3"
+   },
+   "model": {
+    "quoted": true,
+    "status": "quoted",
+    "price": 10000
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154814.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "Q1",
+   "step": "second quote for the held name",
+   "regtest": {
+    "quoted": false,
+    "why": "taken for now"
+   },
+   "model": {
+    "quoted": false,
+    "why": "taken for now"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154814.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "payment at 1 conf",
+   "regtest": {
+    "o1": "quoted"
+   },
+   "model": {
+    "o1": "quoted"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154816.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "P1",
+   "step": "payment at 3 conf converts the hold",
+   "regtest": {
+    "o1": "converted"
+   },
+   "model": {
+    "o1": "converted"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154817.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "freeze b1",
+   "regtest": {
+    "members": [
+     "o1"
+    ],
+    "state": "frozen"
+   },
+   "model": {
+    "ok": true,
+    "members": [
+     "o1"
+    ],
+    "state": "frozen",
+    "refusal": null
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154817.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "stage b1 with readback",
+   "regtest": {
+    "staged": {
+     "one": "5120a828b3777b10edf3afe2cd02e6a18eb8171456594121d0296d3683508cb97bed"
+    },
+    "parked": [],
+    "sync": {
+     "success": true,
+     "pulled": 1,
+     "staged": 1,
+     "errors": []
+    }
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794154817.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "local commit b1 with readback",
+   "regtest": {
+    "state": "committed_local",
+    "root": "1c723515fa6b14778f9a9c0a35b50cd9f907230af5cfd0222f1f887f94274d70",
+    "prev_root": null,
+    "is_initial": true,
+    "handles": 1,
+    "members_on_root": 1
+   },
+   "model": {
+    "state": "committed_local",
+    "members": [
+     "o1"
+    ]
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154817.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "prove b1",
+   "regtest": {
+    "seconds": 0.0,
+    "proving": "skipped",
+    "proof_total": null,
+    "pushes": []
+   },
+   "model": {
+    "state": "proved"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154817.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "checkpoint b1 (coordinated snapshot)",
+   "regtest": {
+    "dir": "regtest/.run/records-20261108T161951Z-0c9721/offhost/snapshots/001-b1",
+    "objects": 8,
+    "store_journal": 5,
+    "controller_journal": 5
+   },
+   "model": {
+    "state": "checkpointed"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154817.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "B3",
+   "step": "binding check passes; members issuing",
+   "regtest": {
+    "o1": "issuing"
+   },
+   "model": {
+    "o1": "issuing"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154818.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "B3",
+   "step": "b1 broadcast",
+   "regtest": {
+    "state": "broadcast",
+    "txid": "10882c7f30970a6e97b2da4af7f245494db94a16ad715a5464c0cb22eaca5a0d"
+   },
+   "model": {
+    "state": "broadcast"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154818.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "X3",
+   "step": "cancellation after issuing",
+   "regtest": {
+    "cancelled": false,
+    "why": "not cancellable once issuing"
+   },
+   "model": {
+    "cancelled": false,
+    "why": "not cancellable once issuing"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154818.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "b1 mined at d = 0",
+   "regtest": {
+    "state": "mined",
+    "position": [
+     3454,
+     0
+    ]
+   },
+   "model": {
+    "state": "mined"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154818.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "b1 at d = 149",
+   "regtest": {
+    "state": "mined"
+   },
+   "model": {
+    "state": "mined"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154821.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "b1 at d = 150",
+   "regtest": {
+    "state": "final",
+    "subs_commit_status": {
+     "status": "finalized",
+     "txid": null,
+     "block_height": 3454,
+     "confirmations": null
+    }
+   },
+   "model": {
+    "state": "final"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154823.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L6",
+   "step": "certificate status for b1 at d = 150",
+   "regtest": {
+    "status": "verified",
+    "newest_anchor": 3600,
+    "mined_height": 3454
+   },
+   "model": {
+    "status": "verified"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154823.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "certificates for b1 verified with libveritas",
+   "regtest": {
+    "notify": true,
+    "results": {
+     "o1": {
+      "ok": true,
+      "checks": {
+       "verified": true,
+       "handle": true,
+       "script_pubkey": true,
+       "root": true,
+       "root_height": true,
+       "sovereign": true
+      },
+      "error": null,
+      "zone": {
+       "anchor": 3600,
+       "canonical": "one@test10000",
+       "commitment_height": null,
+       "commitment_root": null,
+       "handle": "one@test10000",
+       "script_pubkey": "5120a828b3777b10edf3afe2cd02e6a18eb8171456594121d0296d3683508cb97bed",
+       "sovereignty": "sovereign"
+      },
+      "space_zone": {
+       "anchor": 3600,
+       "canonical": "@test10000",
+       "commitment_height": 3454,
+       "commitment_root": "1c723515fa6b14778f9a9c0a35b50cd9f907230af5cfd0222f1f887f94274d70",
+       "handle": "@test10000",
+       "script_pubkey": "51202be5aa110d865d5c936de847790e471535a4a719b57b736fabdd12dba6283f81",
+       "sovereignty": "sovereign"
+      }
+     }
+    }
+   },
+   "model": null,
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154823.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "b1 members after verification",
+   "regtest": {
+    "o1": "ready"
+   },
+   "model": {
+    "o1": "ready"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154823.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L1",
+   "step": "b1 after a 151-block reorg drops the commitment",
+   "regtest": {
+    "state": "broadcast",
+    "in_mempool": false,
+    "getcommitment": null,
+    "subs_commit_status": {
+     "status": "pending",
+     "txid": "10882c7f30970a6e97b2da4af7f245494db94a16ad715a5464c0cb22eaca5a0d",
+     "block_height": null,
+     "confirmations": null
+    }
+   },
+   "model": {
+    "state": "broadcast"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154830.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L1",
+   "step": "members while finality is lost",
+   "regtest": {
+    "o1": "issuing"
+   },
+   "model": {
+    "o1": "issuing"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154830.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L1",
+   "step": "cancellation while finality is lost",
+   "regtest": {
+    "cancelled": false,
+    "why": "not cancellable once issuing"
+   },
+   "model": {
+    "cancelled": false,
+    "why": "not cancellable once issuing"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154830.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L1",
+   "step": "certificate verification while not final",
+   "regtest": {
+    "allowed": false,
+    "why": "not final"
+   },
+   "model": {
+    "allowed": false,
+    "status": "not_final"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154830.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L7",
+   "step": "commitment in the node's mempool after the reorg",
+   "regtest": {
+    "in_mempool": false,
+    "testmempoolaccept": true
+   },
+   "model": null,
+   "match": null,
+   "note": "Bitcoin Core 26.0 did not return the disconnected commitment to its mempool after invalidateblock (R10)",
+   "kind": "informational",
+   "t": 1794154830.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L7",
+   "step": "/broadcast again after the reorg",
+   "regtest": {
+    "allowed": false,
+    "why": "never repeat a broadcast whose outcome is unknown"
+   },
+   "model": {
+    "allowed": false,
+    "why": "never repeat a broadcast whose outcome is unknown"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154830.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L7",
+   "step": "rebroadcast the identical journaled bytes",
+   "regtest": {
+    "sent": true,
+    "result": "10882c7f30970a6e97b2da4af7f245494db94a16ad715a5464c0cb22eaca5a0d",
+    "in_mempool": true,
+    "raw_journaled": true
+   },
+   "model": {
+    "sent": true,
+    "why": ""
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154830.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L7",
+   "step": "a second rebroadcast while it is in the mempool",
+   "regtest": {
+    "sent": false,
+    "why": "the commitment is still on the chain or in the mempool"
+   },
+   "model": {
+    "sent": false,
+    "why": "the commitment is still on the chain or in the mempool"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154830.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L1",
+   "step": "b1 mined again at d = 0",
+   "regtest": {
+    "state": "mined",
+    "position": [
+     3606,
+     0
+    ]
+   },
+   "model": {
+    "state": "mined"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154831.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L2",
+   "step": "b1 back at d >= 150",
+   "regtest": {
+    "state": "final",
+    "subs_commit_status": {
+     "status": "finalized",
+     "txid": null,
+     "block_height": 3606,
+     "confirmations": null
+    }
+   },
+   "model": {
+    "state": "final"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154834.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L6",
+   "step": "certificate status for b1 at d = 150",
+   "regtest": {
+    "status": "awaiting_anchor",
+    "newest_anchor": 3744,
+    "mined_height": 3606
+   },
+   "model": {
+    "status": "awaiting_anchor"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154834.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L6",
+   "step": "verification refused while awaiting the anchor",
+   "regtest": {
+    "verified": false,
+    "why": "no anchor covers the commitment yet (newest 3744, mined 3606)"
+   },
+   "model": {
+    "verified": false,
+    "status": "awaiting_anchor"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154834.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L6",
+   "step": "b1 members while awaiting the anchor",
+   "regtest": {
+    "o1": "issuing"
+   },
+   "model": {
+    "o1": "issuing"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154834.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": "L6",
+   "step": "certificate status after mining 24 blocks to the anchor at 3780",
+   "regtest": {
+    "status": "verified",
+    "seconds_waited_for_anchor_after_tip": 0.5
+   },
+   "model": {
+    "status": "verified"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154836.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "certificates for b1 verified with libveritas",
+   "regtest": {
+    "notify": true,
+    "results": {
+     "o1": {
+      "ok": true,
+      "checks": {
+       "verified": true,
+       "handle": true,
+       "script_pubkey": true,
+       "root": true,
+       "root_height": true,
+       "sovereign": true
+      },
+      "error": null,
+      "zone": {
+       "anchor": 3780,
+       "canonical": "one@test10000",
+       "commitment_height": null,
+       "commitment_root": null,
+       "handle": "one@test10000",
+       "script_pubkey": "5120a828b3777b10edf3afe2cd02e6a18eb8171456594121d0296d3683508cb97bed",
+       "sovereignty": "sovereign"
+      },
+      "space_zone": {
+       "anchor": 3780,
+       "canonical": "@test10000",
+       "commitment_height": 3606,
+       "commitment_root": "1c723515fa6b14778f9a9c0a35b50cd9f907230af5cfd0222f1f887f94274d70",
+       "handle": "@test10000",
+       "script_pubkey": "51202be5aa110d865d5c936de847790e471535a4a719b57b736fabdd12dba6283f81",
+       "sovereignty": "sovereign"
+      }
+     }
+    }
+   },
+   "model": null,
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154836.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "1. first purchase",
+   "case": null,
+   "step": "b1 members after verification",
+   "regtest": {
+    "o1": "ready"
+   },
+   "model": {
+    "o1": "ready"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154836.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "fresh keys for the handle's owner and for another signer",
+   "regtest": {
+    "owner_script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+    "other_script_pubkey": "512038d36b92b7484a88bf2513734586259472d7241ede6eac68593c782841a5825a",
+    "distinct": true
+   },
+   "model": null,
+   "match": null,
+   "note": "the secrets stay in the run directory, outside kept evidence, and are deleted at the end of the scenario",
+   "kind": "informational",
+   "t": 1794154836.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "recipient request for two@test10000",
+   "regtest": {
+    "oid": "o3",
+    "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794154836.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "fixed-price quote for o3",
+   "regtest": {
+    "quoted": true,
+    "status": "quoted",
+    "price_sats": 10000,
+    "address": "bcrt1prm50varsvnjelvc0zzykvpdkwss23m0zpae3ak23sh3003tw4knsl0hcfy"
+   },
+   "model": {
+    "quoted": true,
+    "status": "quoted",
+    "price": 10000
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154836.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": "P1",
+   "step": "payment at 3 conf converts the hold",
+   "regtest": {
+    "o3": "converted"
+   },
+   "model": {
+    "o3": "converted"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154837.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "freeze b2",
+   "regtest": {
+    "members": [
+     "o3"
+    ],
+    "state": "frozen"
+   },
+   "model": {
+    "ok": true,
+    "members": [
+     "o3"
+    ],
+    "state": "frozen",
+    "refusal": null
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154837.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "stage b2 with readback",
+   "regtest": {
+    "staged": {
+     "two": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e"
+    },
+    "parked": [],
+    "sync": {
+     "success": true,
+     "pulled": 1,
+     "staged": 1,
+     "errors": []
+    }
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794154838.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "local commit b2 with readback",
+   "regtest": {
+    "state": "committed_local",
+    "root": "da6ded87a26e9f901bfedbf8066e05c660a8556005e605a41bcb12854b44a895",
+    "prev_root": "1c723515fa6b14778f9a9c0a35b50cd9f907230af5cfd0222f1f887f94274d70",
+    "is_initial": false,
+    "handles": 1,
+    "members_on_root": 1
+   },
+   "model": {
+    "state": "committed_local",
+    "members": [
+     "o3"
+    ]
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154838.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "prove b2",
+   "regtest": {
+    "seconds": 35.2,
+    "proving": "complete",
+    "proof_total": null,
+    "pushes": [
+     {
+      "t": 0.1,
+      "proof_index": 1,
+      "job_id": "d6ebcd97-794a-4748-9252-0216bc2e264f",
+      "message": "proving request submitted to prover"
+     }
+    ]
+   },
+   "model": {
+    "state": "proved"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154873.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "checkpoint b2 (coordinated snapshot)",
+   "regtest": {
+    "dir": "regtest/.run/records-20261108T161951Z-0c9721/offhost/snapshots/002-b2",
+    "objects": 9,
+    "store_journal": 13,
+    "controller_journal": 22
+   },
+   "model": {
+    "state": "checkpointed"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154874.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": "B3",
+   "step": "b2 broadcast",
+   "regtest": {
+    "state": "broadcast",
+    "txid": "9c86b93c6e79e630e28a797bc2274c97514cb1cefcb42cfb6b9f02f08ac08312"
+   },
+   "model": {
+    "state": "broadcast"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154875.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "b2 mined at d = 0",
+   "regtest": {
+    "state": "mined",
+    "position": [
+     3784,
+     0
+    ]
+   },
+   "model": {
+    "state": "mined"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154876.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "b2 at d = 149",
+   "regtest": {
+    "state": "mined"
+   },
+   "model": {
+    "state": "mined"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154891.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "b2 at d = 150",
+   "regtest": {
+    "state": "final",
+    "subs_commit_status": {
+     "status": "finalized",
+     "txid": null,
+     "block_height": 3784,
+     "confirmations": null
+    }
+   },
+   "model": {
+    "state": "final"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154892.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": "L6",
+   "step": "certificate status for b2 at d = 150",
+   "regtest": {
+    "status": "awaiting_anchor",
+    "newest_anchor": 3924,
+    "mined_height": 3784
+   },
+   "model": {
+    "status": "awaiting_anchor"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154892.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": "L6",
+   "step": "verification refused while awaiting the anchor",
+   "regtest": {
+    "verified": false,
+    "why": "no anchor covers the commitment yet (newest 3924, mined 3784)"
+   },
+   "model": {
+    "verified": false,
+    "status": "awaiting_anchor"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154892.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": "L6",
+   "step": "b2 members while awaiting the anchor",
+   "regtest": {
+    "o3": "issuing"
+   },
+   "model": {
+    "o3": "issuing"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154892.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": "L6",
+   "step": "certificate status after mining 26 blocks to the anchor at 3960",
+   "regtest": {
+    "status": "verified",
+    "seconds_waited_for_anchor_after_tip": 0.5
+   },
+   "model": {
+    "status": "verified"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154895.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "certificates for b2 verified with libveritas",
+   "regtest": {
+    "notify": true,
+    "results": {
+     "o3": {
+      "ok": true,
+      "checks": {
+       "verified": true,
+       "handle": true,
+       "script_pubkey": true,
+       "root": true,
+       "root_height": true,
+       "sovereign": true
+      },
+      "error": null,
+      "zone": {
+       "anchor": 3960,
+       "canonical": "two@test10000",
+       "commitment_height": null,
+       "commitment_root": null,
+       "handle": "two@test10000",
+       "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+       "sovereignty": "sovereign"
+      },
+      "space_zone": {
+       "anchor": 3960,
+       "canonical": "@test10000",
+       "commitment_height": 3784,
+       "commitment_root": "da6ded87a26e9f901bfedbf8066e05c660a8556005e605a41bcb12854b44a895",
+       "handle": "@test10000",
+       "script_pubkey": "51202be5aa110d865d5c936de847790e471535a4a719b57b736fabdd12dba6283f81",
+       "sovereignty": "sovereign"
+      }
+     }
+    }
+   },
+   "model": null,
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "b2 members after verification",
+   "regtest": {
+    "o3": "ready"
+   },
+   "model": {
+    "o3": "ready"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "outstanding set for b2 (journaled)",
+   "regtest": {
+    "outstanding": [
+     "o3"
+    ],
+    "added": [
+     "o3"
+    ],
+    "journaled": true
+   },
+   "model": {
+    "members": [
+     "o3"
+    ]
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": "L3",
+   "step": "delivery of o3 before its handle is published",
+   "regtest": {
+    "confirmed": false,
+    "why": "not published",
+    "status": "ready",
+    "relay_answer": "HTTP 200",
+    "checks": {
+     "verified": true,
+     "handle": false,
+     "script_pubkey": false,
+     "root_on_chain": false,
+     "root_not_before_batch": false,
+     "sovereign_or_pending": false
+    },
+    "error": null
+   },
+   "model": {
+    "confirmed": false,
+    "why": "not published"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": "L2",
+   "step": "publish a chunk of 1 for b2 after the live check",
+   "regtest": {
+    "called": true,
+    "live": {
+     "root_on_chain": true,
+     "commitment_height": 3784,
+     "depth": 176,
+     "newest_anchor": 3960,
+     "ok": true
+    },
+    "chunk": 1,
+    "response": {
+     "handles_published": 1,
+     "remaining": 0
+    },
+    "publish_status": {
+     "o3": "final"
+    },
+    "final": [
+     "o3"
+    ]
+   },
+   "model": {
+    "ok": true,
+    "count": 1,
+    "published": [
+     "o3"
+    ],
+    "why": ""
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": "L2",
+   "step": "delivery of o3 confirmed by a verified lookup through the relay",
+   "regtest": {
+    "confirmed": true,
+    "why": "",
+    "relay_answer": "HTTP 200",
+    "checks": {
+     "verified": true,
+     "handle": true,
+     "script_pubkey": true,
+     "root_on_chain": true,
+     "root_not_before_batch": true,
+     "sovereign_or_pending": true
+    },
+    "root_gate": {
+     "on_chain": true,
+     "height": 3784,
+     "depth": 176,
+     "newest_anchor": 3960,
+     "final": true,
+     "covered": true,
+     "ok": true
+    },
+    "root_is_the_batchs": true,
+    "root_is_live": true,
+    "zone": {
+     "anchor": 3960,
+     "canonical": "two@test10000",
+     "commitment_height": null,
+     "commitment_root": null,
+     "handle": "two@test10000",
+     "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+     "sovereignty": "sovereign"
+    },
+    "space_zone": {
+     "anchor": 3960,
+     "canonical": "@test10000",
+     "commitment_height": 3784,
+     "commitment_root": "da6ded87a26e9f901bfedbf8066e05c660a8556005e605a41bcb12854b44a895",
+     "handle": "@test10000",
+     "script_pubkey": "51202be5aa110d865d5c936de847790e471535a4a719b57b736fabdd12dba6283f81",
+     "sovereignty": "sovereign"
+    },
+    "error": null,
+    "live": {
+     "root_on_chain": true,
+     "commitment_height": 3784,
+     "depth": 176,
+     "newest_anchor": 3960,
+     "ok": true
+    },
+    "status": "fulfilled"
+   },
+   "model": {
+    "ok": true,
+    "status": "fulfilled",
+    "why": ""
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "b2 members after delivery",
+   "regtest": {
+    "o3": "fulfilled"
+   },
+   "model": {
+    "o3": "fulfilled"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "publication pass for b2 with nothing outstanding",
+   "regtest": {
+    "calls": 0,
+    "results": []
+   },
+   "model": {
+    "ok": true,
+    "count": 0
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer before any record is sent carries none",
+   "regtest": {
+    "verified": true,
+    "error": null,
+    "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+    "sovereignty": "sovereign",
+    "carried": false,
+    "dropped": false,
+    "records": [],
+    "relay_answer": "HTTP 200"
+   },
+   "model": {
+    "expected (record rule, not the model)": {
+     "verified": true,
+     "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+     "records": [],
+     "signed_for": null
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "a set signed with another key, verified offline",
+   "regtest": {
+    "verified": true,
+    "error": null,
+    "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+    "sovereignty": "sovereign",
+    "carried": true,
+    "dropped": true,
+    "records": [],
+    "signing_ids": [
+     "945f46286166626d16c890ab6b61946140fa9fa6c81ab19d78b638be32dbbe30"
+    ]
+   },
+   "model": {
+    "expected (record rule, not the model)": {
+     "verified": true,
+     "carried": true,
+     "dropped": true,
+     "records": []
+    }
+   },
+   "match": true,
+   "note": "libveritas drops it without failing the message",
+   "kind": "required",
+   "t": 1794154896.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer to that message",
+   "regtest": {
+    "status": 200,
+    "body": "ok"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794154896.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer after another key's set",
+   "regtest": {
+    "verified": true,
+    "error": null,
+    "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+    "sovereignty": "sovereign",
+    "carried": false,
+    "dropped": false,
+    "records": [],
+    "relay_answer": "HTTP 200"
+   },
+   "model": {
+    "expected (record rule, not the model)": {
+     "verified": true,
+     "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+     "records": [],
+     "signed_for": null
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "a set signed with the handle's key, verified offline",
+   "regtest": {
+    "verified": true,
+    "error": null,
+    "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+    "sovereignty": "sovereign",
+    "carried": true,
+    "dropped": false,
+    "records": [
+     {
+      "type": "seq",
+      "value": 1
+     },
+     {
+      "key": "note",
+      "type": "txt",
+      "values": [
+       "regtest record 1"
+      ]
+     },
+     {
+      "canonical": "two@test10000",
+      "flags": 1,
+      "handle": "two@test10000",
+      "sig": "f5e69d5b3536f9bd3d43ecffa7c07fcd54f583d4640e006dc2df2e15b39d36e779cb989c9864f53ff10373681924799098dc8d64b09be6dec9b654e4e072e116",
+      "type": "sig"
+     }
+    ],
+    "signing_ids": [
+     "945f46286166626d16c890ab6b61946140fa9fa6c81ab19d78b638be32dbbe30"
+    ]
+   },
+   "model": {
+    "expected (record rule, not the model)": {
+     "verified": true,
+     "dropped": false,
+     "records": [
+      {
+       "type": "seq",
+       "value": 1
+      },
+      {
+       "type": "txt",
+       "key": "note",
+       "values": [
+        "regtest record 1"
+       ]
+      }
+     ]
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154896.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer to that message",
+   "regtest": {
+    "status": 200,
+    "body": "ok"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794154896.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer after the owner's seq 1",
+   "regtest": {
+    "verified": true,
+    "error": null,
+    "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+    "sovereignty": "sovereign",
+    "carried": true,
+    "dropped": false,
+    "records": [
+     {
+      "type": "seq",
+      "value": 1
+     },
+     {
+      "key": "note",
+      "type": "txt",
+      "values": [
+       "regtest record 1"
+      ]
+     },
+     {
+      "canonical": "two@test10000",
+      "flags": 1,
+      "handle": "two@test10000",
+      "sig": "f5e69d5b3536f9bd3d43ecffa7c07fcd54f583d4640e006dc2df2e15b39d36e779cb989c9864f53ff10373681924799098dc8d64b09be6dec9b654e4e072e116",
+      "type": "sig"
+     }
+    ],
+    "relay_answer": "HTTP 200"
+   },
+   "model": {
+    "expected (record rule, not the model)": {
+     "verified": true,
+     "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+     "records": [
+      {
+       "type": "seq",
+       "value": 1
+      },
+      {
+       "type": "txt",
+       "key": "note",
+       "values": [
+        "regtest record 1"
+       ]
+      }
+     ],
+     "signed_for": "two@test10000"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154897.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer to the owner's seq 2",
+   "regtest": {
+    "status": 200,
+    "body": "ok"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794154897.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer after the owner's seq 2",
+   "regtest": {
+    "verified": true,
+    "error": null,
+    "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+    "sovereignty": "sovereign",
+    "carried": true,
+    "dropped": false,
+    "records": [
+     {
+      "type": "seq",
+      "value": 2
+     },
+     {
+      "key": "note",
+      "type": "txt",
+      "values": [
+       "regtest record 2"
+      ]
+     },
+     {
+      "canonical": "two@test10000",
+      "flags": 1,
+      "handle": "two@test10000",
+      "sig": "161931a953e1c70f782eaed2424588111cfe07a1ced8f7b7bcaa8ce2a6037c02fc9620c57d7f00720dc5da784b2d1dc623e2e43dda4df5cd4e2f486869e0bc9b",
+      "type": "sig"
+     }
+    ],
+    "relay_answer": "HTTP 200"
+   },
+   "model": {
+    "expected (record rule, not the model)": {
+     "verified": true,
+     "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+     "records": [
+      {
+       "type": "seq",
+       "value": 2
+      },
+      {
+       "type": "txt",
+       "key": "note",
+       "values": [
+        "regtest record 2"
+       ]
+      }
+     ],
+     "signed_for": "two@test10000"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154897.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer to the owner's seq 1 sent again",
+   "regtest": {
+    "status": 200,
+    "body": "ok"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794154897.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer after seq 1 is sent again",
+   "regtest": {
+    "verified": true,
+    "error": null,
+    "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+    "sovereignty": "sovereign",
+    "carried": true,
+    "dropped": false,
+    "records": [
+     {
+      "type": "seq",
+      "value": 2
+     },
+     {
+      "key": "note",
+      "type": "txt",
+      "values": [
+       "regtest record 2"
+      ]
+     },
+     {
+      "canonical": "two@test10000",
+      "flags": 1,
+      "handle": "two@test10000",
+      "sig": "161931a953e1c70f782eaed2424588111cfe07a1ced8f7b7bcaa8ce2a6037c02fc9620c57d7f00720dc5da784b2d1dc623e2e43dda4df5cd4e2f486869e0bc9b",
+      "type": "sig"
+     }
+    ],
+    "relay_answer": "HTTP 200"
+   },
+   "model": {
+    "expected (record rule, not the model)": {
+     "verified": true,
+     "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+     "records": [
+      {
+       "type": "seq",
+       "value": 2
+      },
+      {
+       "type": "txt",
+       "key": "note",
+       "values": [
+        "regtest record 2"
+       ]
+      }
+     ],
+     "signed_for": "two@test10000"
+    }
+   },
+   "match": true,
+   "note": "an older set doesn't replace a newer one",
+   "kind": "required",
+   "t": 1794154897.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer to another key's seq 3",
+   "regtest": {
+    "status": 200,
+    "body": "ok"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794154897.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "the relay's answer after another key's seq 3",
+   "regtest": {
+    "verified": true,
+    "error": null,
+    "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+    "sovereignty": "sovereign",
+    "carried": true,
+    "dropped": false,
+    "records": [
+     {
+      "type": "seq",
+      "value": 2
+     },
+     {
+      "key": "note",
+      "type": "txt",
+      "values": [
+       "regtest record 2"
+      ]
+     },
+     {
+      "canonical": "two@test10000",
+      "flags": 1,
+      "handle": "two@test10000",
+      "sig": "161931a953e1c70f782eaed2424588111cfe07a1ced8f7b7bcaa8ce2a6037c02fc9620c57d7f00720dc5da784b2d1dc623e2e43dda4df5cd4e2f486869e0bc9b",
+      "type": "sig"
+     }
+    ],
+    "relay_answer": "HTTP 200"
+   },
+   "model": {
+    "expected (record rule, not the model)": {
+     "verified": true,
+     "script_pubkey": "5120d7359c24f8bcbee11920041d79c25a27dd0e7b6a50850c9b0c5a7c35df98f54e",
+     "records": [
+      {
+       "type": "seq",
+       "value": 2
+      },
+      {
+       "type": "txt",
+       "key": "note",
+       "values": [
+        "regtest record 2"
+       ]
+      }
+     ],
+     "signed_for": "two@test10000"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154897.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "9. signed records",
+   "case": null,
+   "step": "signer keys deleted from the run directory",
+   "regtest": {
+    "deleted": true
+   },
+   "model": {
+    "expected (harness rule, not the model)": {
+     "deleted": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794154897.3
+  }
+ ],
+ "findings": []
+}

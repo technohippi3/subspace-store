@@ -3,7 +3,15 @@ name = "subspace-regtest-verifier"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "Independent certificate check for the regtest harness, using the libveritas version that subs pins."
+description = "Independent certificate and signed-record check for the regtest harness, using the libveritas version that subs pins, and a regtest record signer."
+
+[[bin]]
+name = "subspace-regtest-verifier"
+path = "src/main.rs"
+
+[[bin]]
+name = "subspace-regtest-records"
+path = "src/bin/records.rs"
 
 [dependencies]
 # The exact versions in subs' Cargo.lock at the pinned commit.

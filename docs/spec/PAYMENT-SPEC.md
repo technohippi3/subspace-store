@@ -4,6 +4,20 @@ MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
 auction section, its cases D1 to D35, case N6, and the auction evidence
 cases E1 to E4 are kept but deferred until after the MVP.
 
+Launch scope clarification (workspace_owner, 2026-11-08): the
+workspace_owner agreed on 2026-11-08 that the first launch targets one
+public space, fixed-price Bitcoin sales and Nacho as the first supported
+buyer client, without ZK eligibility. Nacho acceptance comes first, with
+checkout and an attended operator runner developed alongside it on regtest.
+This agreement does not authorize production deployment, mainnet
+transactions or funds movement. Paid sales remain conditional on the buyer
+and operator acceptance gates. It leaves undecided the hold-admission
+policy for public names and the recovery-time targets (open points), and
+it approves neither implicitly. Without ZK eligibility the buyer proves
+nothing about themselves; the Spaces protocol's issuance proofs for later
+batches stay in scope. The plan for the first acceptance gate is
+`docs/BUYER-GATE.md`.
+
 Status: draft specification under review. Every rule below is a
 requirement until its cases are implemented and pass as executable tests.
 Nothing here has been built or tested, and a reviewed specification is not an
@@ -881,6 +895,42 @@ no names and no orders, while the journal has entries refuses to serve and
 writes nothing. An empty store started over an existing journal would hand
 out order ids again and could sell held or reserved names twice.
 
+## Acceptance gates
+
+Paid sales stay closed until both gates pass. They are independent:
+neither substitutes for the other, and each passes only on verified
+evidence. A record counts when a verifying client accepts it against the
+name's certificate, never when it is only seen in a relay's `/peek` output.
+These definitions were brought from the operator's 2026-11-06 staging
+handoff into this file on 2026-11-08, unchanged except for the timing
+measurements.
+
+Buyer gate, on a throwaway space, with Nacho as the client. Its plan is
+`docs/BUYER-GATE.md`.
+1. Issue two names to one buyer, each to its own script.
+2. Import each certificate and verify it in the client: one by scanning a
+   QR code shown on another device, the other from a file on the phone
+   itself.
+3. Sign a record update on each from the client, and verify it.
+4. Transfer one, and confirm that the other stays under its holder's
+   independent control.
+5. With the store unavailable, recover on a clean install and control the
+   remaining name: verify its certificate, sign a verified record update,
+   and transfer it.
+
+Operator gate: restore the store's database, the tree, `subs`' state and
+the operator wallet consistently from the off-host recovery set onto a
+fresh host. Reconcile every uncertain operation against the chain,
+including an unacknowledged broadcast, a pending commitment and a pending
+refund. Then issue another test batch successfully and verify its
+certificates. The rehearsal is in `CONTROLLER-DESIGN.md`. It measures two
+times, the store's replay from its journal and the complete recovery until
+issuance and refunds can safely resume, and records the history size each
+was measured on. Their targets are open points.
+
+A second buyer client is future compatibility work, not a launch
+prerequisite.
+
 ## Executable cases
 
 Each case runs against a simulated chain and mempool with controllable reorgs
@@ -1135,7 +1185,23 @@ gate doesn't count them.
 
 These stay proposals until decided:
 - the hold-abuse rule under "Fixed-price sales", for proof-gated and for
-  public names; it blocks any public pilot;
+  public names; it blocks any public pilot. The 2026-11-08 launch scope
+  makes the admission policy for public names the one that matters first,
+  and doesn't decide it;
+- the recovery-time targets: how long a store replay from the journal may
+  take, and how long the complete operator recovery may take, store,
+  controller, `subs` and wallet together, until issuance and refunds can
+  safely resume. Both are to be measured, each with the history it was
+  measured on: the sales period, order count, and journal entries and
+  bytes. A fast database replay alone doesn't show that issuance and
+  refunds can resume, and a small rehearsal alone doesn't show that a full
+  replay is fast enough for a representative history. Restoring from a
+  snapshot plus the journal since it is needed only if replay misses its
+  target;
+- the delivery time stated at checkout. "Usually 1 to 2 days" is
+  provisional until the operating schedule (batch cadence, proving,
+  `d >= 150`, anchor coverage) supports it, and checkout says that delivery
+  can take longer;
 - the cancellation reporting rule under "Cancellation" (final only once
   acknowledged off-host, unconfirmed until then). Draft 14 adopted it on a
   reviewer's recommendation; it awaits the workspace_owner's decision;

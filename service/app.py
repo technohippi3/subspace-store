@@ -34,6 +34,7 @@ OID_RE = r"(o\d+)"
 
 
 REQUEST_FIELDS = frozenset({"handle", "script_pubkey"})
+MAX_BODY = 65536  # bytes; a larger body is refused unread
 
 
 class BadRequest(Exception):
@@ -151,7 +152,7 @@ class Service:
 
             def _body(self):
                 n = int(self.headers.get("Content-Length") or 0)
-                if n > 65536:
+                if n > MAX_BODY:
                     raise BadRequest("body too large")
                 try:
                     body = json.loads(self.rfile.read(n) or b"{}",

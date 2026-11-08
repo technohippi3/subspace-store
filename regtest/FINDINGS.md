@@ -426,3 +426,18 @@ sovereign. A matching answer that falls short of any of these is waiting,
 not alerted. Publication still checks only the batch's own commitment, so
 a handle can be published while a later commitment is young. Delivery then
 waits for that later root.
+
+## Signed records
+
+R25. A relay accepts a message whose records don't verify. In run
+`records-20261108T161951Z-0c9721` the pinned `certrelay` answered `200 ok`
+to `/message` for a message carrying a record set signed with a key other
+than the handle's. libveritas drops such a set without failing the message,
+and the relay's later `/query` answers carried no records from it. It also
+answered `200 ok` to an older owner-signed set sent after a newer one, and
+kept the newer. So a relay's acceptance shows only that the message
+verified, not that its records were taken: a record counts only when the
+relay's answer, verified against the operator's own root anchors, carries
+it, equal to what was signed. The verifier reports a carried set that was
+dropped (`dropped` in its `records` output), so a verified message with no
+records isn't mistaken for a check that passed.

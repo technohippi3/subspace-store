@@ -405,6 +405,47 @@ still work with the new gates. It doesn't exercise them: no step quotes or
 cancels during an outage, and none restores from the journal. Those cases
 are tested over a simulated chain and beside the model, not on regtest.
 
+## Signed records through a local relay (run records-20261108T161951Z-0c9721, 2026-11-08)
+
+Script: `regtest/run-records.sh`, from `main` at `7d1614c` plus the
+uncommitted buyer-gate preparation. It runs the first purchase, then
+scenario 9, with the `subs-relay` build and the local relay. Verdict pass,
+exit 0. All 63 required steps agree, with the model where the model has an
+expectation and otherwise with the record rule stated in the step, and 11
+are informational.
+
+Scenario 9 sells `two@test10000` to a P2TR script whose output key is a
+fresh key the run made (`subspace-regtest-records keygen`). It issues the
+name in b2, publishes it and confirms delivery through the relay as
+scenario 6 does. The harness then acts as the client. It builds messages
+for the handle from the relay's verified answer, with records signed by the
+handle's key or by a second fresh key, sends them to the relay's
+`/message`, and reads the handle back from `/query`. Each answer was
+verified with the pinned libveritas against root anchors read from
+`spaced`, and its verified records compared with the ones signed:
+- before any record was sent, the answer verified with no records;
+- a set signed with the other key verified offline with the set dropped.
+  The relay answered `200 ok` to it, and its next answer carried no
+  records;
+- the owner's set with seq 1 verified, offline and in the relay's next
+  answer, equal to what was signed, with its signature record for the
+  handle;
+- the owner's seq 2 replaced it;
+- seq 1 sent again, and a seq 3 signed with the other key, each answered
+  `200 ok`, and left seq 2 in place.
+
+The two keys were kept in the run directory, outside the kept evidence,
+and deleted when the scenario ended; a required step checks that. Finding
+R25 records what this shows about the relay.
+
+The run shows that libveritas 0.4.4 verifies signed records offline,
+against the zone's current key and with anchors from the operator's own
+node, and that in this run the relay kept the newest owner-signed set and
+passed on nothing that didn't verify. It doesn't show any of that for Nacho: the harness signed with
+libveritas's own builder, and no client from the buyer gate took part. It
+doesn't cover a transferred name, a delegate's records or a relay that
+withholds the newest set.
+
 ## The tightened harness
 
 Since fp4:
@@ -441,6 +482,9 @@ Not exercised on regtest:
 - buyer import, in Nacho or any other client, and the buyer gate's
   verifying client (delivery was confirmed by the harness's own lookup:
   the relay's answer verified with the pinned libveritas);
+- records signed by a client other than the harness, records after a
+  transfer or by a delegate, and a relay that withholds a newer record set
+  (scenario 9 signs with libveritas's builder for an untransferred handle);
 - a fulfilled order whose commitment then loses finality or is superseded
   (L4, L5);
 - refunds other than one cancellation refund through the store service
@@ -475,8 +519,8 @@ they're published, and a run id must be a plain name.
 runs, four continued runs and `publication-20261107T094250Z-76605c`. Four
 of the publication run's verifications, in its `-relay` directories, are
 the relay's `/query` answers from scenario 6: two from before publication
-and two from the delivery lookups. The four combined runs and the service
-run are kept as well, 136 messages in all. Each message is kept with its root anchors and
+and two from the delivery lookups. The four combined runs, the service runs and
+`records-20261108T161951Z-0c9721` are kept as well, 160 messages in all. Each message is kept with its root anchors and
 libveritas output. `verify-evidence.sh` verifies them all offline, and
 `evidence/README.md` says how. fp4's certificate isn't kept in the repository,
 because its handle label was a personal name and is part of the signed

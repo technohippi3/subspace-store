@@ -10,7 +10,10 @@ client. Nacho is the first client being tested.
 ## Status
 
 Pre-alpha. The MVP sells names at fixed prices. Dutch auctions are
-specified but deferred until after the MVP.
+specified but deferred until after the MVP. The first launch targets one
+public space, fixed-price Bitcoin sales and Nacho as the first buyer
+client, without ZK eligibility (workspace_owner, 2026-11-08); it doesn't
+authorize mainnet transactions or opening sales.
 
 There is a reviewed specification, a reference model of the fixed-price
 rules, and a regtest harness that drives the pinned `subs`, `spaced` and
@@ -21,7 +24,9 @@ and a lost broadcast response. After a restore it issued another batch,
 with a candidate upstream change to `subs` (U1(b)). It published
 certificates to a relay running inside the test network and confirmed
 each delivery with a verified lookup through that relay, so orders reached
-"fulfilled".
+"fulfilled". With the harness acting as the client, it signed records for a
+delivered handle, sent them through that relay and verified them in the
+relay's answers. A set signed with the wrong key was dropped.
 
 That is regtest evidence, with two small patches to `subs` kept in
 `regtest/upstream/`. It isn't a buyer's purchase. No buyer's client has
@@ -70,7 +75,10 @@ upstream Spaces software or buyers behave that way.
   Every fixed-price MVP case has one. There are also seeded generated
   sequences with invariant, replay and cut-and-resume checks, and the
   service run beside the model on those sequences (`test_service_twin.py`).
+- `docs/BUYER-GATE.md`: the plan for the buyer acceptance gate with Nacho.
 - `tools/case_coverage.py`: reports which named cases have tests.
+  `tools/check_request.py` checks the format of a public recipient request,
+  such as a Nacho export, as `POST /requests` does before reading any state.
 
 ## Running the checks
 

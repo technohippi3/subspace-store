@@ -155,14 +155,15 @@ class Run:
 
     # Shared steps
 
-    def buy(self, scen, space, label, case="P1"):
+    def buy(self, scen, space, label, case="P1", spk=None):
         """Request, quote and pay for `label@space`; return the order id once
-        it has converted at three confirmations."""
+        it has converted at three confirmations. `spk` is the recipient
+        script, by default a new address of the buyer's wallet."""
         m = self.mirror(space)
         handle = f"{label}{space}"
         self.registry.list_name(handle, PRICE)
         m.list_name(handle)
-        spk = self.buyer_script()
+        spk = spk or self.buyer_script()
         oid = self.registry.request(handle, spk)
         self.report.step(scen, None, f"recipient request for {handle}",
                          {"oid": oid, "script_pubkey": spk})
