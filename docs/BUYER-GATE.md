@@ -94,9 +94,9 @@ for two names under one of the workspace_owner's spaces, were copied from
 the phone with Nacho's "Copy request" and pass the checker, with distinct
 scripts. Nacho exports a request only through that button, as
 pretty-printed JSON with the same two members; its menu for a request
-offers only "Import certificate" and "Remove handle". If the throwaway
-space chosen in the transaction plan is another space, P1 is repeated for
-it.
+offers only "Import certificate" and "Remove handle". The throwaway
+space chosen in the transaction plan is another space, so P1 is repeated
+for it, with two fresh requests.
 
 P2. Set up a test operator on the workspace_owner's own machine, never on
 the production operator host: `spaced` v0.5.0 with a fresh data directory,
@@ -219,6 +219,29 @@ waits for an answer on Nacho's key derivation and backup (client question
 1) and isn't attempted before then. It is the gate's largest open external
 dependency: without it the gate can't pass.
 
+What Nacho 0.1.1 says about recovery, read on 2026-11-08 from the
+interface text in its Android package, by a static search of the
+package's strings pulled with adb from the workspace_owner's phone
+(nothing was run, and no phrase or key was read). The package is not kept
+here. This is Nacho's own copy, not evidence of what it does:
+- a keystore has a 12-word seed phrase, and handles are derived from it:
+  a handle added with "Import a private key" is described as "not derived
+  from your seed phrase", and a handle removed from a keystore as one the
+  seed phrase "can re-derive";
+- the app asks the holder to save both the seed phrase "and a backup
+  file", and its restore takes that file, a Nacho `.sqlite` backup, to
+  restore "your public key, handles, and certificates";
+- a handle can be moved to a new key by a transaction the holder
+  broadcasts from a wallet, effective once seen on chain.
+
+The derivation path doesn't appear as text in the package: the app builds
+it when it runs. So the path, how a handle's index is chosen, and whether
+a seed phrase alone restores a handle without the backup file stay open
+(client question 1). M11 therefore records which route it used, on which
+Nacho version: the seed phrase with the backup file, or the seed phrase
+alone with the certificate imported again. Only a route that verifies the
+certificate, signs a verified record and transfers the name counts.
+
 ## Stop conditions
 
 The test stops, with the evidence kept, if any of these happens:
@@ -247,7 +270,7 @@ the repository knows now. None has a maintainer answer recorded here.
 
 | # | Question | State |
 | --- | --- | --- |
-| 1 | Nacho's key derivation and backup, and whether it changed between versions | open; blocks M11 |
+| 1 | Nacho's key derivation and backup, and whether it changed between versions | open; blocks M11. The workspace_owner's phone runs Nacho 0.1.1 for Android (`com.impervious.nacho`, versionCode 18, updated 2026-11-06), read with adb on 2026-11-08; the evidence for M11 names the version it ran on. Its interface text says handles are derived from the 12-word seed phrase and restored with a `.sqlite` backup file; the path isn't in the package's text (M11) |
 | 2 | whether Nacho finds a third-party operator's certificates by itself, and which import formats it accepts, on the same phone too | open; M7 and M8 observe it, after M6 shows the certificates on a public relay. On 2026-11-08 a waiting request's page said the certificate "will appear once it's issued" and offered "Import certificate"; that is Nacho's copy, not evidence of discovery |
 | 3 | whether Nacho always makes a fresh key per request | open; P1 shows two distinct scripts, not the rule |
 | 4 | how a holder transfers a name and signs records in Nacho | open; M9 and M10 observe it |
@@ -262,6 +285,29 @@ the repository knows now. None has a maintainer answer recorded here.
 Nothing below runs until the workspace_owner fills in each blank and
 authorizes the plan as a whole. Amounts and fee limits are the
 workspace_owner's decision; none is proposed here.
+
+Chosen on 2026-11-08. The workspace_owner delegated the choice of
+throwaway space ("whatever is easiest/correct/best to proceed with"). The
+space chosen has no commitment and no delegation, so the test makes its
+first commitment, which needs no proof. No other project's record
+reserves it, and its expiry was about 294 days away at the check. Three
+other candidates were ruled out:
+- the space the 2026-11-06 requests are under already carries a
+  commitment from an earlier pilot, so a further one needs a proof and
+  that pilot's `subs` state;
+- one space is reserved for another project's production pilot;
+- one disposable staging space already has later commitments under
+  another project's operator.
+
+The space, the wallet that holds it, the operator machine (the
+workspace_owner's workstation, P2) and where the evidence is kept are
+recorded in the operator's private records, because they identify the
+workspace_owner's spaces. The handles, and the M10 and M11 recipients, are
+fresh Nacho requests made at each step. The public relay is the one the
+M6 lookup used, as its evidence records. Still blank: the latest date for
+M1, every amount and every fee limit. The workspace_owner is asked before
+each step that spends sats, and the chain check is repeated immediately
+before M1.
 
 | Step | Transaction | Signed by | Amount | Fee limit |
 | --- | --- | --- | --- | --- |
