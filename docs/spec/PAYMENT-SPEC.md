@@ -931,6 +931,30 @@ was measured on. Their targets are open points.
 A second buyer client is future compatibility work, not a launch
 prerequisite.
 
+Proposed finish line for the first launch: a reviewer recommendation of
+2026-11-09, not adopted by the workspace_owner. The first space would
+launch once four demonstrations pass and the workspace_owner then
+authorizes opening sales:
+1. Nacho works for an actual buyer. This is the buyer gate above. Its
+   recovery step passes with a working, documented backup-and-restore
+   procedure, without working out Nacho's key derivation.
+2. The complete sale works. One public space, fixed prices, a public
+   Nacho request, a Bitcoin invoice, the private progress link, and
+   verified certificate delivery, all through the real service. A
+   cancellation with its refund is shown through the same service too.
+   This needs the checkout and the attended operator runner, which don't
+   exist yet.
+3. A small public pilot can be operated. That means one chosen
+   hold-admission policy (still an open point), bounded operator-wallet
+   funding, and a way to pause sales and handle alerts. Attended
+   operation is enough; neither a general abuse-prevention system nor an
+   elaborate admin interface is needed.
+4. Recovery works once, end to end. This is the operator gate above, with
+   one supported recovery method.
+
+ZK eligibility, auctions, more clients, a universal installer and more
+recovery methods would wait until after the launch.
+
 ## Executable cases
 
 Each case runs against a simulated chain and mempool with controllable reorgs

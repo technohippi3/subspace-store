@@ -10,6 +10,12 @@
 # subs, which binds every interface (finding R7). No host firewall, system
 # or security setting is changed.
 #
+# That confinement is of the network only. The mount namespace rebinds
+# /etc/resolv.conf and nothing else, and the user namespace maps to the same
+# host user, so these processes can read every file that user can, the
+# workspace_owner's existing wallet files included. Keeping them out of
+# reach needs another boundary: a clean VM or a separate machine.
+#
 # There is no PID namespace: the launcher's processes share the host's
 # process list, so the launcher never finds a process by its name. When it
 # starts a process it records that process's identity: its pid, its start

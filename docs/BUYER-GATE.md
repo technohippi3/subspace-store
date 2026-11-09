@@ -117,6 +117,20 @@ state, including the Bitcoin RPC URL, sits in a private directory outside
 the repository, and the URL reaches `spaced` through its environment, not
 its command line.
 
+What P2 provides is network confinement and application state of its
+own: a separate `spaced` data directory, a separate wallet, and no
+listener the host or anything outside can reach. It is not a filesystem
+boundary. The mount namespace only rebinds `/etc/resolv.conf`; the host's
+filesystem stays visible, and the user namespace maps to the same host
+user, so the test processes can read every file that user can, including
+the workspace_owner's existing wallet files, and they have outbound
+network access. A reviewer showed this with a disposable file: a mode-600
+file inside a mode-700 host directory stayed readable under the same
+namespace flags. No wallet files were inspected. If the requirement is
+that the test software can't reach the existing wallets even after a bug
+or a compromise, it needs another boundary: a separate OS account without
+access to those files, or a VM with no wallet directories mounted.
+
 The namespace has no PID namespace of its own, so the launcher's
 processes share the host's process list, and it never finds one by name.
 When it starts the namespace and slirp4netns it records each one's pid,
@@ -149,11 +163,37 @@ input on 2026-11-08, and its phrase was shown in the session. It is
 treated as exposed: it is never funded or used, and the launcher refuses
 it.
 
-Still to do, in order:
-- once `spaced` is at the tip, `buyer-gate/operator.sh start-subs`, and a
-  check that `subs` answers inside the namespace only;
-- the chain check of the throwaway space, from this node, immediately
-  before M1.
+`spaced` reached the tip on 2026-11-09 at 11:47 UTC, at height 975170.
+`buyer-gate/operator.sh start-subs` then started `subs` inside the
+namespace with `operator-2`; nothing was signed or sent. Checked right
+after, on this workstation. Inside the namespace, `subs` listens on
+port 7777 and answers HTTP 200, and `spaced` listens on 127.0.0.1:7225
+only. The host has no listener on either port. Connections from the host
+to both ports fail on 127.0.0.1, on every host address, and on the
+namespace's own 10.0.2.100. From inside, the host's loopback through the
+slirp gateway 10.0.2.2 can't be reached either. This is a local
+confinement check of the test operator, not evidence about the buyer
+flow.
+
+Before M1, a clean VM or a separate machine: a reviewer recommendation
+of 2026-11-09, not yet a workspace_owner decision. The test operator
+moves to a clean VM or separate machine that holds only its own data and
+credentials, and shares no host wallet folder. It keeps the network
+confinement above. The move reuses the synced test data if that is
+practical: the state is about 100 MB, so `spaced` stops cleanly, its data
+directory (without the exposed `operator` wallet), `subs`' state and the
+Bitcoin RPC URL are copied in, and `spaced` should then resume at the
+copied height rather than sync again. If it starts over, it is stopped,
+and the workspace_owner is asked before another full sync. The P2 network
+checks are repeated there, with a disposable file on the host confirming
+that nothing is shared. Hardening the everyday workstation is not a
+launch requirement. That includes auditing its services, remounting
+`/proc` and deleting the original copy. The same reviewer withdrew an
+earlier separate-account plan as beyond the first sale. Which VM or
+machine to use is the workspace_owner's choice.
+
+Still to do: the chain check of the throwaway space, from this node,
+immediately before M1.
 
 P3. Find a client or library call that verifies a signed record against a
 certificate without trusting a relay (client question 5).
@@ -264,12 +304,15 @@ M10 (mainnet, workspace_owner's phone). Transfer the first name to a fresh
 recipient, then publish another record on the second name and verify it.
 Evidence: the transfer, and the verified record on the untouched name.
 
-M11 (mainnet, blocked). Recover the second name on a clean install with the
+M11 (mainnet, workspace_owner's phone). Recover the second name on a clean install with the
 test operator stopped: verify its certificate, sign a verified record and
-transfer it. The transfer is a mainnet transaction in the plan below. This
-waits for an answer on Nacho's key derivation and backup (client question
-1) and isn't attempted before then. It is the gate's largest open external
-dependency: without it the gate can't pass.
+transfer it. The transfer is a mainnet transaction in the plan below.
+Recovery uses Nacho's own documented backup and restore: a backup made
+before the test operator stops, restored on a clean install. If that
+procedure verifies the certificate, signs a verified record and transfers
+the name, M11 passes. Key derivation doesn't need to be worked out
+(reviewer recommendation, 2026-11-09). The backup file stays on the workspace_owner's
+devices and never goes into evidence.
 
 What Nacho 0.1.1 says about recovery, read on 2026-11-08 from the
 interface text in its Android package, by a static search of the
@@ -289,10 +332,9 @@ here. This is Nacho's own copy, not evidence of what it does:
 The derivation path doesn't appear as text in the package: the app builds
 it when it runs. So the path, how a handle's index is chosen, and whether
 a seed phrase alone restores a handle without the backup file stay open
-(client question 1). M11 therefore records which route it used, on which
-Nacho version: the seed phrase with the backup file, or the seed phrase
-alone with the certificate imported again. Only a route that verifies the
-certificate, signs a verified record and transfers the name counts.
+(client question 1). They don't block M11, which uses the documented
+backup-and-restore route. M11 records the steps it followed and the Nacho
+version it ran on, so the procedure can be repeated.
 
 ## Stop conditions
 
@@ -322,7 +364,7 @@ the repository knows now. None has a maintainer answer recorded here.
 
 | # | Question | State |
 | --- | --- | --- |
-| 1 | Nacho's key derivation and backup, and whether it changed between versions | open; blocks M11. The workspace_owner's phone runs Nacho 0.1.1 for Android (`com.impervious.nacho`, versionCode 18, updated 2026-11-06), read with adb on 2026-11-08; the evidence for M11 names the version it ran on. Its interface text says handles are derived from the 12-word seed phrase and restored with a `.sqlite` backup file; the path isn't in the package's text (M11) |
+| 1 | Nacho's key derivation and backup, and whether it changed between versions | open, and no longer blocks M11, which uses the documented backup and restore. The workspace_owner's phone runs Nacho 0.1.1 for Android (`com.impervious.nacho`, versionCode 18, updated 2026-11-06), read with adb on 2026-11-08; the evidence for M11 names the version it ran on. Its interface text says handles are derived from the 12-word seed phrase and restored with a `.sqlite` backup file; the path isn't in the package's text (M11) |
 | 2 | whether Nacho finds a third-party operator's certificates by itself, and which import formats it accepts, on the same phone too | open; M7 and M8 observe it, after M6 shows the certificates on a public relay. On 2026-11-08 a waiting request's page said the certificate "will appear once it's issued" and offered "Import certificate"; that is Nacho's copy, not evidence of discovery |
 | 3 | whether Nacho always makes a fresh key per request | open; P1 shows two distinct scripts, not the rule |
 | 4 | how a holder transfers a name and signs records in Nacho | open; M9 and M10 observe it |
@@ -373,7 +415,7 @@ before M1.
 Also to fill in: the throwaway space, the two handles, the machine that
 runs the test operator, the public relay used in M6, the fresh recipient
 for M10 and the one for M11, the latest date for M1, and where the evidence
-is kept. M11 runs only after client question 1 is answered, and the
-workspace_owner may authorize it separately then. Funds left in the operator wallet after the test are returned to the
+is kept. The workspace_owner may authorize M11 separately, once the
+backup it restores from exists. Funds left in the operator wallet after the test are returned to the
 workspace_owner's wallet by a transaction the workspace_owner authorizes
 then.
