@@ -54,6 +54,20 @@ class KeepRun(unittest.TestCase):
         self.assertIn("evidence/r1/001-b1/one@test10000.message.bin", kept)
         self.assertNotIn(str(self.root).encode(), kept["runs/r1.json"])
 
+    def test_the_runner_verifications_are_kept_and_checked_too(self):
+        d = self.run_dir("r2")
+        (d / "runner" / "certs" / "001-b1").mkdir(parents=True)
+        (d / "runner" / "certs" / "001-b1" / "two@test10000.message.bin").write_bytes(b"\x00m")
+        out = self.keep("r2")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("evidence/r2/runner/001-b1/two@test10000.message.bin", self.kept("r2"))
+        # The same checks apply to them: a stray label refuses the whole run.
+        d = self.run_dir("r3")
+        (d / "runner" / "certs" / "001-b1").mkdir(parents=True)
+        (d / "runner" / "certs" / "001-b1" / "stray@test10000.message.bin").write_bytes(b"m")
+        self.assertNotEqual(self.keep("r3").returncode, 0)
+        self.assertEqual(self.kept("r3"), {})
+
     def test_an_existing_run_is_never_replaced(self):
         self.run_dir("r1")
         self.assertEqual(self.keep("r1").returncode, 0)

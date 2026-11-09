@@ -895,6 +895,66 @@ no names and no orders, while the journal has entries refuses to serve and
 writes nothing. An empty store started over an existing journal would hand
 out order ids again and could sell held or reserved names twice.
 
+## Checkout and the attended runner
+
+Status (2026-11-09): requirements for the regtest checkout milestone.
+Nothing here authorizes mainnet.
+
+Checkout. The buyer pages are served by the store service, beside its
+JSON API, and are plain HTML forms with no scripts. They add no rule: every
+step goes through the same ledger call as the JSON API, with the same
+refusals.
+- The names page lists each listed name with its fixed price and whether
+  it is free now. It shows nothing about orders.
+- A name's page takes a public recipient request, such as a Nacho export,
+  pasted whole. It is checked exactly as `POST /requests` checks a body,
+  and its handle must also be the page's name. A refused request is never
+  echoed, and the refusal names no member. An accepted one redirects to
+  the private order page, at the order link's token.
+- The order page shows only its own order: its status, its progress, and
+  the invoice once quoted. The invoice is the fixed price, the address,
+  and a BIP21 URI, `bitcoin:<address>?amount=<BTC>`, shown only under the
+  same journal rule as `/quote`. A buyer asks for the invoice with a
+  button. While the quote isn't acknowledged off-host the page says to try
+  again and shows no address. The refund address is given on the same
+  page, under the order link's rules.
+- The page asks for payment only while paying can still buy the name: the
+  order is quoted and holds the name, its hold hasn't run out, nothing has
+  been confirmed yet, and no cancellation is pending. Only then does it
+  show the amount to pay and the BIP21 link. In every other state the
+  invoice is history: the price and address that were asked, with no
+  link, and a plain statement not to pay. That covers a payment seen,
+  converted, issuing, ready, fulfilled, cancelled, a cancellation being
+  recorded, refund due, and expired unpaid.
+- The certificate is downloaded from the order page. It is offered and
+  served only while the order is `ready` or `fulfilled`, and only the
+  certificate message the runner delivered for that order after verifying
+  it. A certificate delivery has its own bound, 1 MiB of certificate,
+  because a later batch's certificate carries a proof and is far larger
+  than a request. Every other body keeps the 65,536-byte bound. The store
+  doesn't verify certificates itself, and a buyer should
+  verify a downloaded one before relying on it. Delivered certificates
+  aren't journaled: after a restore the runner delivers them again from
+  `subs`.
+- Every page is sent with `Cache-Control: no-store`,
+  `Referrer-Policy: no-referrer` and a content security policy that
+  allows no scripts and no framing. All text is HTML-escaped.
+
+The attended runner. The operator carries orders through issuance with one
+command-line tool, one step per command, attended. It drives the
+controller (`CONTROLLER-DESIGN.md`) through the store's operator API.
+Steps with no on-chain effect run on the command alone: preparing a batch,
+watching it, verifying certificates and delivering them to the store,
+publishing to the relay and confirming delivery, cancelling, and building
+a refund. A step that sends a transaction needs the operator's
+confirmation naming the object it sends. For a commitment that is the
+batch id, and for a refund the refund group id, typed at the prompt or
+given as `--confirm`. Without it nothing changes. Certificates are
+delivered to the store only after libveritas verified them with every
+check of the controller's step 11. On regtest the runner reaches
+`bitcoind`, `spaced` and `subs` through the harness stack. Moving the
+controller out of the harness is still to do.
+
 ## Acceptance gates
 
 Paid sales stay closed until both gates pass. They are independent:
@@ -942,8 +1002,9 @@ authorizes opening sales:
    Nacho request, a Bitcoin invoice, the private progress link, and
    verified certificate delivery, all through the real service. A
    cancellation with its refund is shown through the same service too.
-   This needs the checkout and the attended operator runner, which don't
-   exist yet.
+   This needs the checkout and the attended operator runner. Both exist
+   on regtest (scenario 10), and the runner still drives the harness's
+   controller.
 3. A small public pilot can be operated. That means one chosen
    hold-admission policy (still an open point), bounded operator-wallet
    funding, and a way to pause sales and handle alerts. Attended
@@ -1158,6 +1219,32 @@ None is regtest evidence.
 | H8 | a requested order, and the store's journal down | the buyer asks for a quote; then the host is lost and restored | 503, no address; no destination taken, no hold, the order still `requested` and the name available; after the restore the quote succeeds and the link shows its address |
 | H9 | two requested orders; the journal looks up but acknowledges nothing | each is quoted; the journal recovers between the two, and the host is lost after the second; then a database from before the journaled status restarts | 503 and no address from `/quote`, and none on the order link, for each while unacknowledged; after the recovery the first quote returns its recorded address; after the loss the second order is `requested` with no address and its name available, the first keeps its address; the old database takes the acknowledged statuses from the journal |
 | H10 | two converted orders | one cancelled with the journal down, which then recovers; the other cancelled twice with it down; then the host is lost and restored | the first 202 "unconfirmed", its order link `converted` with the cancellation unconfirmed, then `cancelled` and final once the journal recovers, and still after the loss; the second 202 "unconfirmed" both times, without the cancelled status, its link `converted` and unconfirmed, and undone by the loss: converted with its fulfillment reservation, the link showing no cancellation; cancelled again after the restore, it is final on both |
+
+Checkout and the attended runner ("Checkout and the attended runner").
+These are the service's and the runner's own rules. C1 to C11 are service
+API tests over a simulated chain. A1 to A5 are runner tests against a
+recording stand-in for the store and the controller. Neither is a model
+result or regtest evidence; the regtest demonstration is scenario 10
+(`regtest/run-checkout.sh`).
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| C1 | two listed names, one held by a quote | the names page | both listed with their prices; the held one not available; no order data on the page |
+| C2 | a listed name | a valid request for it is pasted on its page | an order created, as by `POST /requests`; a 303 redirect to the order page at the new link's token |
+| C3 | a listed name | the pasted request breaks a recipient-request rule, carries a placeholder secret member, or names another handle | 400; nothing created; the page echoes none of the pasted text |
+| C4 | a requested order | the buyer asks for the invoice with the journal acknowledging | the page shows the price, the address and `bitcoin:<address>?amount=<BTC>` with the amount in BTC |
+| C5 | a requested order, and the journal looking up but acknowledging nothing | the buyer asks for the invoice | the page says to try again and shows no address; once the journal acknowledges, asking again shows the same address |
+| C6 | an order | its page is opened with another token, an unknown token, or a malformed one | 404 with no detail; a known token shows its own order only |
+| C7 | a converted order | the runner delivers a certificate for it | refused, nothing stored; once the order is `ready` the delivery is stored, and the page offers the download and serves exactly those bytes |
+| C8 | a ready order with a delivered certificate | the order loses `ready` (finality lost) | the download is withdrawn: not offered and 404, until it is `ready` again |
+| C9 | any page | it is served | `no-store`, `no-referrer`, a policy with `script-src 'none'` and `frame-ancestors 'none'`, and HTML-escaped text |
+| C10 | a ready order, and a later batch's certificate of 226,511 bytes from kept regtest evidence | the runner delivers it | stored and served byte for byte; a certificate over 1 MiB, or a delivery body declared over its bound, refused and the delivered one kept; the larger bound only for the authenticated delivery: unauthenticated 401, and other operator bodies, `POST /requests` and the request form still refused over 65,536 bytes with nothing created |
+| C11 | orders: quoted and holding with nothing confirmed; a payment seen below 3 blocks; converted, issuing, ready, fulfilled; cancelled; a cancellation unacknowledged; expired unpaid; expired with too little paid | each order page | only the first shows the amount to pay and a BIP21 link; every other shows the invoice as history, with no link and a note not to pay; an expiry not yet evaluated counts, because the page evaluates first |
+| A1 | a checkpointed batch | `issue` without the batch id confirmed, or with another id | refused; the batch stays checkpointed, no order is marked issuing, and nothing is sent |
+| A2 | a built refund group | `broadcast-refund` without its group id confirmed, or with another id | refused; nothing is sent |
+| A3 | a final batch with two members, one failing a certificate check | `certify` | only the verified member's certificate is delivered to the store; the other is reported failed and not delivered |
+| A4 | a checkpointed batch | `issue` with the batch id confirmed | the controller's issue step runs once, for that batch, at the given fee rate |
+| A5 | a built refund group | `broadcast-refund` with its id confirmed | the store's broadcast is called once, for that group |
 
 Evidence:
 

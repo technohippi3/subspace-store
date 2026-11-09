@@ -14,10 +14,16 @@ Three kinds of caller, each with its own boundary:
   `/committed`. `/pending` serves only the frozen batch's handles and
   scripts.
 
+The buyer's checkout pages (`checkout.py`) are served beside the JSON API,
+on `/`, `/buy/<handle>` and `/o/<token>`, through the same ledger calls.
+The runner delivers verified certificates to the order pages through
+`/operator/orders/<oid>/certificate`.
+
 All ledger calls are serialized by one lock. A background loop evaluates
 the ledger against the chain every few seconds.
 """
 
+import base64
 import hmac
 import json
 import re
@@ -26,6 +32,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from . import checkout
 from .bitcoin import RefundBuilder
 from .ledger import ISSUED, Invalid, Refused, Unconfirmed
 
@@ -35,6 +42,12 @@ OID_RE = r"(o\d+)"
 
 REQUEST_FIELDS = frozenset({"handle", "script_pubkey"})
 MAX_BODY = 65536  # bytes; a larger body is refused unread
+# A certificate message, delivered by the runner with the operator's token.
+# A later batch's message carries a proof: those on regtest are about
+# 226,500 bytes. Its own bound, with room to grow; the base64 body is 4/3
+# of it plus a little JSON.
+MAX_CERTIFICATE = 1_048_576
+MAX_CERTIFICATE_BODY = 4 * (MAX_CERTIFICATE // 3 + 1) + 1024
 
 
 class BadRequest(Exception):
@@ -137,6 +150,15 @@ class Service:
                 pass
 
             def _send(self, code, obj):
+                if isinstance(obj, checkout.Response):
+                    self.send_response(obj.code)
+                    self.send_header("Content-Type", obj.content_type)
+                    self.send_header("Content-Length", str(len(obj.body)))
+                    for k, v in obj.headers.items():
+                        self.send_header(k, v)
+                    self.end_headers()
+                    self.wfile.write(obj.body)
+                    return
                 out = json.dumps(obj).encode()
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json")
@@ -150,9 +172,16 @@ class Service:
                 h = self.headers.get("Authorization") or ""
                 return h[len("Bearer "):] if h.startswith("Bearer ") else None
 
-            def _body(self):
+            def _raw_body(self):
+                """The body's bytes; a body over MAX_BODY is refused unread."""
                 n = int(self.headers.get("Content-Length") or 0)
                 if n > MAX_BODY:
+                    raise BadRequest("body too large")
+                return self.rfile.read(n)
+
+            def _body(self, limit=MAX_BODY):
+                n = int(self.headers.get("Content-Length") or 0)
+                if n > limit:
                     raise BadRequest("body too large")
                 try:
                     body = json.loads(self.rfile.read(n) or b"{}",
@@ -174,7 +203,15 @@ class Service:
                 if path.startswith("/operator/"):
                     if not _token_ok(token, service.operator_token):
                         return 401, {"error": "unauthorized"}
-                    return service.route_operator(method, path, query, self._body)
+                    # Only an authenticated certificate delivery gets the
+                    # larger bound; every other body keeps MAX_BODY.
+                    certificate = re.fullmatch(rf"/operator/orders/{OID_RE}/certificate", path)
+                    body = (lambda: self._body(MAX_CERTIFICATE_BODY)) if certificate \
+                        else self._body
+                    return service.route_operator(method, path, query, body)
+                page = checkout.route(service, method, path, self._raw_body)
+                if page is not None:
+                    return page.code, page
                 return service.route_public(method, path, self._body)
 
             def _handle(self, method):
@@ -307,6 +344,16 @@ class Service:
                 return 200, {"status": led.operator_view(oid)["status"]}
             if action == "/refunds":
                 return 200, self.refund(oid, body().get("kind"))
+            if action == "/certificate":
+                b = body()
+                try:
+                    message = base64.b64decode(b.get("message_b64") or "", validate=True)
+                except (ValueError, TypeError):
+                    raise BadRequest("message_b64 is not base64")
+                if len(message) > MAX_CERTIFICATE:
+                    raise BadRequest("certificate too large")
+                led.deliver_certificate(oid, message)
+                return 200, {"delivered": True, "bytes": len(message)}
             if action == "/losses":
                 led.record_loss(oid, body().get("reason"))
                 return 200, {"ok": True}

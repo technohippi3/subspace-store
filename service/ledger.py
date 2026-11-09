@@ -202,6 +202,9 @@ create table if not exists journal_backlog (
 );
 create table if not exists pending (handle text primary key, script_pubkey text not null);
 create table if not exists committed (handle text primary key, root text not null);
+create table if not exists certificates (
+  oid text primary key references orders(oid), message blob not null, delivered_at real not null
+);
 """
 
 
@@ -728,6 +731,31 @@ class Ledger:
         """Only after the handle's delivery is confirmed by a verified lookup."""
         self._transition(oid, "ready", "fulfilled", "not ready", observe_first=True)
 
+    # Certificate delivery to the buyer's order page. The runner delivers a
+    # certificate message only after verifying it; the store keeps it but
+    # doesn't verify it. It isn't journaled: after a restore the runner
+    # delivers it again from subs.
+
+    CERTIFIABLE = ("ready", "fulfilled")
+
+    def deliver_certificate(self, oid, message):
+        if not isinstance(message, bytes) or not message:
+            raise Invalid("an empty certificate")
+        with self.tx():
+            if self._order(oid)["status"] not in self.CERTIFIABLE:
+                raise Refused("a certificate is delivered only for a ready order")
+            self.db.execute("insert or replace into certificates(oid, message, delivered_at) "
+                            "values (?, ?, ?)", (oid, message, self.clock()))
+
+    def certificate(self, oid):
+        """The delivered certificate, only while the order is ready or
+        fulfilled."""
+        if self._order(oid)["status"] not in self.CERTIFIABLE:
+            return None
+        row = self.db.execute("select message from certificates where oid = ?",
+                              (oid,)).fetchone()
+        return bytes(row["message"]) if row else None
+
     def open_incident(self, oid, kind, bid):
         with self.tx():
             o = self._order(oid)
@@ -1061,6 +1089,7 @@ class Ledger:
             "reconciling": json.loads(o["reasons"]),
             "refund_address": o["refund_address"], "refunds": groups,
             "incident": json.loads(o["incident"]) if o["incident"] else None,
+            "certificate_available": self.certificate(oid) is not None,
         }
 
     def operator_view(self, oid):

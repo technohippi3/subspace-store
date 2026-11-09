@@ -45,7 +45,17 @@ The service can rebuild its own database from its off-host journal alone
 after a host loss, shown over a simulated chain and beside the model, not
 yet on regtest. It gives out a payment address, and reports a cancellation
 final, only once its off-host journal has acknowledged the order, so a host
-loss can't strand a payment or undo a cancellation it called final. There is still no real controller, no checkout page, no
+loss can't strand a payment or undo a cancellation it called final.
+
+The buyer's checkout pages and the operator's attended runner exist too,
+on regtest only. In run `checkout-20261109T141954Z-1d9c65` a buyer used
+only the pages. The steps were: request, BIP21 invoice, payment, and a
+certificate downloaded from the order page and verified with libveritas
+(`regtest/REPORT.md` records all three checkout runs, the first a failure).
+The runner carried the order through issuance and delivery. A second
+order was cancelled and refunded through the same pages and runner. The
+runner still drives the harness's controller through the harness stack,
+so there is still no controller fit for a real host. There is also no
 restore of the controller and `subs` together with the store, and no
 installer. Nothing here is fit for selling
 names, and paid sales stay closed until the buyer and operator acceptance

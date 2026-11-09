@@ -27,6 +27,15 @@ pass.
   one the model keeps what its off-host journal acknowledged, and the
   service's database is dropped and rebuilt from its journal alone; the
   two must then agree as before. This is a model-twin result.
+- `tests/test_checkout.py` exercises the checkout pages over a simulated
+  chain (cases C1 to C11), and `tests/test_runner.py` the attended runner
+  against recording stand-ins (cases A1 to A5). They are service and runner
+  results, not model results.
+- `regtest/run-checkout.sh` runs scenario 10: a buyer using only the
+  checkout pages, and every operator step after listing a name done by the
+  attended runner as its own process, through issuance, certificate
+  delivery, publication, and a cancellation refund. Its results are
+  regtest results.
 - `regtest/run-service.sh` runs the service as its own process against
   Bitcoin Core, `spaced` and `subs` on regtest, restarting it with SIGKILL
   along the way (scenarios 7 and 8 in `regtest/harness/service.py`). Its
@@ -121,6 +130,32 @@ These are this milestone's choices, recorded so that they can be changed.
   database from before the audit gets the column added at open.
 - The service refuses to start on any network but regtest, and listens on
   loopback only.
+- Checkout pages (`service/checkout.py`): plain HTML forms with no scripts,
+  served beside the JSON API. The order page is at `/o/<token>`, with the
+  order link's token. Every step is the JSON API's ledger call, with its
+  refusals. A pasted request is checked as `POST /requests` checks a body,
+  and must name the page's name. The invoice carries a BIP21 URI. There
+  is no QR code yet, because drawing one needs either a script or a
+  library outside the standard library.
+- The order page asks for payment (amount and BIP21 link) only while the
+  order is quoted, holds its name, its hold hasn't run out, nothing is
+  confirmed and no cancellation is pending. Otherwise the invoice is shown
+  as history with a note not to pay.
+- Certificates reach the order page through `POST
+  /operator/orders/<oid>/certificate`, accepted only while the order is
+  `ready` or `fulfilled`, and served only while it still is. That one
+  authenticated route takes up to 1 MiB of certificate, because a later
+  batch's certificate carries a proof (about 226,500 bytes on regtest).
+  Every other body keeps the 65,536-byte bound. The store
+  doesn't verify them; the runner does before delivering. They aren't
+  journaled, so after a restore the runner delivers them again.
+- The attended runner (`runner/`, `python3 -m runner <config> <command>`)
+  is the operator's tool: one command per step, JSON out. It sends a
+  commitment or a refund only with the batch id or refund group id
+  confirmed. It drives the controller of `CONTROLLER-DESIGN.md`, which is
+  still the harness's (`regtest/harness/controller.py`), and reaches
+  bitcoind, spaced and subs through the harness stack, so it runs on
+  regtest only.
 
 ## Not in this milestone
 
@@ -140,5 +175,10 @@ These are this milestone's choices, recorded so that they can be changed.
 - Any limit on hold abuse. One caller can keep a name "taken for now"
   indefinitely by quoting again as each hold ends ("Open: hold abuse" in
   `spec/PAYMENT-SPEC.md`).
-- A checkout page, an installer and buyer import in Nacho.
-- The controller is still the harness's.
+- An installer, and buyer import in Nacho, which the buyer gate tests.
+- The controller is still the harness's, and the runner reaches the chain
+  and `subs` through the harness stack. Running it against a real host
+  needs both moved out of the harness.
+- The pilot's operating needs: a hold-admission policy, bounded wallet
+  funding, and a way to pause sales and handle alerts (the proposed finish
+  line's third demonstration).

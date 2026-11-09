@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Keep a finished run in the repository: its report as runs/<run id>.json and
 # .md, with the repository's absolute path made relative, and its certificate
-# verifications as evidence/<run id>/.
+# verifications as evidence/<run id>/, the attended runner's under
+# evidence/<run id>/runner/.
 #
 # It never overwrites or removes anything already kept. A run id that is
 # already kept is refused. The copies are built and checked in a temporary
@@ -37,6 +38,12 @@ done
 if [ -d "$SRC/certs" ]; then
   mkdir "$STAGE/evidence/$RUN"
   cp -r "$SRC/certs/." "$STAGE/evidence/$RUN/"
+fi
+# The attended runner (scenario 10) keeps its own controller's
+# verifications under runner/certs; they are kept under runner/.
+if [ -d "$SRC/runner/certs" ]; then
+  mkdir -p "$STAGE/evidence/$RUN/runner"
+  cp -r "$SRC/runner/certs/." "$STAGE/evidence/$RUN/runner/"
 fi
 
 if ! python3 -I - "$STAGE" <<'PY'

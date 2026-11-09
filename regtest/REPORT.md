@@ -446,6 +446,71 @@ libveritas's own builder, and no client from the buyer gate took part. It
 doesn't cover a transferred name, a delegate's records or a relay that
 withholds the newest set.
 
+## Checkout pages and the attended runner (run checkout-20261109T141954Z-1d9c65, 2026-11-09)
+
+Script: `regtest/run-checkout.sh`, from `main` at `58925e6` plus the
+checkout milestone. The store service runs as its own process, as in
+scenarios 7 and 8. The buyer used only the checkout pages, over HTTP. A
+regtest wallet stood in for the buyer's client: the request pasted on the
+name's page is in the public request format a Nacho export has, built from
+that wallet's script. After the operator listed each name through the
+operator API, every operator step was a command of the attended runner
+(`python3 -m runner`). Each command ran as its own process with no
+terminal, and with its own controller database and journal. The harness
+only listed names, mined blocks and read the chain. `subs` is the
+`subs-relay` build.
+
+Verdict pass, exit 0. All 30 required steps agree with the checkout and
+runner rules (not the model), and 4 are informational.
+- 10a, a purchase. The names page listed the name as available (C1). The
+  pasted request redirected to a private order page (C2). The invoice
+  showed the order's own address and `bitcoin:<address>?amount=0.0001`
+  (C4). The buyer paid that URI's address and amount. At 3 blocks the page
+  showed the order converted and no longer asked for payment (C11).
+  `prepare` froze, staged, committed, proved and checkpointed the batch.
+  `issue` without its confirmation was refused, and the order stayed
+  converted (A1). With the batch id confirmed it broadcast, the commitment
+  was in the mempool, and the page showed `issuing` (A4). `watch` reported
+  mined at d = 0 and d = 149 and final at d = 150. `certify` verified the
+  certificate with libveritas and delivered it (A3). The page offered it
+  and served it (C7). The buyer's download verified with libveritas
+  against root anchors read from `spaced`: the handle, the buyer's own
+  script, sovereign. `publish` confirmed delivery by a verified lookup
+  through the local relay, and the page then showed `fulfilled` and still
+  served the same bytes.
+- 10b, a cancellation and refund. The order page asked for no payment
+  once the order converted, nor once it was cancelled (C11). After
+  `cancel` the page showed the cancellation as final, and the buyer gave
+  a refund address on the page. `refund` at 3 blocks was refused, because
+  nothing had settled (N2). At 6 blocks it built 9,700 to the buyer with a
+  300 fee. `broadcast-refund` without its confirmation was refused, and
+  nothing reached the mempool (A2). With the group id confirmed it was
+  broadcast (A5). At 6 blocks the page showed the refund settled, and the
+  buyer's wallet had received 9,700 at the address it gave.
+
+The certificate in this run was a first commitment's, 2,148 bytes. A later
+batch's certificate carries a proof and is about 226,500 bytes. Delivering
+one is case C10, tested over a simulated chain with a certificate from
+kept evidence, not on regtest.
+
+`checkout-20261109T140438Z-7d58f0`, the first attempt, failed. The
+scenario mined one block too few: the controller counts depth from 0 in
+the block that mines the commitment, so the batch was at d = 149 where the
+scenario expected d = 150. `watch` reported it mined, not final, and every
+later step of 10a failed for that reason, starting with `certify` refusing
+"not final". The runner's `watch` output also printed depth one too high.
+Both were fixed. 10b passed in that run. It isn't kept.
+
+`checkout-20261109T140545Z-3fc2e0` is the same scenario after those fixes,
+with the order pages as they were before the review of 2026-11-09. Verdict
+pass, exit 0, 30 required steps agreeing and 4 informational. That review
+found two faults its steps didn't check. A certificate over 65,536 bytes
+couldn't be delivered. And the page kept showing "Pay exactly" and the
+BIP21 link after conversion, fulfilment and cancellation. Both were fixed
+(C10, C11), and `checkout-20261109T141954Z-1d9c65` is the rerun with those
+fixes, its steps also checking that the converted and cancelled pages ask
+for no payment. Both passing runs are kept.
+
 ## The tightened harness
 
 Since fp4:
@@ -520,7 +585,9 @@ runs, four continued runs and `publication-20261107T094250Z-76605c`. Four
 of the publication run's verifications, in its `-relay` directories, are
 the relay's `/query` answers from scenario 6: two from before publication
 and two from the delivery lookups. The four combined runs, the service runs and
-`records-20261108T161951Z-0c9721` are kept as well, 160 messages in all. Each message is kept with its root anchors and
+`records-20261108T161951Z-0c9721` are kept as well, and so are the two
+passing checkout runs, whose runner verifications are under `runner/`: 164
+messages in all. Each message is kept with its root anchors and
 libveritas output. `verify-evidence.sh` verifies them all offline, and
 `evidence/README.md` says how. fp4's certificate isn't kept in the repository,
 because its handle label was a personal name and is part of the signed

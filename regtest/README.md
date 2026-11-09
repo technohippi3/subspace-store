@@ -79,6 +79,12 @@ wallets are made fresh for each run inside `.run/`.
   relay's `/message` and read back from its `/query`, each answer verified
   with libveritas against root anchors read from `spaced`. It uses the
   `subs-relay` build.
+- `run-checkout.sh [prefix]`: scenario 10, the checkout pages and the
+  attended runner: a buyer using only the pages, with a regtest wallet's
+  script in the public request format, and every operator step after
+  listing a name done by `python3 -m runner` as its own process, through
+  issuance, certificate delivery to the order page, publication and a
+  cancellation refund. It uses the `subs-relay` build.
 - `keep-run.sh <run id>`: keeps a run's report and certificates in `runs/`
   and `evidence/`. It never replaces or removes anything already kept.
 - `verify-evidence.sh`: verifies every kept certificate offline.
@@ -100,6 +106,7 @@ wallets are made fresh for each run inside `.run/`.
     by verifying the relay's `/query` answer with libveritas against root
     anchors read from `spaced`.
   - `records.py`: scenario 9, signed records through the local relay.
+  - `checkout.py`: scenario 10, the checkout pages and the runner.
   - `service.py`: scenarios 7 and 8, with `ServiceRegistry`, the
     registry's interface served by the real service over HTTP.
 - `verifier/`: a small Rust program that verifies a certificate message with
