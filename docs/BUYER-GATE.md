@@ -117,14 +117,39 @@ state, including the Bitcoin RPC URL, sits in a private directory outside
 the repository, and the URL reaches `spaced` through its environment, not
 its command line.
 
+The namespace has no PID namespace of its own, so the launcher's
+processes share the host's process list, and it never finds one by name.
+When it starts the namespace and slirp4netns it records each one's pid,
+start time and executable, with the network namespace or the namespace
+pid it serves. It enters or signals them only while they match that
+record, and `spaced` and `subs` only as the pinned binaries inside the
+recorded network namespace. A missing or mismatched record leaves every
+process untouched. The instance started on 2026-11-08 predates these
+records; `buyer-gate/operator.sh adopt` recorded it once, without a
+restart, after checking that its namespace's only child is the pinned
+`spaced` with the launcher's exact command line and that slirp4netns has
+the launcher's exact command line for that namespace. Every `cli` call runs with one
+wallet: the one named in `SUBSPACE_TEST_OPERATOR_WALLET` (default
+`operator-2`) when the arguments name none. The launcher refuses the
+wallet named `operator`, wherever it is given.
+
 Started on 2026-11-08. `spaced` v0.5.0 began syncing mainnet from a fresh
 data directory, through a remote Bitcoin RPC, at about 1.5 blocks a
 second, so it reaches the tip about 19 hours later. The checks then
 showed no listener on the host and none reachable from it, and no route
-from the namespace to the host's own services. Still to do, in order:
-- the workspace_owner creates the operator wallet in their own terminal,
-  never in an agent session, because `createwallet` prints its recovery
-  phrase: `buyer-gate/operator.sh cli --wallet operator createwallet`;
+from the namespace to the host's own services.
+
+The operator wallet is `operator-2`, which the workspace_owner created in
+a terminal outside the Claude app. `createwallet` is always run that way,
+because it prints the recovery phrase, and anything shown in an agent
+session, the app's shell input or its Terminal panel becomes part of that
+session. `buyer-gate/operator.sh cli createwallet` creates the configured
+wallet. A first wallet, `operator`, was created through the app's shell
+input on 2026-11-08, and its phrase was shown in the session. It is
+treated as exposed: it is never funded or used, and the launcher refuses
+it.
+
+Still to do, in order:
 - once `spaced` is at the tip, `buyer-gate/operator.sh start-subs`, and a
   check that `subs` answers inside the namespace only;
 - the chain check of the throwaway space, from this node, immediately
