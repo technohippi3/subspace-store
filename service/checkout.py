@@ -145,7 +145,7 @@ back to your order.</p>"""
 STEPS = (
     ("requested", "Request received"),
     ("quoted", "Invoice issued; the name is held for you"),
-    ("paid", "Payment seen"),
+    ("paid", "Payment detected"),
     ("converted", "Payment confirmed (3 blocks)"),
     ("issuing", "Being issued on chain"),
     ("ready", "Certificate verified and ready"),
@@ -156,7 +156,7 @@ ORDER = {s: i for i, (s, _) in enumerate(STEPS)}
 
 def _progress(v):
     status = v["status"]
-    if status == "quoted" and v["confirmed_sats"] > 0:
+    if status == "quoted" and v["detected_sats"] > 0:
         reached = ORDER["paid"]
     else:
         reached = ORDER.get(status, -1)
@@ -236,21 +236,57 @@ HISTORY = {
     "refund_due": "A refund is due on this order. Don't pay this invoice.",
     "unpaid": "This invoice expired unpaid. Don't pay it. To buy the name, start a "
               "new order from its page.",
-    "quoted": "A payment has been seen and is waiting for confirmations. Don't pay "
-              "again.",
 }
+
+# A payment detected earlier that this node no longer sees may have been
+# dropped or replaced, or this node may simply have lost it: it can still
+# confirm. The page never treats its absence as a reason to pay again.
+MISSING = ("A payment to this invoice was detected earlier, and this store's node no "
+           "longer sees it. It may have been dropped or replaced, or this node may have "
+           "missed it, and it can still confirm. Don't send another payment because of "
+           "this page. If it confirms after the hold ends, it is handled as a late "
+           "payment.")
+UNKNOWN = ("This order was restored after a store outage, and the store can't tell "
+           "whether a payment was sent to this invoice before then. Don't pay it. A "
+           "payment that was sent shows here once this store's node sees it. If none "
+           "did, start a new order from the name's page once this one has ended.")
+UNPAID_UNKNOWN = ("This invoice expired. It was restored after a store outage, and the "
+                  "store can't tell whether a payment was sent to it; one may still "
+                  "confirm, and is then handled as a late payment. Don't pay this "
+                  "invoice.")
+UNPAID_AFTER_DETECTED = ("This invoice expired without a confirmed payment. A payment "
+                         "detected earlier may still confirm; if it does, it is handled as "
+                         "a late payment. Don't pay this invoice.")
 
 
 def active_request(led, v):
+    """Only an order known never to have been paid is asked for payment. A
+    payment's absence from the node now proves nothing."""
     return (v["status"] == "quoted" and v["cancellation"] is None
             and v["hold_expires_at"] is not None and led.clock() < v["hold_expires_at"]
-            and v["confirmed_sats"] == 0)
+            and v["detected_sats"] == 0 and v["payment_history"] == "none")
+
+
+def _quoted_note(v):
+    detected, price = v["detected_sats"], v["price_sats"]
+    if detected == 0:
+        return UNKNOWN if v["payment_history"] == "unknown" else MISSING
+    if detected < price:
+        return (f"Partial payment detected, awaiting confirmation: {detected} of the "
+                f"{price} sats asked. This page doesn't ask for the rest. If the order "
+                "isn't paid in full when the hold ends, what confirmed is refunded.")
+    return "Payment detected, awaiting confirmation. Don't pay again."
 
 
 def _invoice(led, v):
-    received = (f'<p>Received: <span id="confirmed_sats">{v["confirmed_sats"]}</span> sats '
-                f'confirmed, <span id="batchable_sats">{v["batchable_sats"]}</span> at '
-                f'3 blocks, <span id="settled_sats">{v["settled_sats"]}</span> at 6.</p>')
+    unconfirmed = v["detected_sats"] - v["confirmed_sats"]
+    received = (f'<p>Received: <span id="detected_sats">{v["detected_sats"]}</span> sats '
+                f'detected (<span id="unconfirmed_sats">{unconfirmed}</span> unconfirmed), '
+                f'<span id="confirmed_sats">{v["confirmed_sats"]}</span> confirmed, '
+                f'<span id="batchable_sats">{v["batchable_sats"]}</span> at '
+                f'3 blocks, <span id="settled_sats">{v["settled_sats"]}</span> at 6. '
+                "Only confirmed payments count; the order converts once the full price "
+                "has 3 blocks.</p>")
     if active_request(led, v):
         uri = f'bitcoin:{v["address"]}?amount={btc(v["price_sats"])}'
         return (f"""<h2>Invoice</h2><div class="box" id="payment_request">
@@ -259,9 +295,15 @@ def _invoice(led, v):
 <p><code id="address">{esc(v["address"])}</code></p>
 <p><a id="bip21" href="{esc(uri)}">{esc(uri)}</a></p>
 <p class="muted">Held for you until <span id="hold_expires_at">{int(v["hold_expires_at"])}</span>
-(Unix time). Pay once: a payment you already sent shows here once it is
-confirmed.</p></div>""" + received)
+(Unix time). Pay once: a payment you already sent shows here as soon as this
+store's node sees it.</p></div>""" + received)
     note = HISTORY.get(v["status"], "This invoice is no longer payable. Don't pay it.")
+    if v["status"] == "quoted":
+        note = _quoted_note(v)
+    elif v["status"] == "unpaid" and v["payment_history"] == "detected":
+        note = UNPAID_AFTER_DETECTED
+    elif v["status"] == "unpaid" and v["payment_history"] == "unknown":
+        note = UNPAID_UNKNOWN
     if v["cancellation"] == "unconfirmed":
         note = "A cancellation of this order is being recorded. Don't pay this invoice."
     return (f"""<h2>Invoice (history)</h2><div class="box" id="invoice_history">

@@ -919,13 +919,46 @@ refusals.
   again and shows no address. The refund address is given on the same
   page, under the order link's rules.
 - The page asks for payment only while paying can still buy the name: the
-  order is quoted and holds the name, its hold hasn't run out, nothing has
-  been confirmed yet, and no cancellation is pending. Only then does it
-  show the amount to pay and the BIP21 link. In every other state the
-  invoice is history: the price and address that were asked, with no
-  link, and a plain statement not to pay. That covers a payment seen,
-  converted, issuing, ready, fulfilled, cancelled, a cancellation being
-  recorded, refund due, and expired unpaid.
+  order is quoted and holds the name, its hold hasn't run out, no
+  cancellation is pending, the store's node sees no payment to the order's
+  address, and its payment history is known to hold none. Only then does
+  it show the
+  amount to pay and the BIP21 link. In every other state the invoice is
+  history: the price and address that were asked, with no link, and a
+  plain statement not to pay. That covers a payment detected, converted,
+  issuing, ready, fulfilled, cancelled, a cancellation being recorded,
+  refund due, and expired unpaid.
+- A payment the store's node sees, in the mempool or mined, is shown with
+  its amount as "Payment detected, awaiting confirmation" until the order
+  converts. One below the price is described as partial, and the page
+  doesn't ask for the rest. Showing it changes nothing: only `confirmed`
+  and deeper count toward conversion, settlement or a refund, and the hold
+  runs by the Extension rule alone. The order link gives the same amount
+  as `detected_sats`.
+- A payment detected earlier that the node no longer sees may have been
+  dropped or replaced, or the node may have missed it, and it can still
+  confirm. The page says so and never asks for another payment because of
+  its absence. After the hold ends unpaid, the page still says that it can
+  confirm, and that it is then a late payment.
+- Each order's payment history is `none`, `detected` or `unknown`, kept
+  in the order's journaled state. It becomes `detected` the first time the
+  node sees a payment to the order's address, and never goes back. A
+  restore from the journal alone can't establish that no payment was seen
+  after an order's last acknowledged entry, during a journal outage, or
+  before the journal held the history. So every order that was given an
+  address and isn't journaled as `detected` is restored as `unknown`; only
+  an order never given an address is restored as `none`. An `unknown`
+  invoice is never asked for: the page says the store can't tell whether
+  a payment was sent before the outage, says not to pay, and after the
+  hold ends still warns that one may confirm as a late payment. A payment
+  the node sees later makes the history `detected`.
+- A database from before the history is upgraded by the same rule. Its
+  payment outputs aren't a complete history, since one restored from the
+  journal holds none. An order with a recorded payment output becomes
+  `detected`, any other order given an address `unknown`, and only an
+  order never given one `none`. The column and its values are added in
+  one transaction, so an interrupted upgrade leaves the database as it was
+  and runs again at the next start.
 - The certificate is downloaded from the order page. It is offered and
   served only while the order is `ready` or `fulfilled`, and only the
   certificate message the runner delivered for that order after verifying
@@ -1240,6 +1273,7 @@ result or regtest evidence; the regtest demonstration is scenario 10
 | C9 | any page | it is served | `no-store`, `no-referrer`, a policy with `script-src 'none'` and `frame-ancestors 'none'`, and HTML-escaped text |
 | C10 | a ready order, and a later batch's certificate of 226,511 bytes from kept regtest evidence | the runner delivers it | stored and served byte for byte; a certificate over 1 MiB, or a delivery body declared over its bound, refused and the delivered one kept; the larger bound only for the authenticated delivery: unauthenticated 401, and other operator bodies, `POST /requests` and the request form still refused over 65,536 bytes with nothing created |
 | C11 | orders: quoted and holding with nothing confirmed; a payment at 1 confirmation, below the 3 that convert; converted, issuing, ready, fulfilled; cancelled; a cancellation unacknowledged; expired unpaid; expired with too little paid | each order page | only the first shows the amount to pay and a BIP21 link; every other shows the invoice as history, with no link and a note not to pay; an expiry not yet evaluated counts, because the page evaluates first |
+| C12 | quoted orders: the full price entering the mempool, then confirming; too little in the mempool; a payment dropped from the mempool, then the hold ending; a payment replaced by a smaller one to the address, then by one not paying it. After a host loss and a journal-only restore: a payment detected with the journal healthy, then gone; one detected during an outage lasting until the loss, then gone; an invoice never paid; an order never given an address; a journal from before the payment history; a database from before it, upgraded directly, restored by the older code, and interrupted mid-upgrade | each order page, and the order link | no amount to pay and no BIP21 link once a payment is detected; the detected amount shown as awaiting confirmation, partial when below the price; nothing counted, converted or extended by the page; a dropped or replaced payment reported as possibly still confirming, never as a reason to pay again, also after the hold ends. After the restore, the journaled detection still reported; every other invoice `unknown`, with no payment request, also after the hold ends; the order without an address still offered an invoice; the older journal's invoices `unknown`; the older database's recorded payment `detected`, its other invoices `unknown`, its order without an address `none`; the interrupted upgrade leaving no column behind and completing at the next start |
 | A1 | a checkpointed batch | `issue` without the batch id confirmed, or with another id | refused; the batch stays checkpointed, no order is marked issuing, and nothing is sent |
 | A2 | a built refund group | `broadcast-refund` without its group id confirmed, or with another id | refused; nothing is sent |
 | A3 | a final batch with two members, one failing a certificate check | `certify` | only the verified member's certificate is delivered to the store; the other is reported failed and not delivered |

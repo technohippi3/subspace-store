@@ -160,7 +160,9 @@ create table if not exists orders (
   subs_outcome text,
   created_at real not null,
   recipient_problem text,
-  journaled_status text
+  journaled_status text,
+  payment_history text not null default 'none'
+    check (payment_history in ('none', 'detected', 'unknown'))
 );
 create table if not exists payment_outputs (
   txid text not null, vout integer not null, oid text not null, value integer not null,
@@ -264,6 +266,8 @@ class Ledger:
             for oid, status in self._journaled_statuses().items():
                 self.db.execute("update orders set journaled_status = ? where oid = ?",
                                 (status, oid))
+        if "payment_history" not in cols:
+            self._migrate_payment_history()
         self.policy = policy or Policy()
         self.clock = clock
         self._depth = 0
@@ -271,6 +275,31 @@ class Ledger:
 
     def close(self):
         self.db.close()
+
+    def _migrate_payment_history(self):
+        """A database from before the marker. Its payment outputs aren't a
+        complete history: a database restored from the journal has none,
+        and one may have missed a payment it never observed. So the same
+        rule as a restore: a recorded output means detected, any other order
+        given an address is unknown, and only one never given an address is
+        none. The column and its values arrive in one transaction, so an
+        interrupted migration leaves the database as it was and runs again."""
+        self.db.execute("begin immediate")
+        try:
+            self.db.execute("alter table orders add column payment_history text not null "
+                            "default 'none' check (payment_history in "
+                            "('none', 'detected', 'unknown'))")
+            self._classify_payment_history()
+        except BaseException:
+            self.db.execute("rollback")
+            raise
+        self.db.execute("commit")
+
+    def _classify_payment_history(self):
+        self.db.execute("update orders set payment_history = 'detected' where oid in "
+                        "(select oid from payment_outputs)")
+        self.db.execute("update orders set payment_history = 'unknown' where "
+                        "dest_script is not null and payment_history != 'detected'")
 
     # Transactions and the journal
 
@@ -961,11 +990,16 @@ class Ledger:
         """Keep every payment output ever seen, so the order's history
         survives the output leaving the chain. Balances still come only from
         the chain position at evaluation."""
-        for o in self.db.execute("select oid, dest_script from orders "
+        for o in self.db.execute("select oid, dest_script, payment_history from orders "
                                  "where dest_script is not null").fetchall():
-            for x in self.chain.outputs_to(o["dest_script"]):
+            found = self.chain.outputs_to(o["dest_script"])
+            for x in found:
                 self.db.execute("insert or ignore into payment_outputs values (?, ?, ?, ?)",
                                 (x["outpoint"][0], x["outpoint"][1], o["oid"], x["value"]))
+            if found and o["payment_history"] != "detected":
+                # Journaled with the order, so a restore knows a payment was
+                # detected even once no node sees it.
+                self._set_order(o["oid"], payment_history="detected")
 
     def _step_order(self, oid):
         o = self._order(oid)
@@ -1083,6 +1117,14 @@ class Ledger:
             "address_pending": bool(o["dest_address"]) and not given and not rejected,
             "recipient_rejected": rejected,
             "hold_expires_at": n["hold_expires_at"] if n["hold_order"] == oid else None,
+            # Everything this node sees paying the order now, mempool
+            # included. Shown, never counted: only CONFIRMED and deeper
+            # count toward anything.
+            "detected_sats": self.sum_at(oid, 0),
+            # "none": no payment was ever detected; "detected": one was,
+            # even if no node sees it now; "unknown": restored, and the
+            # journal can't tell (PAYMENT-SPEC.md, "Checkout").
+            "payment_history": o["payment_history"],
             "confirmed_sats": self.sum_at(oid, CONFIRMED),
             "batchable_sats": self.sum_at(oid, BATCHABLE),
             "settled_sats": self.sum_at(oid, SETTLED),
@@ -1272,6 +1314,12 @@ def restore_from_journal(db_path, journal):
                 # journaled status.
                 _insert(db, "orders", f"order {key}",
                         dict(state, journaled_status=state.get("status")))
+            # A payment detected after an order's last acknowledged entry,
+            # or before the journal held the marker, left no trace here. Only
+            # an order never given an address is known never to have been
+            # paid; any other the journal doesn't mark detected is unknown.
+            db.execute("update orders set payment_history = 'unknown' where "
+                       "dest_script is not null and payment_history != 'detected'")
             for key, state in sorted(latest["group"].items(), key=lambda kv: kv[1].get("seq", 0)):
                 state = dict(state)
                 attempts = state.pop("attempts", [])

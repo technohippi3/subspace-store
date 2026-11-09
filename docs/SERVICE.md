@@ -28,7 +28,7 @@ pass.
   service's database is dropped and rebuilt from its journal alone; the
   two must then agree as before. This is a model-twin result.
 - `tests/test_checkout.py` exercises the checkout pages over a simulated
-  chain (cases C1 to C11), and `tests/test_runner.py` the attended runner
+  chain (cases C1 to C12), and `tests/test_runner.py` the attended runner
   against recording stand-ins (cases A1 to A5). They are service and runner
   results, not model results.
 - `regtest/run-checkout.sh` runs scenario 10: a buyer using only the
@@ -112,7 +112,12 @@ These are this milestone's choices, recorded so that they can be changed.
   builds beside the target and moves the result into place only when
   complete. Payment outputs, the frozen batch and `subs`' committed roots
   aren't restored: balances come from the chain, and the other two belong
-  to the controller's recovery. A start that finds no store database, or
+  to the controller's recovery. Each order's payment history is restored
+  conservatively. An order journaled as `detected` stays so, one never
+  given an address stays `none`, and every other is restored as `unknown`,
+  whose page asks for no payment (PAYMENT-SPEC.md, "Checkout"). A
+  database from before the payment history is upgraded at start by the
+  same rule, in one transaction. A start that finds no store database, or
   one with no names and no orders, while the journal has entries refuses to
   serve and writes nothing.
 - Start-up reconciles every refund attempt against the chain before

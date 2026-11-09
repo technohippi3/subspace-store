@@ -1,7 +1,7 @@
 """The buyer's checkout pages over a simulated chain (PAYMENT-SPEC.md,
 "Checkout and the attended runner").
 
-The `test_C*` tests are the checkout cases C1 to C11. They exercise the
+The `test_C*` tests are the checkout cases C1 to C12. They exercise the
 service's own pages and code paths over the model's simulated chain, so
 they are service API results: neither model results nor regtest evidence.
 The regtest demonstration is scenario 10 (`regtest/run-checkout.sh`).
@@ -9,6 +9,7 @@ The regtest demonstration is scenario 10 (`regtest/run-checkout.sh`).
 
 import http.client
 import json
+import sqlite3
 import re
 import tempfile
 import unittest
@@ -18,7 +19,7 @@ from urllib.parse import urlencode
 from model.chain import Chain, Tx
 from service.app import Service
 from service.journal import Journal, JournalDown
-from service.ledger import Ledger, Policy
+from service.ledger import Ledger, Policy, restore_from_journal
 from tests.service_twin import ModelChainView, recipient
 
 SPK = "5120" + "ab" * 32
@@ -57,15 +58,33 @@ class Checkout(unittest.TestCase):
         self.view.new_destination = self._destination
         self.view.refund_script = lambda address: recipient("refund/" + address)
         self.now = [0.0]
-        ledger = Ledger(self.dir / "store.db", self.view, Journal(self.dir / "offhost"),
-                        Policy(), clock=lambda: self.now[0])
+        self.journal = Journal(self.dir / "offhost")
+        self._open()
+        self.addCleanup(lambda: self.service.ledger.close())
+        self.addCleanup(lambda: self.service.shutdown())
+
+    def _open(self):
+        ledger = Ledger(self.dir / "store.db", self.view, self.journal, Policy(),
+                        clock=lambda: self.now[0])
         self.service = Service(ledger, self.view, OPERATOR, SUBS, 1_000_000, poll_seconds=3600)
         self.service.start()
         self.service.serve("127.0.0.1", 0)
         self.port = self.service.server.server_address[1]
-        self.addCleanup(self.service.ledger.close)
-        self.addCleanup(self.service.shutdown)
         self.led = self.service.ledger
+
+    def stop(self):
+        self.service.shutdown()
+        self.led.close()
+
+    def lose_host_and_restore(self):
+        """The host and its database are gone; restore from the off-host
+        journal alone and serve again."""
+        self.stop()
+        for f in self.dir.glob("store.db*"):
+            f.unlink()
+        self.journal.set_available(True)
+        restore_from_journal(self.dir / "store.db", self.journal)
+        self._open()
 
     def _destination(self, oid):
         self.n += 1
@@ -378,7 +397,7 @@ class Checkout(unittest.TestCase):
         # A payment at one confirmation, below the three that convert the
         # order: not asked again.
         self.pay(led.operator_view(o1)["dest_script"], 10_000, n=1)
-        history(p1, "quoted", "waiting for confirmations")
+        history(p1, "quoted", "Payment detected, awaiting confirmation")
         # Converted, issuing, ready, fulfilled: paid, never asked again.
         self.chain.mine()
         self.chain.mine()
@@ -436,11 +455,261 @@ class Checkout(unittest.TestCase):
         self.http("POST", p5 + "/invoice")
         o5 = led.order_by_token(p5.rsplit("/", 1)[1])
         self.pay(led.operator_view(o5)["dest_script"], 4_000, n=1)
-        history(p5, "quoted", "waiting for confirmations")
+        history(p5, "quoted", "Partial payment detected")
         self.now[0] = 30_000.0
         for _ in range(7):
             self.chain.mine()
         history(p5, "refund_due", "refund is due")
+
+    def test_C12_an_unconfirmed_payment_is_shown_and_never_counted(self):
+        led = self.led
+        self.list("one@space", "two@space", "three@space", "four@space")
+
+        def order(handle, i):
+            path = self.buy(handle, recipient(f"c12-buyer-{i}"))
+            self.http("POST", path + "/invoice")
+            self.assertTrue(self.active(self.http("GET", path)))
+            oid = led.order_by_token(path.rsplit("/", 1)[1])
+            return path, oid, led.operator_view(oid)["dest_script"]
+
+        def state(oid):
+            o = led.operator_view(oid)
+            n = led.db.execute("select * from names where name = ?", (o["name"],)).fetchone()
+            return o["status"], o["price_reserve"], tuple(n), o["sums"]
+
+        def shown(path, status, note, detected, confirmed):
+            # The page changes nothing the ledger's own evaluation doesn't:
+            # evaluate first, then compare after the page is read.
+            self.op("POST", "/operator/observe")
+            oid = led.order_by_token(path.rsplit("/", 1)[1])
+            before = state(oid)
+            page = self.http("GET", path)
+            self.assertEqual(state(oid), before)
+            self.assertEqual(page.find("status"), status)
+            self.assertFalse(self.active(page), note)
+            self.assertNotIn("bitcoin:", page.text)
+            self.assertIn(note, page.find("invoice_note"))
+            self.assertEqual((page.find("detected_sats"), page.find("confirmed_sats")),
+                             (str(detected), str(confirmed)))
+            return page
+
+        def send(txid, coin, script, value):
+            self.chain.add(Tx(txid, ((coin, 0),), ((script, value),)))
+
+        # 1. The full price enters the mempool: detected, awaiting
+        # confirmation, not settled, not converted.
+        p1, o1, s1 = order("one@space", 1)
+        send("c12-pay-1", "c12-coin-1", s1, 10_000)
+        page = shown(p1, "quoted", "Payment detected, awaiting confirmation", 10_000, 0)
+        self.assertEqual(page.find("unconfirmed_sats"), "10000")
+        self.assertEqual(state(o1)[3], {"confirmed": 0, "batchable": 0, "settled": 0})
+        token = p1.rsplit("/", 1)[1]
+        link = json.loads(self.http("GET", f"/orders/{token}").body)
+        self.assertEqual((link["detected_sats"], link["confirmed_sats"], link["status"]),
+                         (10_000, 0, "quoted"))
+        # It confirms: still awaiting the 3 blocks that convert it.
+        self.chain.mine(["c12-pay-1"])
+        shown(p1, "quoted", "Payment detected, awaiting confirmation", 10_000, 10_000)
+        self.chain.mine_empty(2)
+        page = self.http("GET", p1)
+        self.assertEqual(page.find("status"), "converted")
+        self.assertIn("Paid in full", page.find("invoice_note"))
+
+        # 2. Too little in the mempool: described as partial, and the rest
+        # isn't asked for.
+        p2, o2, s2 = order("two@space", 2)
+        send("c12-pay-2", "c12-coin-2", s2, 4_000)
+        page = shown(p2, "quoted", "Partial payment detected, awaiting confirmation",
+                     4_000, 0)
+        self.assertIn("4000 of the 10000 sats", page.find("invoice_note"))
+
+        # 3. A payment that disappears: no prompt to pay again, and nothing
+        # says another payment is safe. After the hold, still a warning.
+        p3, o3, s3 = order("three@space", 3)
+        send("c12-pay-3", "c12-coin-3", s3, 10_000)
+        shown(p3, "quoted", "Payment detected", 10_000, 0)
+        self.chain.drop("c12-pay-3")
+        page = shown(p3, "quoted", "no longer sees it", 0, 0)
+        self.assertIn("Don&#x27;t send another payment", page.text)
+        self.now[0] = 100_000.0
+        self.chain.drop("c12-pay-2")
+        self.chain.mine_empty(7)
+        shown(p3, "unpaid", "A payment detected earlier may still confirm", 0, 0)
+
+        # 4. A payment replaced: by a smaller one to the same address, then
+        # by one that doesn't pay it at all.
+        p4, o4, s4 = order("four@space", 4)
+        send("c12-pay-4", "c12-coin-4", s4, 10_000)
+        shown(p4, "quoted", "Payment detected", 10_000, 0)
+        self.chain.drop("c12-pay-4")
+        send("c12-pay-4b", "c12-coin-4", s4, 6_000)
+        page = shown(p4, "quoted", "Partial payment detected", 6_000, 0)
+        self.assertIn("6000 of the 10000 sats", page.find("invoice_note"))
+        self.chain.drop("c12-pay-4b")
+        send("c12-pay-4c", "c12-coin-4", recipient("c12-elsewhere"), 9_900)
+        shown(p4, "quoted", "no longer sees it", 0, 0)
+
+    def test_C12_a_restore_never_brings_the_payment_request_back(self):
+        """C12, after a host loss: the payment history a journal-only
+        restore can't establish is unknown, never "none"."""
+        led = self.led
+        self.list("one@space", "two@space", "three@space", "four@space")
+
+        def order(handle, i):
+            path = self.buy(handle, recipient(f"c12r-buyer-{i}"))
+            self.http("POST", path + "/invoice")
+            self.assertTrue(self.active(self.http("GET", path)))
+            return path, self.led.operator_view(
+                self.led.order_by_token(path.rsplit("/", 1)[1]))["dest_script"]
+
+        def shown(path, note, history):
+            page = self.http("GET", path)
+            self.assertEqual(page.find("status"), "quoted")
+            self.assertFalse(self.active(page), note)
+            self.assertNotIn("bitcoin:", page.text)
+            self.assertIn(note, page.find("invoice_note"))
+            link = json.loads(self.http("GET", "/orders/" + path.rsplit("/", 1)[1]).body)
+            self.assertEqual(link["payment_history"], history)
+            return page
+
+        p1, s1 = order("one@space", 1)
+        p2, s2 = order("two@space", 2)
+        # An invoice nobody pays, and an order never given one.
+        p3, _ = order("three@space", 3)
+        p4 = self.buy("four@space", recipient("c12r-buyer-4"))
+        # 1. Detected with the journal healthy, then gone: the marker was
+        # journaled, so the restored page still says it can confirm.
+        self.chain.add(Tx("c12r-pay-1", (("c12r-coin-1", 0),), ((s1, 10_000),)))
+        shown(p1, "Payment detected, awaiting confirmation", "detected")
+        self.assertEqual(self.led.acknowledged_status(
+            self.led.order_by_token(p1.rsplit("/", 1)[1])), "quoted")
+        self.assertEqual(self.led.db.execute(
+            "select count(*) from journal_backlog").fetchone()[0], 0)
+        # 2. Detected during a journal outage that lasts until the host is
+        # lost, then gone: nothing about it was acknowledged.
+        self.journal.set_available(False)
+        self.chain.add(Tx("c12r-pay-2", (("c12r-coin-2", 0),), ((s2, 10_000),)))
+        shown(p2, "Payment detected, awaiting confirmation", "detected")
+        self.chain.drop("c12r-pay-1")
+        self.chain.drop("c12r-pay-2")
+        shown(p1, "no longer sees it", "detected")
+
+        self.lose_host_and_restore()
+        shown(p1, "no longer sees it", "detected")
+        shown(p2, "tell whether a payment was sent", "unknown")
+        # The restore can't tell an unpaid invoice from a paid one either.
+        shown(p3, "tell whether a payment was sent", "unknown")
+        # An order never given an address can't have been paid.
+        page = self.http("GET", p4)
+        self.assertEqual(page.find("status"), "requested")
+        self.assertIn("Get the invoice", page.text)
+        # The lost payment comes back: detected again, and then known.
+        self.chain.add(Tx("c12r-pay-2", (("c12r-coin-2", 0),), ((s2, 10_000),)))
+        shown(p2, "Payment detected, awaiting confirmation", "detected")
+        # The hold ends: the page still warns rather than inviting a payment.
+        self.now[0] = 100_000.0
+        self.chain.mine_empty(7)
+        page = self.http("GET", p3)
+        self.assertEqual(page.find("status"), "unpaid")
+        self.assertIn("tell whether a payment was sent", page.find("invoice_note"))
+
+    def older_database(self):
+        """Leave the database as the code before the payment history left
+        it, with the service stopped."""
+        self.stop()
+        db = sqlite3.connect(self.dir / "store.db")
+        db.execute("alter table orders drop column payment_history")
+        db.commit()
+        db.close()
+
+    def histories(self, *paths):
+        return [json.loads(self.http("GET", "/orders/" + p.rsplit("/", 1)[1]).body)
+                ["payment_history"] for p in paths]
+
+    def test_C12_an_older_database_upgrades_conservatively_and_atomically(self):
+        """C12, upgrading a database from before the payment history: a
+        recorded payment is detected, an invoice without one is unknown,
+        and only an order never given an address is none. An interrupted
+        upgrade leaves the database as it was."""
+        self.list("one@space", "two@space", "three@space")
+        p1 = self.buy("one@space", recipient("c12o-buyer-1"))
+        self.http("POST", p1 + "/invoice")
+        p2 = self.buy("two@space", recipient("c12o-buyer-2"))
+        self.http("POST", p2 + "/invoice")
+        p3 = self.buy("three@space", recipient("c12o-buyer-3"))
+        s1 = self.led.operator_view(self.led.order_by_token(p1.rsplit("/", 1)[1]))["dest_script"]
+        self.chain.add(Tx("c12o-pay-1", (("c12o-coin-1", 0),), ((s1, 10_000),)))
+        self.op("POST", "/operator/observe")
+        self.chain.drop("c12o-pay-1")
+        self.older_database()
+
+        # Interrupted between adding the column and classifying the orders:
+        # nothing is left behind, and the next start upgrades again.
+        def interrupted(ledger):
+            raise KeyboardInterrupt("interrupted mid-upgrade")
+
+        original = Ledger._classify_payment_history
+        Ledger._classify_payment_history = interrupted
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                Ledger(self.dir / "store.db", self.view, self.journal, Policy(),
+                       clock=lambda: self.now[0])
+        finally:
+            Ledger._classify_payment_history = original
+        db = sqlite3.connect(self.dir / "store.db")
+        cols = {r[1] for r in db.execute("pragma table_info(orders)")}
+        db.close()
+        self.assertNotIn("payment_history", cols)
+
+        self._open()
+        self.assertEqual(self.histories(p1, p2, p3), ["detected", "unknown", "none"])
+        self.assertIn("no longer sees it", self.http("GET", p1).find("invoice_note"))
+        page = self.http("GET", p2)
+        self.assertFalse(self.active(page))
+        self.assertIn("tell whether a payment was sent", page.find("invoice_note"))
+        self.assertIn("Get the invoice", self.http("GET", p3).text)
+
+    def test_C12_an_older_restored_database_or_journal_without_the_marker(self):
+        """C12, from before the payment history: a database the older code
+        restored from its journal holds no payment outputs, and an older
+        journal holds no history. Either way every issued invoice is
+        unknown."""
+        self.list("one@space", "two@space")
+        p1 = self.buy("one@space", recipient("c12j-buyer-1"))
+        self.http("POST", p1 + "/invoice")
+        p2 = self.buy("two@space", recipient("c12j-buyer-2"))
+        s1 = self.led.operator_view(self.led.order_by_token(p1.rsplit("/", 1)[1]))["dest_script"]
+        self.chain.add(Tx("c12j-pay-1", (("c12j-coin-1", 0),), ((s1, 10_000),)))
+        self.op("POST", "/operator/observe")
+        self.chain.drop("c12j-pay-1")
+
+        # The older code's journal, without the history in any entry.
+        path = self.journal.path
+        entries = [json.loads(line) for line in path.read_text().splitlines() if line]
+        for e in entries:
+            for rec in e.get("records", ()):
+                if rec.get("kind") == "order":
+                    rec["state"].pop("payment_history", None)
+        path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+
+        # The older code's restore: no payment outputs and no history
+        # column. The new code then opens it.
+        self.lose_host_and_restore()
+        self.older_database()
+        db = sqlite3.connect(self.dir / "store.db")
+        self.assertEqual(db.execute("select count(*) from payment_outputs").fetchone()[0], 0)
+        db.close()
+        self._open()
+        self.assertEqual(self.histories(p1, p2), ["unknown", "none"])
+        page = self.http("GET", p1)
+        self.assertFalse(self.active(page))
+        self.assertIn("tell whether a payment was sent", page.find("invoice_note"))
+
+        # The new code's restore from the same older journal.
+        self.lose_host_and_restore()
+        self.assertEqual(self.histories(p1, p2), ["unknown", "none"])
+        self.assertFalse(self.active(self.http("GET", p1)))
+        self.assertIn("Get the invoice", self.http("GET", p2).text)
 
     def test_C9_pages_are_private_scriptless_unframeable_and_escaped(self):
         self.list("one@space")
