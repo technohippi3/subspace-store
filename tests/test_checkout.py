@@ -375,7 +375,8 @@ class Checkout(unittest.TestCase):
             self.assertIn(note, page.find("invoice_note"))
             return page
 
-        # A payment seen, below 3 blocks: not asked again.
+        # A payment at one confirmation, below the three that convert the
+        # order: not asked again.
         self.pay(led.operator_view(o1)["dest_script"], 10_000, n=1)
         history(p1, "quoted", "waiting for confirmations")
         # Converted, issuing, ready, fulfilled: paid, never asked again.

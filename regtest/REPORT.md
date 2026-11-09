@@ -488,10 +488,11 @@ runner rules (not the model), and 4 are informational.
   broadcast (A5). At 6 blocks the page showed the refund settled, and the
   buyer's wallet had received 9,700 at the address it gave.
 
-The certificate in this run was a first commitment's, 2,148 bytes. A later
-batch's certificate carries a proof and is about 226,500 bytes. Delivering
-one is case C10, tested over a simulated chain with a certificate from
-kept evidence, not on regtest.
+The certificate in this run was a first commitment's, 2,077 bytes (2,148
+in `checkout-20261109T140545Z-3fc2e0`). A later batch's certificate
+carries a proof and is about 226,500 bytes. Delivering one is case C10,
+tested over a simulated chain with a certificate from kept evidence, not
+on regtest.
 
 `checkout-20261109T140438Z-7d58f0`, the first attempt, failed. The
 scenario mined one block too few: the controller counts depth from 0 in
