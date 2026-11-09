@@ -105,12 +105,15 @@ class Fixtures(unittest.TestCase):
         self.state = self.tmp / "state"
         (self.state / "run").mkdir(parents=True, mode=0o700)
         self.env = {"SUBSPACE_TEST_OPERATOR_DIR": str(self.state)}
-        self.sleep = shutil.which("sleep")
+        self.fifo = self.tmp / "block"
+        os.mkfifo(self.fifo)
 
-    def copy_of_sleep(self, *parts):
+    def dummy(self, *parts):
+        """A copy of bash at tmp/PARTS. It runs under any file name, unlike
+        a multicall coreutils' sleep, which dispatches on its name."""
         path = self.tmp.joinpath(*parts)
         path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(self.sleep, path)
+        shutil.copy(os.path.realpath(shutil.which("bash")), path)
         return path
 
     def spawn(self, argv, ready):
@@ -118,16 +121,21 @@ class Fixtures(unittest.TestCase):
         self.addCleanup(p.wait)
         self.addCleanup(p.kill)
         for _ in range(100):
-            if ready(p):
-                return p
+            if p.poll() is not None:
+                self.fail(f"fixture exited with {p.returncode}: {argv}")
+            try:
+                if ready(p):
+                    return p
+            except OSError:
+                pass
             time.sleep(0.05)
         self.fail(f"fixture did not start: {argv}")
 
     def run_as(self, exe, *args):
-        """exe, a copy of sleep, with argv[0] "sleep" for a coreutils that
-        dispatches on it."""
-        return self.spawn(["bash", "-c", 'exec -a sleep "$0" "$@"', str(exe), *(args or ["600"])],
-                          lambda p: os.path.realpath(f"/proc/{p.pid}/exe") == str(exe))
+        """exe, a dummy, blocked reading a FIFO it holds open itself (no
+        child process), with ARGS among its arguments."""
+        return self.spawn([str(exe), "-c", 'read -r -t 600 <> "$0" || true', str(self.fifo), *args],
+                          lambda p: os.readlink(f"/proc/{p.pid}/exe") == str(exe))
 
     def unrelated_namespace(self):
         """An unshare process in a user and network namespace of its own,
@@ -168,9 +176,9 @@ class OwnProcesses(Fixtures):
     namespace, never a process found by name."""
 
     def test_only_the_pinned_binary_in_the_namespace_is_matched(self):
-        pinned_exe = self.copy_of_sleep("bin", "spaced")
+        pinned_exe = self.dummy("bin", "spaced")
         pinned = self.run_as(pinned_exe)
-        namesake = self.run_as(self.copy_of_sleep("other", "spaced"))
+        namesake = self.run_as(self.dummy("other", "spaced"))
         here = os.readlink("/proc/self/ns/net")
         out = self.check("own_pids", str(pinned_exe), here)
         self.assertEqual({int(x) for x in out.stdout.split()}, {pinned.pid}, out.stderr)
@@ -180,7 +188,7 @@ class OwnProcesses(Fixtures):
         self.assertEqual(self.check("own_pids", str(pinned_exe), "net:[1]").stdout, "")
 
     def test_stop_signals_nothing_a_stale_pid_file_names(self):
-        decoy = self.run_as(self.copy_of_sleep("other", "spaced"))
+        decoy = self.run_as(self.dummy("other", "spaced"))
         self.write_run("ns.pid", f"{decoy.pid}\n")
         self.write_run("slirp.pid", f"{decoy.pid}\n")
         out = self.launcher("stop")
@@ -210,7 +218,7 @@ class Ownership(Fixtures):
 
     def test_unrelated_namespace_is_not_adopted(self):
         ns = self.unrelated_namespace()
-        helper = self.run_as(self.copy_of_sleep("fake", "slirp4netns"), "600", str(ns.pid))
+        helper = self.run_as(self.dummy("fake", "slirp4netns"), "600", str(ns.pid))
         self.write_run("ns.pid", f"{ns.pid}\n")
         self.write_run("slirp.pid", f"{helper.pid}\n")
         out = self.launcher("adopt")
@@ -233,7 +241,7 @@ class Ownership(Fixtures):
 
     def test_namesake_helper_is_never_signalled_when_the_namespace_fails(self):
         ns = self.unrelated_namespace()
-        helper = self.run_as(self.copy_of_sleep("fake", "slirp4netns"), "600", str(ns.pid))
+        helper = self.run_as(self.dummy("fake", "slirp4netns"), "600", str(ns.pid))
         self.write_run("ns.pid", f"{ns.pid}\n")
         self.write_run("slirp.pid", f"{helper.pid}\n")
         self.record("slirp.id", helper.pid, ns.pid)
@@ -244,7 +252,7 @@ class Ownership(Fixtures):
 
     def test_namesake_helper_does_not_match_a_helper_record(self):
         ns = self.unrelated_namespace()
-        helper = self.run_as(self.copy_of_sleep("fake", "slirp4netns"), "600", str(ns.pid))
+        helper = self.run_as(self.dummy("fake", "slirp4netns"), "600", str(ns.pid))
         # An honest record of the namesake: its own pid, start time and
         # executable. It still isn't slirp4netns with this launcher's
         # command line for that namespace.
@@ -258,7 +266,7 @@ class Ownership(Fixtures):
 
     def test_recorded_namespace_is_stopped_but_not_a_mismatched_helper(self):
         ns = self.unrelated_namespace()
-        helper = self.run_as(self.copy_of_sleep("fake", "slirp4netns"), "600", str(ns.pid))
+        helper = self.run_as(self.dummy("fake", "slirp4netns"), "600", str(ns.pid))
         # The namespace matches its record, as if this launcher had started
         # it, so stop gets past the namespace check; the helper's record is
         # honest, but the helper isn't slirp4netns for that namespace.
