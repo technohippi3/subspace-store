@@ -60,6 +60,13 @@ def subs_bin():
     return Path(os.environ.get("SUBSPACE_SUBS_BIN") or BIN / "subs")
 
 
+def subs_capabilities():
+    """What the subs build this run uses can do beyond the pinned commit
+    (`controller.core.Capabilities`). The U1(b) route is in the builds of
+    `build-u1b.sh` and `build-combined.sh` only."""
+    return {"attach_txid": subs_bin().name in ("subs-u1b", "subs-combined")}
+
+
 class Stack:
     def __init__(self, run="default"):
         self.run = run
@@ -294,10 +301,18 @@ class Stack:
 
 
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ("start", "stop", "status"):
-        print("usage: procs.py start|stop|status [run]")
+    if len(argv) < 2 or argv[1] not in ("start", "stop", "status", "stop-subs", "start-subs"):
+        print("usage: procs.py start|stop|status|stop-subs|start-subs [run]")
         return 2
     stack = Stack(argv[2] if len(argv) > 2 else "default")
+    if argv[1] == "stop-subs":
+        # Returns once the process has exited: what a runner's configured
+        # stop command must guarantee.
+        stack.stop_process("subs")
+        return 0
+    if argv[1] == "start-subs":
+        stack.start_subs()
+        return 0
     if argv[1] == "start":
         from .scenarios import isolated
         if not isolated():

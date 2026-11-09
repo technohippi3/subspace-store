@@ -45,6 +45,13 @@ class BitcoinChainView:
     def tip(self):
         return self._tip
 
+    def chain_identity(self):
+        """Which chain the node follows, read live: for the runner's check
+        that every component is on one chain of the configured network."""
+        info = self.node.call("getblockchaininfo")
+        return {"network": info["chain"], "best_block_hash": info["bestblockhash"],
+                "blocks": info["blocks"]}
+
     def _raw(self, txid):
         if txid not in self._tx:
             try:

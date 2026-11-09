@@ -1,0 +1,20 @@
+# Example only: the store service as a systemd user unit. Not installed by
+# anything in this repository. Paths are placeholders for the operator's
+# host; see deploy/README.md. The configuration it names holds no
+# credential: tokens are files, created mode 0600 on first start.
+[Unit]
+Description=subspace store service (regtest)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/subspace-store/src
+ExecStart=/usr/bin/python3 -m service /srv/subspace-store/store.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -59,7 +59,7 @@ worked on regtest (`regtest/REPORT.md`) and are not part of this gate.
   certificate message from `subs`' `/certs/:handle/message` offline with
   libveritas, against root anchors read from `spaced`. It prints the
   verified zones; whether they match is a separate comparison, as the
-  harness makes it (`regtest/harness/controller.py`). The same call
+  controller makes it (`controller/core.py`). The same call
   verifies signed records (P3).
 - A certificate can be "pending" at `d >= 150` until a root anchor covers
   the commitment, up to 35 blocks later (R11, case L6). M4 waits for both.
@@ -280,7 +280,7 @@ M6 (operator). Publish both handles with one explicit call to
 `/spaces/:space/publish`, by label, and read back each handle's
 `publish_status`; both must be `final`, not `temp`. Then look both up on a
 public relay named in the transaction plan, with the `/query` request the
-harness makes of its local relay (`regtest/harness/publication.py`), and
+controller's publisher makes of a relay (`controller/publication.py`), and
 verify each answer as in M5, with the same comparisons. Evidence: the call,
 its answer, the statuses, and each relay answer with its verification.
 

@@ -1,0 +1,36 @@
+{
+  "network": "regtest",
+  "store": {
+    "url": "http://127.0.0.1:18951",
+    "operator_token_file": "/srv/subspace-store/tokens/operator-token",
+    "db": "/srv/subspace-store/store/store.db",
+    "journal_dir": "/mnt/offhost/subspace-store/journal"
+  },
+  "controller": {
+    "dir": "/srv/subspace-store/runner",
+    "journal_dir": "/mnt/offhost/subspace-store/journal",
+    "journal_name": "runner",
+    "operator_wallet": "operator",
+    "snapshot_dir": "/mnt/offhost/subspace-store/snapshots"
+  },
+  "bitcoind": {
+    "url": "http://127.0.0.1:18443",
+    "cookie_file": "/srv/subspace-store/bitcoind/regtest/.cookie"
+  },
+  "spaced": {
+    "url": "http://127.0.0.1:7224",
+    "cookie_file": "/srv/subspace-store/spaced/regtest/.cookie"
+  },
+  "subs": {
+    "url": "http://127.0.0.1:7777",
+    "write_url": "http://127.0.0.1:7777",
+    "data_dir": "/srv/subspace-store/subs",
+    "stop_command": ["systemctl", "--user", "stop", "subs.service"],
+    "start_command": ["systemctl", "--user", "start", "subs.service"],
+    "command_timeout": 300,
+    "ready_timeout": 120,
+    "capabilities": {"attach_txid": false}
+  },
+  "relay": {"url": "http://127.0.0.1:7778"},
+  "verifier": "/srv/subspace-store/bin/veritas-verify"
+}

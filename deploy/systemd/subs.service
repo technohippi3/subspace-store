@@ -1,0 +1,26 @@
+# Example only: subs as a systemd user unit, stopped and started by the
+# runner around each coordinated snapshot (deploy/runner.example.json,
+# subs.stop_command and subs.start_command). `systemctl stop` returns once
+# the process has exited, which the snapshot requires; the controller then
+# checks that subs no longer answers, and after the start waits until it
+# answers again. Not installed by anything in this repository; see
+# deploy/README.md.
+[Unit]
+Description=subs (regtest)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/srv/subspace-store/bin/subs --port 7777 \
+  --data-dir /srv/subspace-store/subs --wallet operator \
+  --rpc-url http://127.0.0.1:7224 \
+  --rpc-cookie /srv/subspace-store/spaced/regtest/.cookie
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+NoNewPrivileges=yes
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -303,8 +303,9 @@ class Service:
             return 200, {"alerts": led.alerts()}
         if path == "/operator/status" and method == "GET":
             backlog = led.db.execute("select count(*) from journal_backlog").fetchone()[0]
+            identity = getattr(self.view, "chain_identity", None)
             return 200, {"startup": self.startup, "journal_backlog": backlog,
-                         "tip": self.view.tip}
+                         "tip": self.view.tip, "chain": identity() if identity else None}
         if path == "/operator/issuing" and method == "POST":
             return 200, {"acknowledged": led.mark_issuing_all(body().get("oids", []))}
         if path == "/operator/pending" and method == "POST":

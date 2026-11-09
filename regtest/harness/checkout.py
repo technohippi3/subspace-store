@@ -39,7 +39,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from . import scenarios
-from .procs import PORTS, relay_enabled, relay_url
+from .procs import OPERATOR_WALLET, PORTS, relay_enabled, relay_url, subs_capabilities
 from .service import ServiceRun
 from .scenarios import PRICE, SPACE_A, VERIFIER
 
@@ -73,23 +73,41 @@ class Buyer:
         return m.group(1) if m else None
 
 
+def runner_config(run):
+    """The runner's host configuration for this run: the stack's addresses
+    and cookie files, and the stack's own commands to stop and start subs.
+    The same keys as `deploy/runner.example.json`."""
+    proc, stack = run.registry.process, run.stack
+    procs = [sys.executable, "-m", "regtest.harness.procs"]
+    return {
+        "network": "regtest",
+        "store": {"url": proc.url(), "operator_token_file": str(proc.operator_token_file),
+                  "db": str(run.host / "store.db"), "journal_dir": str(proc.journal_dir)},
+        "controller": {"dir": str(stack.dir / "runner"), "journal_dir": str(run.offhost),
+                       "journal_name": "runner", "operator_wallet": OPERATOR_WALLET},
+        "bitcoind": {"url": f"http://127.0.0.1:{PORTS['bitcoind']}",
+                     "cookie_file": str(stack.btc_cookie())},
+        "spaced": {"url": f"http://127.0.0.1:{PORTS['spaced']}",
+                   "cookie_file": str(stack.spaced_cookie())},
+        "subs": {"url": f"http://127.0.0.1:{PORTS['subs']}",
+                 "write_url": f"http://127.0.0.1:{PORTS['subs_proxy']}",
+                 "data_dir": str(stack.subs_dir),
+                 "stop_command": procs + ["stop-subs", stack.run],
+                 "start_command": procs + ["start-subs", stack.run],
+                 "capabilities": subs_capabilities()},
+        "relay": {"url": relay_url()},
+        "verifier": str(VERIFIER),
+    }
+
+
 class RunnerCli:
     """The attended runner as the operator runs it: one process per
     command, no terminal, so a send without --confirm is refused."""
 
     def __init__(self, run):
         self.run = run
-        proc = run.registry.process
         self.config = run.stack.dir / "runner.json"
-        self.config.write_text(json.dumps({
-            "network": "regtest",
-            "store": {"url": proc.url(), "operator_token_file": str(proc.operator_token_file),
-                      "db": str(run.host / "store.db"), "journal_dir": str(proc.journal_dir)},
-            "controller": {"dir": str(run.stack.dir / "runner"),
-                           "journal_dir": str(run.offhost), "journal_name": "runner"},
-            "verifier": str(VERIFIER),
-            "regtest_run": run.stack.run,
-        }, indent=1))
+        self.config.write_text(json.dumps(runner_config(run), indent=1))
         self.log = run.stack.logs / "runner.log"
 
     def __call__(self, *args):

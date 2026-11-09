@@ -54,8 +54,10 @@ certificate downloaded from the order page and verified with libveritas
 (`regtest/REPORT.md` records all three checkout runs, the first a failure).
 The runner carried the order through issuance and delivery. A second
 order was cancelled and refunded through the same pages and runner. The
-runner still drives the harness's controller through the harness stack,
-so there is still no controller fit for a real host. There is also no
+runner builds the controller (`controller/`) from a host configuration,
+without the regtest harness, which runs the same controller through an
+adapter; it still runs on regtest only. `deploy/` holds credential-free
+examples of the host configuration and service units, not yet used. There is also no
 restore of the controller and `subs` together with the store, and no
 installer. Nothing here is fit for selling
 names, and paid sales stay closed until the buyer and operator acceptance

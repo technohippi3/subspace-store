@@ -210,6 +210,15 @@ on-chain action that needs the owner's decision. Attaching that `txid`
 inside `subs`, so that its own status and its next local commit see it,
 needs U1(b) or a repair the owner authorizes.
 
+The controller's configuration states whether the running `subs` has the
+U1(b) route (`controller.core.Capabilities`); nothing probes for it.
+Without it the controller still reads back and adopts the transaction,
+and it refuses the attach with that reason. Which `subs` a deployment
+runs is open. Running the pinned `subs` and pausing when recovery can't
+continue is a proposal, not a decision. On its own it can't pass the
+operator gate, which issues another batch after the recovery: that needs
+`subs` with U1(b) or another reviewed recovery procedure.
+
 Authoritative readback for an uncertain broadcast, using `spaced` RPC calls
 that exist in `spaces` v0.5.0 (`client/src/rpc.rs` at tag
 `spaces_client-v0.5.0`):

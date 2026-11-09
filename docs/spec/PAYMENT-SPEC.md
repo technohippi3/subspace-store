@@ -984,9 +984,43 @@ confirmation naming the object it sends. For a commitment that is the
 batch id, and for a refund the refund group id, typed at the prompt or
 given as `--confirm`. Without it nothing changes. Certificates are
 delivered to the store only after libveritas verified them with every
-check of the controller's step 11. On regtest the runner reaches
-`bitcoind`, `spaced` and `subs` through the harness stack. Moving the
-controller out of the harness is still to do.
+check of the controller's step 11.
+
+The runner builds the controller (`controller/`) from a host
+configuration alone: addresses, cookie files, the store's operator token
+file, the operator wallet's name, the commands that stop and start
+`subs`, and what the running `subs` can do. It imports nothing from the
+regtest harness, and the harness runs the same implementation through an
+adapter over its stack. At this checkpoint the runner refuses every
+network but regtest; the interfaces don't depend on the network.
+- The configuration's network label proves nothing. Before every command
+  but `status`, which reports it, the runner asks `bitcoind`, `spaced`
+  and the store which network they are on, and asks each `subs` endpoint
+  it uses, the one it writes to (which broadcasts) and the one it reads
+  from, through that endpoint itself, for the network and tip hash of the
+  `spaced` behind it. All must report the configured network. Chain
+  identity is by block hash, never by height: `spaced`'s tip, each `subs`
+  endpoint's `spaced` tip and the store node's best block must be on the
+  controller's `bitcoind` best chain. Each `subs` endpoint must use the
+  configured operator wallet. Otherwise nothing runs. A component that
+  doesn't answer stops everything too.
+- Every configuration value is checked before anything is created:
+  paths and names non-empty, URLs `http` or `https` with a host and no
+  credentials, commands argument lists, and timeouts positive numbers of
+  seconds.
+- A coordinated snapshot copies nothing while `subs` runs. The configured
+  stop command must return only once `subs` has exited, and a connection
+  to `subs` must then be refused. Any HTTP answer, even an error, shows
+  that something still runs, and a timeout leaves the shutdown uncertain:
+  either way nothing is copied. After the start command the controller
+  waits until `subs` answers `/status` with a status before anything
+  resumes. Otherwise the batch isn't checkpointed.
+- The configuration states whether the running `subs` has the U1(b)
+  route that attaches an adopted `txid` (`CONTROLLER-DESIGN.md`, "What
+  this requires"). Without it the controller refuses the attach, saying
+  that continued issuance needs that capability or another reviewed
+  recovery procedure. Chain readback and adopting the transaction into
+  the controller's journal work either way.
 
 ## Acceptance gates
 
@@ -1019,7 +1053,13 @@ refund. Then issue another test batch successfully and verify its
 certificates. The rehearsal is in `CONTROLLER-DESIGN.md`. It measures two
 times, the store's replay from its journal and the complete recovery until
 issuance and refunds can safely resume, and records the history size each
-was measured on. Their targets are open points.
+was measured on. Their targets are open points. Issuing another batch
+after the recovery depends on `subs` being told the `txid` of a later
+commitment restored without it: with the pinned `subs` that commitment
+blocks the space's next local commit (R17), and the gate can't pass. It
+needs `subs` with the U1(b) capability or another reviewed recovery
+procedure. Pausing safely when recovery can't continue is right, but it
+doesn't pass the gate.
 
 A second buyer client is future compatibility work, not a launch
 prerequisite.
@@ -1036,15 +1076,16 @@ authorizes opening sales:
    verified certificate delivery, all through the real service. A
    cancellation with its refund is shown through the same service too.
    This needs the checkout and the attended operator runner. Both exist
-   on regtest (scenario 10), and the runner still drives the harness's
-   controller.
+   on regtest (scenario 10). The runner builds the controller from a host
+   configuration, and runs on regtest only.
 3. A small public pilot can be operated. That means one chosen
    hold-admission policy (still an open point), bounded operator-wallet
    funding, and a way to pause sales and handle alerts. Attended
    operation is enough; neither a general abuse-prevention system nor an
    elaborate admin interface is needed.
 4. Recovery works once, end to end. This is the operator gate above, with
-   one supported recovery method.
+   one supported recovery method. Its next batch needs `subs` with the
+   U1(b) capability or another reviewed recovery procedure.
 
 ZK eligibility, auctions, more clients, a universal installer and more
 recovery methods would wait until after the launch.
@@ -1279,6 +1320,11 @@ result or regtest evidence; the regtest demonstration is scenario 10
 | A3 | a final batch with two members, one failing a certificate check | `certify` | only the verified member's certificate is delivered to the store; the other is reported failed and not delivered |
 | A4 | a checkpointed batch | `issue` with the batch id confirmed | the controller's issue step runs once, for that batch, at the given fee rate |
 | A5 | a built refund group | `broadcast-refund` with its id confirmed | the store's broadcast is called once, for that group |
+| A6 | a complete host configuration; separately, ones naming another network or none, missing the subs stop command, the stated capability, the operator wallet or the relay, giving a shell string or an empty argument as a command, a capability that isn't true or false, a null, empty or numeric path, an empty wallet name, a URL without a scheme, of another scheme, with credentials or with a bad port, or a timeout that is negative, text or `true` | the runner is built from it | built without importing any regtest harness module, with the configured wallet and capability; each faulty one refused before anything is created |
+| A7 | a proved batch; after the stop command, `subs` still answering, answering HTTP 503, or not answering in time; separately, `subs` not answering again after its start command | `checkpoint` | refused; nothing is copied unless a connection to `subs` is refused, and the batch stays proved |
+| A8 | a proved batch | `checkpoint` | `subs` stopped, then its data copied, then started and answering, then the batch checkpointed, with `subs`' files in the snapshot's manifest |
+| A9 | a final batch with an adopted txid; `subs` with and without the stated U1(b) capability | attach the adopted txid, and a given one | without it, both refused, saying continued issuance needs the capability or another reviewed recovery procedure, and nothing is sent to `subs`; with it, one attach call each |
+| A10 | a regtest configuration; `bitcoind`, `spaced` or the store on another network; the `subs` endpoint for writes, or the one for reads, backed by a `spaced` on mainnet, or on another regtest chain at a lower height with the same wallet name, or using another wallet; `spaced`'s tip or the store's best block on another chain; a store that reports no chain; or a component that doesn't answer | `issue` and `broadcast-refund`, each confirmed | refused before anything is called or written to `subs`, saying the network check failed; with every component on one regtest chain, the command runs |
 
 Evidence:
 

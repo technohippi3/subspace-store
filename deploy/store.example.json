@@ -1,0 +1,22 @@
+{
+  "network": "regtest",
+  "listen": {"host": "127.0.0.1", "port": 18951},
+  "db": "/srv/subspace-store/store/store.db",
+  "journal_dir": "/mnt/offhost/subspace-store/journal",
+  "bitcoind": {
+    "url": "http://127.0.0.1:18443",
+    "cookie": "/srv/subspace-store/bitcoind/regtest/.cookie",
+    "wallet": "store"
+  },
+  "tokens": {
+    "operator": "/srv/subspace-store/tokens/operator-token",
+    "subs": "/srv/subspace-store/tokens/registry-token"
+  },
+  "policy": {
+    "hold_minutes": 15,
+    "excess_minimum_over_fee": 546,
+    "refund_fee_sats": 300,
+    "hot_wallet_cap_sats": 1000000
+  },
+  "poll_seconds": 2
+}

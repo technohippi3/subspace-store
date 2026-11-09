@@ -94,15 +94,20 @@ wallets are made fresh for each run inside `.run/`.
     `subs`, each able to lose one response after the upstream call happened.
   - `registry.py`: a minimal fixed-price registry, with the endpoints `subs`
     polls.
-  - `controller.py`: the issuance cycle of `CONTROLLER-DESIGN.md` against the
-    real `subs` and `spaced`.
-  - `journal.py`: the two off-host journals, simulated by a directory
-    outside the host's state.
+  - `controller.py`: the adapter that runs the controller of
+    `controller/core.py`, the issuance cycle of `CONTROLLER-DESIGN.md`,
+    against the stack: writes to `subs` through the fault proxy, the
+    stack's control of the `subs` process, and the capabilities of the
+    `subs` build the run uses.
+  - `journal.py` and `rpc.py`: `controller/journal.py` and
+    `controller/rpc.py` under their old names; on a run the off-host
+    journals are a directory outside the host's state.
   - `oracle.py`: drives the reference model through the same events, so the
     report can set the model's expectation beside each regtest result.
   - `scenarios.py`: the scenarios, and `report.py` the report.
   - `publication.py`: scenario 6, the publication procedure of
-    `CONTROLLER-DESIGN.md` against the local relay, with delivery checked
+    `CONTROLLER-DESIGN.md` (`controller/publication.py`) against the local
+    relay, with delivery checked
     by verifying the relay's `/query` answer with libveritas against root
     anchors read from `spaced`.
   - `records.py`: scenario 9, signed records through the local relay.

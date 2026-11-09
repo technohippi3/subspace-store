@@ -1,0 +1,813 @@
+{
+ "meta": {
+  "label": "regtest",
+  "run": "checkout-20261109T180948Z-38c0f8",
+  "scenarios": [
+   "checkout_purchase",
+   "checkout_refund"
+  ],
+  "isolation": "unprivileged user and network namespace (unshare -rn), loopback only",
+  "subs_binary": ".cache/bin/subs-relay",
+  "pins": {
+   "SUBS_REPO": "https://github.com/spacesprotocol/subs",
+   "SUBS_COMMIT": "4dcc9237af3a807497d4b1532729842ee5dcdb68",
+   "SPACES_REPO": "https://github.com/spacesprotocol/spaces",
+   "SPACES_TAG": "spaces_client-v0.5.0",
+   "SPACES_COMMIT": "77653f01889ddc86337e4b27d7d3ae4fc334a117",
+   "BITCOIN_VERSION": "26.0",
+   "BITCOIN_TARBALL": "bitcoin-26.0-x86_64-linux-gnu.tar.gz",
+   "BITCOIN_URL": "https://bitcoincore.org/bin/bitcoin-core-26.0/bitcoin-26.0-x86_64-linux-gnu.tar.gz",
+   "BITCOIN_SHA256": "23e5ab226d9e01ffaadef5ffabe8868d0db23db952b90b0593652993680bb8ab",
+   "CERTRELAY_REPO": "https://github.com/spacesprotocol/certrelay",
+   "CERTRELAY_COMMIT": "fb446487af4f9702109999f96d2ec11d3dd0b0ef"
+  },
+  "completed": [
+   "checkout_purchase",
+   "checkout_refund"
+  ],
+  "anchor_read_retries": 0
+ },
+ "verdict": "pass",
+ "steps": [
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "the operator lists one@test10000 at 10000 sats",
+   "regtest": {
+    "listed": true
+   },
+   "model": null,
+   "match": null,
+   "note": "through the operator API; the runner has no listing command",
+   "kind": "informational",
+   "t": 1794247810.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": "C1",
+   "step": "the names page lists one@test10000 as available",
+   "regtest": {
+    "status": 200,
+    "available": "true"
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "status": 200,
+     "available": "true"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247810.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": "C2",
+   "step": "the request for one@test10000 pasted on its page",
+   "regtest": {
+    "status": 303,
+    "redirects_to_order_page": true
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "status": 303,
+     "redirects_to_order_page": true
+    }
+   },
+   "match": true,
+   "note": "a regtest wallet's script stands in for the buyer's client",
+   "kind": "required",
+   "t": 1794247810.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": "C4",
+   "step": "the invoice on the order page",
+   "regtest": {
+    "invoice_status": 303,
+    "status": "quoted",
+    "address_is_the_order's": true,
+    "bip21": "bitcoin:bcrt1pxz2gdegcun34ec9cr0dktlhr7cwp3u3s73np4klu0vcu2q8yeehqhhapsc?amount=0.0001",
+    "price_sats": "10000"
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "invoice_status": 303,
+     "status": "quoted",
+     "address_is_the_order's": true,
+     "bip21": "bitcoin:bcrt1pxz2gdegcun34ec9cr0dktlhr7cwp3u3s73np4klu0vcu2q8yeehqhhapsc?amount=0.0001",
+     "price_sats": "10000"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247811.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "the buyer pays the BIP21 URI's address and amount",
+   "regtest": {
+    "txid": "a5bbc633ee1a2ad0f8be250106365954ad3f85dcd4d79a3513045dbb684f1ab9",
+    "address": "bcrt1pxz2gdegcun34ec9cr0dktlhr7cwp3u3s73np4klu0vcu2q8yeehqhhapsc",
+    "amount_btc": "0.0001"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794247811.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": "C11",
+   "step": "the order page after 3 blocks: paid, and no longer asking for payment",
+   "regtest": {
+    "status": "converted",
+    "batchable_sats": "10000",
+    "asks_for_payment": false
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "status": "converted",
+     "batchable_sats": "10000",
+     "asks_for_payment": false
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247811.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "runner prepare: freeze, stage, local commit, prove, checkpoint",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "bid": "b1",
+     "state": "checkpointed",
+     "members": [
+      "o1"
+     ],
+     "root": "197a75fe1c12915a0018cfd97463ee069ae17a31180a95862c51e41ee5619bcc",
+     "staged": {
+      "one": "5120244fe71c3d7f02a15ae313c9260182bf12a936b5ef56f2b0599801f6832154f5"
+     },
+     "members_on_root": 1,
+     "proving": "skipped",
+     "snapshot": "regtest/.run/checkout-20261109T180948Z-38c0f8/offhost/snapshots/001-b1"
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 0,
+     "state": "checkpointed",
+     "members": [
+      "o1"
+     ]
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247812.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": "A1",
+   "step": "runner issue without the confirmation",
+   "regtest": {
+    "exit": 3,
+    "output": {
+     "refused": "not confirmed: the batch id b1 must be typed or given as --confirm; nothing was sent"
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 3,
+     "refused": "nothing was sent"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247812.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": "A1",
+   "step": "after the refused issue",
+   "regtest": {
+    "order": "converted"
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "order": "converted"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247812.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": "A4",
+   "step": "runner issue with the batch id confirmed",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "bid": "b1",
+     "state": "broadcast",
+     "txid": "613e208b3fe6caf21cf7c22086dcd867d583a29716b1d262ee2e9954d75a36ff",
+     "rebuilt_from": null
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 0,
+     "state": "broadcast",
+     "txid": "set"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247813.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "the commitment is in the mempool and the page shows issuing",
+   "regtest": {
+    "page_status": "issuing",
+    "in_mempool": true
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "page_status": "issuing",
+     "in_mempool": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247813.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "runner watch at d = 0",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "bid": "b1",
+     "state": "mined",
+     "txid": "613e208b3fe6caf21cf7c22086dcd867d583a29716b1d262ee2e9954d75a36ff",
+     "depth": 0,
+     "certificate_status": "not_final"
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "state": "mined"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247813.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "runner watch at d = 149",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "bid": "b1",
+     "state": "mined",
+     "txid": "613e208b3fe6caf21cf7c22086dcd867d583a29716b1d262ee2e9954d75a36ff",
+     "depth": 149,
+     "certificate_status": "not_final"
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "state": "mined"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247818.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "runner watch at d = 150",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "bid": "b1",
+     "state": "final",
+     "txid": "613e208b3fe6caf21cf7c22086dcd867d583a29716b1d262ee2e9954d75a36ff",
+     "depth": 150,
+     "certificate_status": "verified"
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "state": "final"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247818.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": "A3",
+   "step": "runner certify: verified with libveritas and delivered to the order page",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "bid": "b1",
+     "members": {
+      "o1": {
+       "handle": "one@test10000",
+       "verified": true,
+       "checks": {
+        "verified": true,
+        "handle": true,
+        "script_pubkey": true,
+        "root": true,
+        "root_height": true,
+        "sovereign": true
+       },
+       "delivered": true
+      }
+     }
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 0,
+     "verified": true,
+     "delivered": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247819.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": "C7",
+   "step": "the order page offers the certificate, and serves it",
+   "regtest": {
+    "page_status": "ready",
+    "download_offered": true,
+    "download_status": 200,
+    "content_type": "application/octet-stream",
+    "bytes": 2112
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "page_status": "ready",
+     "download_offered": true,
+     "download_status": 200,
+     "content_type": "application/octet-stream"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247819.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "the buyer's download verified with libveritas against anchors read from spaced",
+   "regtest": {
+    "verified": true,
+    "handle": true,
+    "script_pubkey_is_the_buyer's": true,
+    "sovereign": true
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "verified": true,
+     "handle": true,
+     "script_pubkey_is_the_buyer's": true,
+     "sovereign": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247819.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "isolation: subs seeds its fabric client with the local relay only",
+   "regtest": {
+    "subs_fabric_seeds": "http://127.0.0.1:18950",
+    "relay": "http://127.0.0.1:18950"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794247819.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "runner publish: delivery confirmed by a verified lookup through the relay",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "bid": "b1",
+     "enrolled": [
+      "o1"
+     ],
+     "publish_calls": 1,
+     "delivery": {
+      "o1": {
+       "confirmed": true
+      }
+     },
+     "outstanding": []
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 0,
+     "confirmed": true,
+     "outstanding": []
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247819.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "10a. purchase through the checkout pages and the runner",
+   "case": null,
+   "step": "the order page after delivery",
+   "regtest": {
+    "page_status": "fulfilled",
+    "download_status": 200,
+    "same_bytes": true
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "page_status": "fulfilled",
+     "download_status": 200,
+     "same_bytes": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247819.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "C1",
+   "step": "the names page lists two@test10000 as available",
+   "regtest": {
+    "status": 200,
+    "available": "true"
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "status": 200,
+     "available": "true"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247819.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "C2",
+   "step": "the request for two@test10000 pasted on its page",
+   "regtest": {
+    "status": 303,
+    "redirects_to_order_page": true
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "status": 303,
+     "redirects_to_order_page": true
+    }
+   },
+   "match": true,
+   "note": "a regtest wallet's script stands in for the buyer's client",
+   "kind": "required",
+   "t": 1794247819.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "C4",
+   "step": "the invoice on the order page",
+   "regtest": {
+    "invoice_status": 303,
+    "status": "quoted",
+    "address_is_the_order's": true,
+    "bip21": "bitcoin:bcrt1pzp4ygfttk8luyxkads80zyvscwnxx8gzz3yla3f3luh8rag0q9fsyeny6l?amount=0.0001",
+    "price_sats": "10000"
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "invoice_status": 303,
+     "status": "quoted",
+     "address_is_the_order's": true,
+     "bip21": "bitcoin:bcrt1pzp4ygfttk8luyxkads80zyvscwnxx8gzz3yla3f3luh8rag0q9fsyeny6l?amount=0.0001",
+     "price_sats": "10000"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247820.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": null,
+   "step": "the buyer pays the BIP21 URI's address and amount",
+   "regtest": {
+    "txid": "4e0112666d64349f282226de96fe4805220d89163360cd727a2acfbb7c24a792",
+    "address": "bcrt1pzp4ygfttk8luyxkads80zyvscwnxx8gzz3yla3f3luh8rag0q9fsyeny6l",
+    "amount_btc": "0.0001"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794247820.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "C11",
+   "step": "the order page after 3 blocks: paid, and no longer asking for payment",
+   "regtest": {
+    "status": "converted",
+    "batchable_sats": "10000",
+    "asks_for_payment": false
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "status": "converted",
+     "batchable_sats": "10000",
+     "asks_for_payment": false
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247820.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": null,
+   "step": "runner cancel",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "status": "cancelled",
+     "cancellation": "final",
+     "acknowledged": true,
+     "oid": "o2"
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 0,
+     "cancellation": "final"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247820.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "C11",
+   "step": "the order page shows the cancellation and asks for no payment",
+   "regtest": {
+    "status": "cancelled",
+    "cancellation": "final",
+    "asks_for_payment": false
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "status": "cancelled",
+     "cancellation": "final",
+     "asks_for_payment": false
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247820.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": null,
+   "step": "the buyer gives the refund address on the order page",
+   "regtest": {
+    "status": 303,
+    "shown": "bcrt1pwsyvyzjvzzsywlg5s0k4se24hecqn8r09vhsu8fr5pxane4t3lnq9k0tky"
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "status": 303,
+     "shown": "bcrt1pwsyvyzjvzzsywlg5s0k4se24hecqn8r09vhsu8fr5pxane4t3lnq9k0tky"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247820.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "N2",
+   "step": "runner refund at 3 blocks: nothing refundable yet",
+   "regtest": {
+    "exit": 1,
+    "output": {
+     "error": "Refused: nothing refundable"
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 1,
+     "error": "nothing refundable"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247821.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "N2",
+   "step": "runner refund once the payment settled",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "gid": "g1",
+     "txid": "f471a468cdb31826527da507349aa1fd40ee6872fbe3930fa64993d1c5e22b08",
+     "to_buyer": 9700,
+     "fee": 300,
+     "charged": 10000,
+     "oid": "o2"
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 0,
+     "to_buyer": 9700,
+     "fee": 300
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247821.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "A2",
+   "step": "runner broadcast-refund without the confirmation",
+   "regtest": {
+    "exit": 3,
+    "output": {
+     "refused": "not confirmed: the refund group id g1 must be typed or given as --confirm; nothing was sent"
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 3,
+     "refused": "nothing was sent"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247821.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "A2",
+   "step": "nothing sent after the refused broadcast",
+   "regtest": {
+    "in_mempool": false
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "in_mempool": false
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247821.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": "A5",
+   "step": "runner broadcast-refund with the group id confirmed",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "gid": "g1",
+     "txid": "f471a468cdb31826527da507349aa1fd40ee6872fbe3930fa64993d1c5e22b08",
+     "acknowledged": true
+    }
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "exit": 0,
+     "acknowledged": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247822.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "10b. cancellation and refund through the checkout pages and the runner",
+   "case": null,
+   "step": "the refund at 6 blocks: settled on the page, received by the buyer",
+   "regtest": {
+    "page_shows_settled": true,
+    "received": 9700,
+    "confirmations": 6
+   },
+   "model": {
+    "expected (checkout and runner rules, not the model)": {
+     "page_shows_settled": true,
+     "received": 9700,
+     "confirmations": 6
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794247823.2
+  }
+ ],
+ "findings": []
+}

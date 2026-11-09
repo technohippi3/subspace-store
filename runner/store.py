@@ -12,8 +12,8 @@ import json
 import sqlite3
 from pathlib import Path
 
-from regtest.harness.journal import Journal
-from regtest.harness.rpc import Http, HttpError
+from controller.journal import Journal
+from controller.rpc import Http, HttpError
 
 
 class Refused(Exception):

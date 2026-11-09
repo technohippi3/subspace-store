@@ -512,6 +512,69 @@ BIP21 link after conversion, fulfilment and cancellation. Both were fixed
 fixes, its steps also checking that the converted and cancelled pages ask
 for no payment. Both passing runs are kept.
 
+## The controller outside the harness (2026-11-09)
+
+The controller, its publisher, the journals and the clients moved from
+`regtest/harness/` into `controller/`. The runner now builds them from a
+host configuration alone (`controller/host.py`), and the harness runs the
+same implementation through an adapter over its stack
+(`regtest/harness/controller.py`). Two runs, from `main` at `d044b39` plus
+the extraction, check that nothing the scenarios see changed:
+- `combined-20261109T171321Z-326449`: first purchase, second commitment,
+  host restore, lost broadcast answer, another batch after the recovery
+  (scenario 5) and publication with delivery (scenario 6), with the
+  `subs-combined` build. Verdict pass, exit 0, 193 required steps
+  agreeing and 26 informational. It took about 10 minutes.
+- `checkout-20261109T172316Z-856621`: scenario 10, the runner as its own
+  process, now with the host configuration the harness writes for it,
+  stopping and starting `subs` around its snapshot with the configured
+  commands. Verdict pass, exit 0, 30 required steps agreeing and 4
+  informational.
+
+Each run has the same steps as the last kept run of its scenario
+(`combined-20261107T150906Z-8270f6` and
+`checkout-20261109T141954Z-1d9c65`), compared by scenario, case, step,
+kind and agreement: none is missing and none is new. In scenario 5 the
+`subs-combined` build has the U1(b) route, the harness states that
+capability, and the three wrong txids were refused, the adopted one
+attached, and the next local commit allowed, as before. Both runs are
+kept.
+
+A review of those two runs found three faults the scenarios didn't
+reach. The runner trusted the configuration's network label. The snapshot
+took an HTTP error or a timeout from a stopped `subs` as proof it had
+stopped. And a configuration with a null path got as far as creating
+directories. After the fixes (A6, A7, A10), the runner asks `bitcoind`,
+`spaced`, `subs` and the store which network and chain they are on before
+every command, a snapshot copies only once a connection to `subs` is
+refused, and every value is checked first. Both scenarios ran again:
+`checkout-20261109T180948Z-38c0f8`, whose every runner command passed the
+network check against the real stack, and
+`combined-20261109T181028Z-68167e`, whose snapshots passed the stricter
+shutdown check. Both pass, with 30 and 4, and 193 and 26, required and
+informational steps, and again match their predecessors step for step.
+They are kept too.
+
+A second review found the network check still had two gaps: it asked only
+the `subs` endpoint the controller reads from, not the one it writes to,
+which broadcasts, and it took a lower height as the same chain. Now each
+`subs` endpoint is asked, through itself, for the network and tip hash of
+the `spaced` behind it, and that hash must be on the controller's best
+chain (A10). `checkout-20261109T185521Z-addb39` ran with that check: its
+13 runner commands all passed it against the real stack, through the
+fault proxy for writes and directly for reads. The other outcomes were
+the two refusals without a confirmation (A1, A2) and the refund refused
+at 3 blocks (N2), as before. Verdict pass, 30 required steps agreeing and
+4 informational, matching its predecessors step for step; it is kept. The
+combined scenario doesn't use the runner, so it wasn't run again.
+
+Not rerun after the extraction: the pinned `subs` variant of scenario 5
+(`run-continued.sh pinned`), and the publication, records and service
+scenarios on their own. With the pinned build the controller now refuses
+the attach itself, stating the missing capability, where `subs` used to
+answer that it has no such route. Those steps are informational, and the
+next local commit is still refused by `subs` (R17).
+
 ## The tightened harness
 
 Since fp4:
@@ -585,9 +648,9 @@ they're published, and a run id must be a plain name.
 runs, four continued runs and `publication-20261107T094250Z-76605c`. Four
 of the publication run's verifications, in its `-relay` directories, are
 the relay's `/query` answers from scenario 6: two from before publication
-and two from the delivery lookups. The four combined runs, the service runs and
-`records-20261108T161951Z-0c9721` are kept as well, and so are the two
-passing checkout runs, whose runner verifications are under `runner/`: 164
+and two from the delivery lookups. The six combined runs, the service runs and
+`records-20261108T161951Z-0c9721` are kept as well, and so are the five
+passing checkout runs, whose runner verifications are under `runner/`: 220
 messages in all. Each message is kept with its root anchors and
 libveritas output. `verify-evidence.sh` verifies them all offline, and
 `evidence/README.md` says how. fp4's certificate isn't kept in the repository,

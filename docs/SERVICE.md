@@ -157,10 +157,26 @@ These are this milestone's choices, recorded so that they can be changed.
 - The attended runner (`runner/`, `python3 -m runner <config> <command>`)
   is the operator's tool: one command per step, JSON out. It sends a
   commitment or a refund only with the batch id or refund group id
-  confirmed. It drives the controller of `CONTROLLER-DESIGN.md`, which is
-  still the harness's (`regtest/harness/controller.py`), and reaches
-  bitcoind, spaced and subs through the harness stack, so it runs on
-  regtest only.
+  confirmed. It drives the controller of `CONTROLLER-DESIGN.md`
+  (`controller/`), built from a host configuration alone by
+  `controller/host.py`: the keys are in `deploy/runner.example.json`. The
+  regtest harness runs the same controller through an adapter over its
+  stack. The runner refuses every network but regtest, and before every
+  command but `status` it asks `bitcoind`, `spaced`, the store
+  (`/operator/status`, whose `chain` gives its node's network and best
+  block) and each `subs` endpoint, for writes and for reads, which network
+  and chain they are on. A `subs` endpoint answers for the `spaced` behind
+  it, through its own `/rpc/spaced` and `/rpc/endpoints`. Chains are
+  compared by block hash, and nothing runs unless all agree with the
+  configuration.
+  Before a snapshot
+  it runs the configured stop command for `subs`, which must return once
+  `subs` has exited, checks that a connection to `subs` is refused (an
+  HTTP answer or a timeout isn't enough), copies, runs
+  the start command and waits until `subs` answers again. The
+  configuration states whether `subs` has the U1(b) route; without it the
+  attach of an adopted txid is refused, and continued issuance after such
+  a recovery needs that capability or another reviewed procedure.
 
 ## Not in this milestone
 
@@ -181,9 +197,9 @@ These are this milestone's choices, recorded so that they can be changed.
   indefinitely by quoting again as each hold ends ("Open: hold abuse" in
   `spec/PAYMENT-SPEC.md`).
 - An installer, and buyer import in Nacho, which the buyer gate tests.
-- The controller is still the harness's, and the runner reaches the chain
-  and `subs` through the harness stack. Running it against a real host
-  needs both moved out of the harness.
+- A deployment. `deploy/` holds credential-free examples of the store's
+  and the runner's configuration and of systemd units for the store and
+  `subs`; nothing installs them, and nothing has run from them.
 - The pilot's operating needs: a hold-admission policy, bounded wallet
   funding, and a way to pause sales and handle alerts (the proposed finish
   line's third demonstration).
