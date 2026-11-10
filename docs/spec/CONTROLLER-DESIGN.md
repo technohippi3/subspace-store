@@ -568,7 +568,8 @@ On a throwaway space, with U1 in place:
    `committed_local`, `checkpointed`, `issuing` with the broadcast answer
    withheld, and `broadcast`. Open one refund family in each refund funding
    method the launch uses: a broadcast hot-wallet refund, an exported PSBT,
-   or both. The method is undecided (PAYMENT-SPEC.md, open points).
+   or both. For the pilot it is attended hot-wallet refunds (PAYMENT-SPEC.md,
+   pilot decisions of 2026-11-10).
 2. Destroy the host. Restore the snapshot and journal onto a fresh host.
 3. Reconcile as above. No name may be issued twice, no refund may pay twice,
    no reservation may disappear, and the restored tree's root must match the

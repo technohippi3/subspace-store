@@ -1,4 +1,4 @@
-# Subspace store payment specification (draft 15, 2026-11-09)
+# Subspace store payment specification (draft 16, 2026-11-10)
 
 MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
 auction section, its cases D1 to D35, case N6, and the auction evidence
@@ -17,6 +17,100 @@ it approves neither implicitly. Without ZK eligibility the buyer proves
 nothing about themselves; the Spaces protocol's issuance proofs for later
 batches stay in scope. The plan for the first acceptance gate is
 `docs/BUYER-GATE.md`.
+
+Pilot decisions (workspace_owner, 2026-11-10): the workspace_owner adopted
+a reviewer's pilot recommendation of the same day. The decisions authorize
+writing these rules as cases and building them, and nothing more: no
+production deployment, no wallet transaction, no mainnet action and no
+opening of sales, each of which needs its own authorization. The rules
+they change are not built yet. Until each is written as cases and built,
+the store's current rule stands where it differs, and the pilot can't
+open. The decisions:
+- The finish line for the first launch is the four demonstrations under
+  "Acceptance gates": a buyer's acceptance with Nacho, a complete sale and
+  a refund through the real service, a small attended pilot that can be
+  operated, and one recovery end to end on the deployed stack. Passing
+  tests is evidence toward them, not permission to open sales.
+- The first pilot is one public space at fixed prices, reviewed at ten
+  paid orders. When the tenth distinct order first converts, new quotes
+  pause for review. Invoices already given out, including expired ones
+  still eligible for a late payment, go on under the payment,
+  cancellation and refund rules, so more orders may convert after the
+  pause. Ten is a review threshold, not a ceiling on payments or
+  conversions. The count takes each order once, survives a restart and a
+  restore, and doesn't fall when an order is cancelled or a reorg undoes a
+  conversion, so neither reopens sales; only the owner does. The pause at
+  ten is a rule still to write and build; until it is built, the owner
+  pauses sales by hand. A strict ceiling of ten sales would instead need
+  the remaining slots allocated atomically and a policy for refunding the
+  overflow; that isn't chosen.
+- Hold admission for public names is the design under "Fixed-price
+  sales", with these values and changes: a 15-minute hold; at most two
+  counted holds per name in a rolling 24 hours; at most ten active holds
+  across the store; pay-first beyond those. A late payment, like a
+  pay-first order, takes the name only with the full price. Pay-first
+  payments that qualify in the same block go to the earlier quote, and
+  between quotes made at the same moment to the order created first, by
+  its sequence number, which never changes. A buyer
+  who loses the race is refunded less the refund fee, and checkout says
+  so, and that another buyer may pay first, before it shows an address.
+  These are rule changes still to write as cases and build in the model
+  and the service.
+- Refunds are attended hot-wallet refunds; owner-signed PSBTs are
+  deferred. The hot-wallet cap limits each refund, not the wallet's
+  balance. A refund after an earlier refund spent the order's payment
+  outputs is still to build. The operator wallet, which funds issuance,
+  stays separate and small.
+- The exposure limit is an admission threshold for new invoices, not a
+  cap on the wallet's balance: addresses already given out can still be
+  paid. It is the smaller of ten times the highest listed price and the
+  workspace_owner's pilot risk budget. Its value in sats waits on the
+  prices and that budget.
+- The recovery-time targets, to be demonstrated, not yet capabilities:
+  under one minute to replay a representative journal of 10,000 orders;
+  under four hours for the complete recovery onto a replacement host,
+  from the start of its setup, chain catch-up included, until issuance and
+  refunds can safely resume.
+- The pilot ships on the TypeScript store built on Effect, once it is
+  complete, with the Python controller and attended runner at first,
+  deployed through Alchemy to a general Linux host over SSH. The launch
+  demonstrations run against exactly that combination.
+
+Further pilot decisions (workspace_owner, 2026-11-10, later the same
+day), adopting a second reviewer recommendation, with the same limits on
+what they authorize. Each is still to build where it differs from today:
+- Proof-gated names and auctions stay out of the pilot, as the launch
+  scope of 2026-11-08 and the MVP scope of 2026-11-06 already have it.
+- A buyer may cancel before the order enters issuance, serialized against
+  issuance so that exactly one wins. Once a commitment may have been sent,
+  the recovery rules apply as now. Today only the owner can cancel.
+- A cancellation shows as pending until the off-host journal acknowledges
+  it, and as final only then: the rule of draft 14, now confirmed.
+- A refund is broadcast within 24 hours of becoming due: once its funds
+  are settled, the refund is eligible and a valid destination is known.
+  Confirmation takes its own time. A missed target is an incident.
+- Refund fees. A buyer's cancellation, an excess refund and a pay-first
+  race the buyer was told about are refunded less the network fee, which
+  checkout discloses, up to a fee ceiling for the buyer. A refund the
+  store caused returns the full refundable amount, and the store pays its
+  fee. The fee is estimated, with Bitcoin Core's `estimatesmartfee` for a
+  confirmation target, within limits the operator sets, including what to
+  do when no estimate is available; it replaces today's fixed fee. The
+  split needs accounting the store doesn't have yet.
+- The excess minimum stays at 546 sats over the refund fee, disclosed at
+  checkout. It is the store's policy, not a Bitcoin dust rule.
+- Delivery: an internal target of 72 hours from the confirmation of the
+  payment that qualified the order. No delivery estimate is published
+  until the demonstration on the real stack supports one; the order page
+  shows progress and says what can delay it.
+- Published evidence: software revisions, procedures and sanitized
+  results. Never buyer-linked records, recovery material, credentials or
+  private details of the infrastructure.
+
+Draft 16 records those decisions. It also gathers what was added since
+draft 15: the sales pause and the exposure limit (S1 to S6), refund
+destinations, never a payment address in either direction (T1 to T4), and
+interrupted broadcasts, always uncertain (A20 to A22, X11).
 
 Status: draft specification under review. Every rule below is a
 requirement until its cases are implemented and pass as executable tests.
@@ -198,7 +292,10 @@ superseded (see Cancellation).
 Network fees are paid by the store's refund wallet, not deducted invisibly.
 An attempt's `charged` is `to_buyer` plus whatever part of the fee is taken
 from the buyer's funds. With refunds sent net of fee, which checkout
-discloses (proposal), the whole fee is charged, so `charged = to_buyer + fee`.
+discloses, the whole fee is charged, so `charged = to_buyer + fee`. For the
+pilot that is a buyer's cancellation, an excess refund or a lost pay-first
+race, up to the buyer's fee ceiling; a refund the store caused is sent in
+full and the store pays the fee (pilot decisions, 2026-11-10).
 Any fee the store absorbs beyond that, for example on a fee bump, is a store
 cost. It is recorded separately and never charged to the order.
 
@@ -422,7 +519,7 @@ database transaction.
 
 Quote and temporary hold. A quote fixes the price and takes the name's
 temporary hold. The hold has `quote_expires_at`, 15 minutes after the quote
-by the server's clock (proposal). A second buyer who asks for a held name
+by the server's clock (pilot decisions, 2026-11-10). A second buyer who asks for a held name
 gets "taken for now" and no quote.
 
 Payment instructions. The quote's address is given to the buyer, by the
@@ -445,11 +542,14 @@ acquisition, not only concurrent holds: a per-passport quota that counts
 active holds still lets the same holder take the name again after every
 expiry. Proof-gated names need a rule on how often one nullifier may hold a
 name. Public names have no identity to count, so they need an admission
-policy of their own. The design below is proposed for them, for review;
-it isn't adopted or implemented, and no case covers it yet.
+policy of their own. The design below is the one for them: the
+workspace_owner adopted it for the first pilot on 2026-11-10, with the
+values and changes in the pilot decisions at the top of this file. It
+isn't implemented, and no case covers it yet.
 
-Proposed: hold admission for public names, with the exposure limit
-(draft 2026-11-10, revised after review; not adopted or implemented).
+Hold admission for public names, with the exposure limit (draft
+2026-11-10, revised after review; adopted for the pilot with the changes at
+the top of this file, 2026-11-10; not implemented).
 Without an identity, the one thing a caller can't repeat for free is a
 payment. So free reservations are rationed per name and store-wide, and
 nothing a caller can do for free may stop sales: at worst it removes the
@@ -460,11 +560,11 @@ that has actually arrived can stop new quotes.
    lasted. A payment seen in the mempool exempts nothing: one that never
    confirms costs nothing at all, since it pays no miner fee and its coins
    can be spent elsewhere. A name may have at most
-   `free_holds_per_name` counted holds (proposal: 2) among the quotes made
-   for it in the last `free_hold_window` (proposal: 24 hours). The ration
+   `free_holds_per_name` counted holds (pilot: 2) among the quotes made
+   for it in the last `free_hold_window` (pilot: a rolling 24 hours). The ration
    counts by name, not by request, link or script, so fresh requests with
    fresh scripts draw on the same ration.
-2. Store-wide, at most `holds_open` holds (proposal: 10) are active at
+2. Store-wide, at most `holds_open` holds (pilot: 10) are active at
    once, counted the same way.
 3. Admission reads only confirmed money. Confirmed funds are every
    output at `confirmed` depth or deeper paying an order's address, less
@@ -489,6 +589,10 @@ that has actually arrived can stop new quotes.
    doesn't win is refund due for its settled funds, net of the refund
    fee. Before showing the address, checkout says plainly that another
    buyer may pay first, and that the payment then comes back less the fee.
+   When pay-first payments of two orders qualify in the same block, the
+   earlier quote wins, and between quotes made at the same moment the
+   order created first, by its sequence number (pilot decisions,
+   2026-11-10).
 6. Quotes are refused outright only while sales are paused, or when
    confirmed funds alone plus the price would pass the limit. Neither
    unpaid invoices nor mempool payments can bring that about.
@@ -528,11 +632,13 @@ What this design leaves possible:
   any positive confirmed amount take a new hold when the name is free. A
   small confirmed payment can therefore take a name back for six blocks
   and more. Under this design that new hold counts against the name's
-  ration. Whether that rule should also require the full price is a point
-  for review; this draft doesn't change it.
+  ration. For public names in the pilot a late payment takes the name
+  only with the full price too (pilot decisions, 2026-11-10); until that
+  is built, the rule above stands.
 - Two honest buyers can pay the same pay-first name before either
-  confirms. The one who confirms second pays the refund fee. Whether the
-  store refunds that loser in full is a point for the owner.
+  confirms. The one who confirms second is refunded less the refund fee,
+  and checkout says so before it shows the address (pilot decisions,
+  2026-11-10).
 - Requests and quotes still create orders and fresh addresses for free.
   That costs database rows and, for recovery, wallet look-ahead: a payment
   wallet restored from its backup looks ahead a fixed number of addresses
@@ -574,7 +680,7 @@ lasts. A hold that ends short of the price makes the order refund due for its
 settled funds. Funds above the price are excess and are refundable once
 settled, because `price_reserve` keeps the price back. An excess smaller than
 its refund fee plus 546 sats is not refunded, and checkout discloses that
-minimum (proposal).
+minimum (pilot decisions, 2026-11-10).
 
 Sales pause and exposure limit, as implemented (S1 to S5). Both stop new
 quotes and nothing else. While either applies, a quote is refused before
@@ -608,9 +714,10 @@ as above.
   limit. Nothing sweeps funds out: the refund builder spends each order's
   own payment outputs, so moving them would leave that order's refund
   unbuildable.
-- Proposal for the pilot, once the owner sets the price: a limit of ten
-  orders at the highest listed price. Reaching it pauses new quotes until
-  the owner raises it on purpose.
+- For the pilot (workspace_owner, 2026-11-10): the smaller of ten times
+  the highest listed price and the pilot risk budget. Its value in sats
+  waits on the prices and that budget. Reaching it pauses new quotes
+  until the owner raises it on purpose.
 
 ## Dutch auction
 
@@ -858,8 +965,8 @@ The buyer's order link says the same: it shows the order's last
 acknowledged status with the cancellation marked unconfirmed, and shows
 `cancelled` only once that is acknowledged. Cancelling again once the
 journal is back confirms it (J12, H10). Provenance: adopted in draft 14 on a
-reviewer's recommendation of 2026-11-08, not on a ruling by the
-workspace_owner, who may still change it (open points).
+reviewer's recommendation of 2026-11-08, and confirmed by the
+workspace_owner on 2026-11-10 (pilot decisions).
 
 A cancellation is committed before any refund is built. A cancelled order
 never enters a batch again. If it is in a batch that hasn't reached
@@ -925,8 +1032,9 @@ fulfilled.
 
 Causes of refund due: not eligible, a late payment that lost the name, an
 outbid auction order, an `already_*_different_spk` outcome, underpayment when
-the hold ends, and an owner-approved cancellation. Voluntary cancellation by
-the buyer of a deliverable paid order is not offered in v1 (proposal).
+the hold ends, and an owner-approved cancellation. A buyer may cancel before
+the order enters issuance, serialized against issuance (pilot decisions,
+2026-11-10); that isn't built yet, and today only the owner cancels.
 
 Obligation groups. Each refund the order owes is one obligation group, for
 example an excess refund and a later cancellation refund. A group holds every
@@ -1313,8 +1421,9 @@ which the API can't export, a separate off-host store with its own
 credentials, and anything off regtest. Passing the gate needs at least a
 separate off-host store, the workspace_owner's recovery-time targets, a
 reviewed recovery procedure for the deployment's `subs`, and a rehearsal
-of the refund funding method the launch uses. That method is undecided
-(open points). A reviewer recommends one complete operating method for
+of the refund funding method the launch uses. For the pilot that is
+attended hot-wallet refunds (pilot decisions, 2026-11-10). A reviewer
+recommended one complete operating method for
 launch: if v1 uses capped hot-wallet refunds, rehearse that method, which
 the regtest run covered, and defer owner-signed PSBTs. If v1 uses
 owner-signed PSBTs, the gate also needs a PSBT refund family rehearsed.
@@ -1322,10 +1431,11 @@ owner-signed PSBTs, the gate also needs a PSBT refund family rehearsed.
 A second buyer client is future compatibility work, not a launch
 prerequisite.
 
-Proposed finish line for the first launch: a reviewer recommendation of
-2026-11-09, not adopted by the workspace_owner. The first space would
-launch once four demonstrations pass and the workspace_owner then
-authorizes opening sales:
+Finish line for the first launch: a reviewer recommendation of
+2026-11-09, adopted by the workspace_owner on 2026-11-10 (the pilot
+decisions at the top of this file). The first space launches once four
+demonstrations pass and the workspace_owner then authorizes opening
+sales:
 1. Nacho works for an actual buyer. This is the buyer gate above. Its
    recovery step passes with a working, documented backup-and-restore
    procedure, without working out Nacho's key derivation.
@@ -1337,7 +1447,8 @@ authorizes opening sales:
    on regtest (scenario 10). The runner builds the controller from a host
    configuration, and runs on regtest only.
 3. A small public pilot can be operated. That means one chosen
-   hold-admission policy (still an open point), bounded operator-wallet
+   hold-admission policy (chosen on 2026-11-10, still to build), bounded
+   operator-wallet
    funding, and a way to pause sales and handle alerts. Attended
    operation is enough; neither a general abuse-prevention system nor an
    elaborate admin interface is needed.
@@ -1671,39 +1782,45 @@ gate doesn't count them.
 
 ## Open points for the owner
 
-These stay proposals until decided:
-- the hold-abuse rule under "Fixed-price sales", for proof-gated and for
-  public names; it blocks any public pilot. The 2026-11-08 launch scope
-  makes the admission policy for public names the one that matters first,
-  and doesn't decide it. A design for public names (rationed holds,
-  then pay-first, with the exposure limit) is proposed there for review,
-  with its proposed numbers and whether a buyer who loses a pay-first race
-  is refunded in full;
-- the exposure limit's value (under "Sales pause and exposure limit");
-- the recovery-time targets: how long a store replay from the journal may
-  take, and how long the complete operator recovery may take, store,
-  controller, `subs` and wallet together, until issuance and refunds can
-  safely resume. Both are to be measured, each with the history it was
-  measured on: the sales period, order count, and journal entries and
-  bytes. A fast database replay alone doesn't show that issuance and
-  refunds can resume, and a small rehearsal alone doesn't show that a full
-  replay is fast enough for a representative history. Restoring from a
-  snapshot plus the journal since it is needed only if replay misses its
-  target. Both were measured once on regtest, and the replay on generated
-  journals sized for assumed pilot periods (`regtest/REPORT.md`, scenario
-  11); those numbers inform the targets and don't set them;
-- the delivery time stated at checkout. "Usually 1 to 2 days" is
-  provisional until the operating schedule (batch cadence, proving,
-  `d >= 150`, anchor coverage) supports it, and checkout says that delivery
-  can take longer;
-- the cancellation reporting rule under "Cancellation" (final only once
-  acknowledged off-host, unconfirmed until then). Draft 14 adopted it on a
-  reviewer's recommendation; it awaits the workspace_owner's decision;
-- refund funding (an owner-signed PSBT or a capped hot wallet) and the refund
-  deadline;
-- the 15-minute hold, the excess minimum, and refunds net of fee;
-- whether v1 offers voluntary cancellation;
-- the auction presets: start-to-floor ratio, step interval, duration, payment
-  window, rounding unit, floor behaviour, quote cap, and no rebate after a
-  drop;
-- which evidence is published.
+Decided on 2026-11-10 for the first pilot (the pilot decisions at the top
+of this file): the finish line and the stack the pilot ships on; the size
+of the first pilot, reviewed at ten paid orders; the hold-admission policy
+for public names, with its numbers, full payment for a late
+reacquisition, same-block ties to the earlier quote, and a race loser
+refunded less the refund fee; the 15-minute hold; refund funding,
+attended hot-wallet refunds with owner-signed PSBTs deferred; how the
+exposure limit is set; and the recovery-time targets. Each is still to
+build or to demonstrate.
+
+Deferred with the features they belong to, so not decisions for the
+first launch: the hold-abuse rule for proof-gated names (how often one
+nullifier may hold a name), since the first launch has no ZK eligibility
+(launch scope, 2026-11-08); and the auction presets, since auctions wait
+until after the MVP (MVP scope, 2026-11-06).
+
+Also decided on 2026-11-10, in the further pilot decisions: buyer
+cancellation before issuance; the cancellation reporting rule; the refund
+deadline; refund fees and their split; the excess minimum; the delivery
+target; and which evidence is published.
+
+These stay open, and are the workspace_owner's to set:
+- the price of each name;
+- the pilot risk budget, and so the exposure limit's value in sats;
+- the buyer's refund fee ceiling, and the operator's fee limits for
+  refunds;
+- the buyer gate's amounts and fee limits (`docs/BUYER-GATE.md`,
+  "Transaction plan").
+
+The auction presets, for when auctions are taken up: start-to-floor
+ratio, step interval, duration, payment window, rounding unit, floor
+behaviour, quote cap, and no rebate after a drop.
+
+The recovery-time targets are to be measured, each with the history it
+was measured on: the sales period, order count, and journal entries and
+bytes. A fast database replay alone doesn't show that issuance and
+refunds can resume, and a small rehearsal alone doesn't show that a full
+replay is fast enough for a representative history. Restoring from a
+snapshot plus the journal since it is needed only if replay misses its
+target. Both were measured once on regtest, and the replay on generated
+journals sized for assumed pilot periods (`regtest/REPORT.md`, scenario
+11); those numbers inform the targets and don't set them.

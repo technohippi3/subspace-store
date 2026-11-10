@@ -15,6 +15,22 @@ public space, fixed-price Bitcoin sales and Nacho as the first buyer
 client, without ZK eligibility (workspace_owner, 2026-11-08); it doesn't
 authorize mainnet transactions or opening sales.
 
+The workspace_owner's direction for the code is a TypeScript store built
+on Effect with explicit state machines, deployed through Alchemy to a
+general Linux VPS; the port is in `ts/`. The pilot decisions of
+2026-11-10 (workspace_owner, adopting a reviewer's recommendation;
+recorded at the top of `docs/spec/PAYMENT-SPEC.md`) set the finish line, a
+first pilot reviewed at ten paid orders, hold admission for public names,
+attended hot-wallet refunds, how the exposure limit is set, the
+recovery-time targets, and that the pilot ships on the TypeScript store
+with the Python controller and runner at first. Further decisions the same
+day set buyer cancellation before issuance, the refund deadline and fees,
+the excess minimum, the delivery target and what evidence is published.
+The prices and the risk budget are still the workspace_owner's to set. The
+rules they change are
+still to build, and they authorize no production deployment, no wallet
+transaction and no opening of sales.
+
 There is a reviewed specification, a reference model of the fixed-price
 rules, and a regtest harness that drives the pinned `subs`, `spaced` and
 Bitcoin Core on a local regtest network. On regtest the harness has issued

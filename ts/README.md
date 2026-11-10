@@ -4,6 +4,16 @@ The start of a port of the store to TypeScript. Nothing runs from it yet:
 the Python service, controller and runner in the parent directory are the
 implementation, and `docs/spec/` stays authoritative.
 
+This port follows the workspace_owner's direction: TypeScript, Effect and
+explicit state machines, deployed through Alchemy to a general Linux host
+over SSH, not a provider's own service resource. The first pilot ships on
+this store once it is complete, with the Python controller and attended
+runner at first (workspace_owner, 2026-11-10; the pilot decisions at the
+top of `docs/spec/PAYMENT-SPEC.md`). Complete means its database, journal
+and HTTP API, built on Effect around these machines, and the regtest
+service, checkout and recovery scenarios passing with it in place of the
+Python store.
+
 Three pure state machines and the store-wide request and quote rules are
 ported so far, from `service/ledger.py`:
 
