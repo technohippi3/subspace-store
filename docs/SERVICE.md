@@ -90,11 +90,26 @@ These are this milestone's choices, recorded so that they can be changed.
   outside the repository, mode 0600; the configuration names their paths.
 - Refund funding. On regtest the store's Bitcoin Core wallet receives the
   payments and signs refunds, as the capped hot wallet of the
-  specification's two options, with `hot_wallet_cap_sats`. A refund spends
+  specification's two options, with `hot_wallet_cap_sats`. That cap limits
+  each refund's amount; it doesn't limit the wallet's balance, which holds
+  every payment the store has received. A refund spends
   the order's own settled, unspent payment outputs, pays `to_buyer` net of
   the fee to the buyer's address, and returns change to the store's wallet.
   A change below dust goes to the fee, as a store cost, never charged to
   the order.
+- Sales pause and exposure limit (S1 to S5). The owner pauses and resumes
+  new quotes with `POST /operator/sales {"paused": true|false}`; `GET
+  /operator/sales` and `/operator/status` report the switch, the current
+  exposure and `policy.exposure_limit_sats` (null for none). Either one
+  refuses a new quote before a destination or a hold is taken, and
+  nothing else: existing orders, payments, issuance and refunds go on.
+  The switch answers 200 once the journal acknowledges it and 202 until
+  then, and `python3 -m service restore` always comes back with sales
+  paused, until the owner resumes them. Exposure counts each active
+  invoice's unpaid remainder, so a partial payment releases nothing. The
+  limit bounds new invoices, not the wallet's balance, and as implemented
+  unpaid invoices can fill it (PAYMENT-SPEC.md). Prices are set per name
+  with `/operator/names`.
 - A refund is built, signed and reserved in one call, and broadcast in
   another. The broadcast is refused until the group's journal entry is
   acknowledged off-host.

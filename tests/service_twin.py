@@ -141,6 +141,9 @@ class TwinStore:
         object.__setattr__(self, "db_path", self.workdir / f"service-restored-{n}.db")
         restore_from_journal(self.db_path, self.journal)
         object.__setattr__(self, "service", self._open())
+        # A restore comes back with sales paused (S5); the owner resumes
+        # them. The model has no sales pause.
+        self.service.set_sales_paused(False)
         self.service.observe()
 
     def __getattr__(self, name):

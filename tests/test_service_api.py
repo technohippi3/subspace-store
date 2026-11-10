@@ -87,7 +87,7 @@ class Api(unittest.TestCase):
 
     def start(self):
         ledger = Ledger(self.dir / "store.db", self.view, Journal(self.dir / "offhost"),
-                        Policy(), clock=lambda: self.now[0])
+                        getattr(self, "policy", None) or Policy(), clock=lambda: self.now[0])
         self.service = Service(ledger, self.view, OPERATOR, SUBS, 1_000_000, poll_seconds=3600)
         self.service.start()
         self.service.serve("127.0.0.1", 0)
@@ -462,6 +462,161 @@ class Api(unittest.TestCase):
         self.assertFalse(self.entry(o2)["batch_entry"])
         self.assertEqual(self.rows(), stored)
 
+    # Sales pause and exposure limit (PAYMENT-SPEC.md, S1 to S3)
+
+    def with_limit(self, limit):
+        self.stop()
+        self.policy = Policy(exposure_limit_sats=limit)
+        self.start()
+
+    def quote(self, link):
+        return self.c.call("POST", link + "/quote")
+
+    def page(self, method, path):
+        with urllib.request.urlopen(urllib.request.Request(self.c.base + path, method=method),
+                                    timeout=10) as r:
+            return r.status, dict(r.headers), r.read().decode()
+
+    def test_S1_a_sales_pause_stops_new_quotes_only_and_survives_a_restore(self):
+        self.list("one@space", "two@space")
+        o1, link1 = self.order("one@space", SPK)
+        self.assertEqual(self.op("POST", "/operator/sales", {"paused": True})[1]["paused"], True)
+        _, r2 = self.req("two@space", SPK2)  # a request is still taken
+        before = self.state()
+        self.assertEqual(self.quote(r2["order_link"]), (409, {"error": "sales are paused"}))
+        self.assertEqual(self.state(), before)  # no destination, no hold
+        self.assertIsNone(self.service.ledger.operator_view("o2")["dest_script"])
+        # The pages say so; the order already quoted goes on and converts.
+        self.assertIn('id="paused"', self.page("GET", "/")[2])
+        self.convert(o1)
+        # Journaled: a restore from the journal alone keeps the pause.
+        self.lose_host()
+        self.restore()
+        self.start()
+        self.assertTrue(self.op("GET", "/operator/sales")[1]["paused"])
+        self.assertEqual(self.quote(r2["order_link"]), (409, {"error": "sales are paused"}))
+        self.assertEqual(self.op("POST", "/operator/sales", {"paused": False})[1]["paused"], False)
+        self.assertEqual(self.quote(r2["order_link"])[0], 200)
+        self.assertNotIn('id="paused"', self.page("GET", "/")[2])
+        self.assertEqual(self.op("POST", "/operator/sales", {"paused": "yes"})[0], 400)
+
+    def test_S2_a_quote_above_the_exposure_limit_is_refused_and_alerted_once(self):
+        self.with_limit(25_000)
+        self.list("one@space", "two@space", "three@space")
+        o1, _ = self.order("one@space", SPK)
+        self.convert(o1)  # 10,000 received
+        self.order("two@space", SPK2)  # 10,000 invited, nothing seen
+        self.assertEqual({k: self.op("GET", "/operator/sales")[1][k]
+                          for k in ("paused", "exposure_sats", "exposure_limit_sats")},
+                         {"paused": False, "exposure_sats": 20_000, "exposure_limit_sats": 25_000})
+        _, r3 = self.req("three@space", recipient("s2-c"))
+        refusal = (409, {"error": "sales are paused: the store is at its exposure limit"})
+        self.assertEqual(self.quote(r3["order_link"]), refusal)
+        self.assertEqual(self.quote(r3["order_link"]), refusal)
+        self.assertEqual(self.alerts("exposure_limit"), ["o3"])  # once, not per refusal
+        self.assertIsNone(self.service.ledger.operator_view("o3")["dest_script"])
+        self.assertTrue(self.c.call("GET", "/names/three@space")[1]["available"])
+        # A payment above the price still arrives and counts: the limit
+        # bounds new invoices, not the balance.
+        self.pay(self.service.ledger.operator_view("o2")["dest_script"], 30_000)
+        self.op("POST", "/operator/observe")
+        self.assertEqual(self.op("GET", "/operator/sales")[1]["exposure_sats"], 40_000)
+
+    def test_S3_a_refund_and_an_expired_hold_lower_exposure(self):
+        self.with_limit(25_000)
+        self.list("one@space", "two@space", "three@space")
+        o1, link1 = self.paid("one@space", SPK, settled=True)
+        self.order("two@space", SPK2)
+        _, r3 = self.req("three@space", recipient("s3-c"))
+        self.assertEqual(self.quote(r3["order_link"])[0], 409)
+        # The unpaid hold on two@space ends: it no longer counts, and a quote
+        # is made; the next refusal alerts again.
+        self.now[0] += Policy().hold_seconds + 1
+        self.op("POST", "/operator/observe")
+        self.assertEqual(self.op("GET", "/operator/sales")[1]["exposure_sats"], 10_000)
+        self.assertEqual(self.quote(r3["order_link"])[0], 200)
+        _, r4 = self.req("two@space", recipient("s3-d"))
+        self.assertEqual(self.quote(r4["order_link"])[0], 409)
+        self.assertEqual(self.alerts("exposure_limit"), ["o3", "o4"])
+        # A refund that settles lowers exposure by what it charged.
+        a = self.refund_group("g1", o1, link1, "refund-s3")
+        led = self.service.ledger
+        led.broadcast("g1", a["txid"])
+        self.chain.add(Tx(a["txid"], tuple(a["inputs"]), tuple(a["outputs"])))
+        for _ in range(6):
+            self.chain.mine()
+        self.op("POST", "/operator/observe")
+        self.assertEqual(led.db.execute("select closed_by from groups").fetchone()[0], "refund-s3")
+        self.assertEqual(self.op("GET", "/operator/sales")[1]["exposure_sats"], 10_000 + 10_000 - 10_000)
+        self.assertEqual(self.quote(r4["order_link"])[0], 200)
+
+    def test_S4_a_partial_payment_releases_no_exposure(self):
+        self.with_limit(25_000)
+        self.list("one@space", "two@space", "three@space")
+        o1, _ = self.order("one@space", SPK)
+        o2, _ = self.order("two@space", SPK2)
+        led = self.service.ledger
+        for oid in (o1, o2):
+            self.pay(led.operator_view(oid)["dest_script"], 1_000, n=0)  # seen only
+        self.op("POST", "/operator/observe")
+        # Each active invoice still reserves its unpaid remainder.
+        self.assertEqual(self.op("GET", "/operator/sales")[1]["exposure_sats"], 20_000)
+        _, r3 = self.req("three@space", recipient("s4-c"))
+        self.assertEqual(self.quote(r3["order_link"])[0], 409)
+        for oid in (o1, o2):
+            self.pay(led.operator_view(oid)["dest_script"], 9_000)
+        self.op("POST", "/operator/observe")
+        self.assertEqual(self.op("GET", "/operator/sales")[1]["exposure_sats"], 20_000)
+        self.assertEqual(self.quote(r3["order_link"])[0], 409)
+
+    def test_S5_an_unacknowledged_pause_says_so_and_a_restore_comes_back_paused(self):
+        self.list("one@space", "two@space")
+        journal = self.service.ledger.journal
+        journal.set_available(False)
+        code, r = self.op("POST", "/operator/sales", {"paused": True})
+        self.assertEqual((code, r["paused"], r["acknowledged"]), (202, True, False))
+        # In effect here at once.
+        self.assertEqual(self.service.ledger.sales_paused(), True)
+        # The host is lost before the journal acknowledges the pause: the
+        # restored store is paused anyway, and says why.
+        self.lose_host()
+        journal.set_available(True)
+        self.restore()
+        self.start()
+        state = self.op("GET", "/operator/sales")[1]
+        self.assertEqual((state["paused"], state["paused_by"]), (True, "restore"))
+        _, r2 = self.req("two@space", SPK2)
+        self.assertEqual(self.quote(r2["order_link"]), (409, {"error": "sales are paused"}))
+        # A store never paused comes back paused from a restore too, and the
+        # owner's resume, acknowledged, reopens sales.
+        self.resume_sales()
+        self.assertEqual(self.quote(r2["order_link"])[0], 200)
+        self.lose_host()
+        self.restore()
+        self.start()
+        self.assertTrue(self.op("GET", "/operator/sales")[1]["paused"])
+
+    def test_S6_a_store_holding_only_a_pause_restarts_and_restores(self):
+        # Paused before any name is listed: the database holds a setting and
+        # nothing else, and the journal has its entry.
+        self.assertEqual(self.op("POST", "/operator/sales", {"paused": True})[0], 200)
+        self.stop()
+        self.start()  # a restart opens it
+        self.assertTrue(self.op("GET", "/operator/sales")[1]["paused"])
+        self.lose_host()
+        with self.assertRaises(RestoreRequired):  # the missing-database guard holds
+            Ledger(self.dir / "store.db", self.view, Journal(self.dir / "offhost"))
+        self.restore()
+        self.start()  # and so does a restore
+        state = self.op("GET", "/operator/sales")[1]
+        self.assertEqual((state["paused"], state["paused_by"]), (True, "restore"))
+        self.stop()
+        self.start()
+        self.resume_sales()
+        self.list("one@space")
+        _, r = self.req("one@space", SPK)
+        self.assertEqual(self.quote(r["order_link"])[0], 200)
+
     # Host loss and restore from the journal alone (H1 to H6)
 
     def lose_host(self):
@@ -472,6 +627,10 @@ class Api(unittest.TestCase):
 
     def restore(self):
         return restore_from_journal(self.dir / "store.db", Journal(self.dir / "offhost"))
+
+    def resume_sales(self):
+        """A restore comes back with sales paused (S5); the owner resumes."""
+        self.assertEqual(self.op("POST", "/operator/sales", {"paused": False})[0], 200)
 
     def table(self, name):
         return [dict(r) for r in self.service.ledger.db.execute(f"select * from {name} order by 1")]
@@ -695,6 +854,7 @@ class Api(unittest.TestCase):
         journal.set_available(True)
         self.restore()
         self.start()
+        self.resume_sales()
         code, q = self.c.call("POST", link + "/quote")
         self.assertEqual((code, q["acknowledged"]), (200, True))
         self.assertEqual(self.c.call("GET", link)[1]["address"], q["address"])
@@ -768,6 +928,7 @@ class Api(unittest.TestCase):
             return replay.pop(0) if replay else fresh(oid)
         self.view.new_destination = restored_wallet
         self.start()
+        self.resume_sales()
         o3, link3 = self.order("three@space", recipient("h11-three"))
         led = self.service.ledger
         scripts = [r["dest_script"] for r in led.db.execute(

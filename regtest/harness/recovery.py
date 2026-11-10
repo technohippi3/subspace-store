@@ -1137,6 +1137,18 @@ def recovery_rehearsal(run):
            "verified with libveritas against anchors read from spaced", got, {EXPECT: exp},
            match=got == exp)
 
+    # A restore comes back with sales paused (S5); the owner resumes them.
+    sales = reg.op("GET", "/operator/sales")
+    got = {"paused": sales["paused"], "paused_by": sales["paused_by"]}
+    r.step(scen, "S5", "the restored store's sales are paused until the owner resumes them",
+           got, {EXPECT: {"paused": True, "paused_by": "restore"}},
+           match=got == {"paused": True, "paused_by": "restore"})
+    resumed = reg.op("POST", "/operator/sales", {"paused": False})
+    got = {"paused": resumed["paused"], "acknowledged": resumed["acknowledged"]}
+    r.step(scen, "S5", "the owner resumes sales", got,
+           {EXPECT: {"paused": False, "acknowledged": True}},
+           match=got == {"paused": False, "acknowledged": True})
+
     # Another batch on A after the recovery, which needs U1(b).
     o8 = _buy(run, scen, "eight", A)
     seven_address = reg.order(o7)["dest_address"]

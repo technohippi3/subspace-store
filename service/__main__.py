@@ -19,7 +19,8 @@ The configuration names files and endpoints, never credentials:
                    "wallet": "store"},
       "tokens": {"operator": "/path/operator-token", "subs": "/path/registry-token"},
       "policy": {"hold_minutes": 15, "excess_minimum_over_fee": 546,
-                 "refund_fee_sats": 300, "hot_wallet_cap_sats": 1000000},
+                 "refund_fee_sats": 300, "hot_wallet_cap_sats": 1000000,
+                 "exposure_limit_sats": null},
       "poll_seconds": 2
     }
 
@@ -68,6 +69,16 @@ def load(path):
     return cfg
 
 
+def _limit(v):
+    """`exposure_limit_sats`: absent or null for no limit, else a positive
+    whole number of sats."""
+    if v is None:
+        return None
+    if not isinstance(v, int) or isinstance(v, bool) or v <= 0:
+        raise ConfigError("policy.exposure_limit_sats must be null or a positive integer")
+    return v
+
+
 def build(cfg):
     b = cfg["bitcoind"]
     node = BitcoinRpc(b["url"], b["cookie"])
@@ -79,7 +90,8 @@ def build(cfg):
     p = cfg.get("policy", {})
     policy = Policy(hold_seconds=int(p.get("hold_minutes", 15) * 60),
                     excess_minimum_over_fee=int(p.get("excess_minimum_over_fee", 546)),
-                    refund_fee=int(p.get("refund_fee_sats", 300)))
+                    refund_fee=int(p.get("refund_fee_sats", 300)),
+                    exposure_limit_sats=_limit(p.get("exposure_limit_sats")))
     ledger = Ledger(cfg["db"], view, Journal(cfg["journal_dir"]), policy)
     return Service(ledger, view, read_token(cfg["tokens"]["operator"]),
                    read_token(cfg["tokens"]["subs"]),

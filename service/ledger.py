@@ -37,6 +37,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from .journal import JournalDown
 
@@ -87,6 +88,11 @@ class Unconfirmed(Refused):
     """Refused because the off-host journal can't acknowledge it now."""
 
 
+class SalesPaused(Refused):
+    """No new quote: sales are paused by the owner, or the quote would bring
+    exposure above the limit."""
+
+
 class RestoreRequired(Exception):
     """No store database, but the off-host journal has entries."""
 
@@ -102,6 +108,9 @@ class Policy:
     hold_seconds: int = 15 * 60
     excess_minimum_over_fee: int = 546
     refund_fee: int = 300  # sats, refunds sent net of fee
+    # What new quotes may bring the store's exposure to; None for no limit
+    # (PAYMENT-SPEC.md, "Sales pause and exposure limit").
+    exposure_limit_sats: Optional[int] = None
 
 
 class ChainView:
@@ -204,6 +213,7 @@ create table if not exists journal_backlog (
 );
 create table if not exists pending (handle text primary key, script_pubkey text not null);
 create table if not exists committed (handle text primary key, root text not null);
+create table if not exists settings (key text primary key, value text not null);
 create table if not exists certificates (
   oid text primary key references orders(oid), message blob not null, delivered_at real not null
 );
@@ -219,11 +229,12 @@ def token_hash(token):
 
 
 # What the journal records, in the order a restore writes them back.
-RECORD_KINDS = ("name", "order", "group", "alert", "authorization")
+RECORD_KINDS = ("name", "order", "group", "alert", "authorization", "setting")
 
 
 def _has_store(path):
-    """True if the database at `path` holds any name or order. Read-only:
+    """True if the database at `path` holds any record the journal records:
+    a name, order, refund group, alert, authorization or setting. Read-only:
     it never creates or changes the file."""
     if not path.exists():
         return False
@@ -234,8 +245,12 @@ def _has_store(path):
         db = sqlite3.connect(path.resolve().as_uri() + ("?mode=ro" if wal else "?mode=ro&immutable=1"),
                              uri=True)
         try:
+            present = {r[0] for r in db.execute("select name from sqlite_master "
+                                                "where type = 'table'")}
+            # A database from before a table existed simply lacks it.
             return any(db.execute(f"select 1 from {t} limit 1").fetchone()
-                       for t in ("names", "orders"))
+                       for t in ("names", "orders", "groups", "alerts", "authorizations",
+                                 "settings") if t in present)
         finally:
             db.close()
     except sqlite3.Error:
@@ -344,6 +359,9 @@ class Ledger:
                                         (int(key),)).fetchone())
         if kind == "name":
             return dict(self._name(key))
+        if kind == "setting":
+            return dict(self.db.execute("select * from settings where key = ?",
+                                        (key,)).fetchone())
         if kind == "group":
             g = dict(self._group(key))
             g["attempts"] = [dict(a) for a in self._attempts(key)]
@@ -534,6 +552,84 @@ class Ledger:
         self.flush_journal()
         return oid, token
 
+    # Sales pause and exposure limit (PAYMENT-SPEC.md)
+
+    def _setting(self, key):
+        row = self.db.execute("select value from settings where key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def _put_setting(self, key, value, journaled=True):
+        self.db.execute("insert into settings(key, value) values (?, ?) "
+                        "on conflict(key) do update set value = excluded.value", (key, value))
+        if journaled:
+            self._dirty("setting", key)
+
+    def sales_paused(self):
+        return self._setting("sales_paused") == "1"
+
+    def _pause_acknowledged(self):
+        return not self.db.execute("select 1 from journal_backlog where kind = 'setting' "
+                                   "and key in ('sales_paused', 'sales_paused_reason')"
+                                   ).fetchone()
+
+    def set_sales_paused(self, paused):
+        """The owner's switch. It takes effect here at once. Returns whether
+        the journal acknowledged it; until then a host loss forgets it, and
+        setting it again confirms it. A restore always comes back paused,
+        so a forgotten pause never silently reopens sales (S1, S5)."""
+        if not isinstance(paused, bool):
+            raise Invalid("paused must be true or false")
+        with self.tx():
+            self._put_setting("sales_paused", "1" if paused else "0")
+            self._put_setting("sales_paused_reason", "owner" if paused else "")
+        self.flush_journal()
+        return self._pause_acknowledged()
+
+    def exposure(self):
+        """Every output seen or mined paying an order's address, less what
+        refunds have charged, plus the unpaid remainder of every quoted
+        order holding its name: its price less what is seen paying it, so a
+        partial payment releases nothing (S2, S4)."""
+        received = outstanding = 0
+        for o in self.db.execute("select o.oid, o.status, o.price, n.hold_order from orders o "
+                                 "join names n on n.name = o.name "
+                                 "where o.dest_script is not null").fetchall():
+            seen = sum(x["value"] for x in self.outputs(o["oid"]))
+            received += seen
+            if o["status"] == "quoted" and o["hold_order"] == o["oid"]:
+                outstanding += max(0, (o["price"] or 0) - seen)
+        refunded = self.db.execute(
+            "select coalesce(sum(a.charged), 0) from groups g join attempts a "
+            "on a.txid = g.closed_by").fetchone()[0]
+        return received - refunded + outstanding
+
+    def sales_state(self):
+        return {"paused": self.sales_paused(),
+                "paused_by": self._setting("sales_paused_reason") or None,
+                "acknowledged": self._pause_acknowledged(),
+                "exposure_sats": self.exposure(),
+                "exposure_limit_sats": self.policy.exposure_limit_sats}
+
+    def _admit_quote(self, oid, price):
+        """Refuses a new quote while sales are paused or when it would bring
+        exposure above the limit; the owner is alerted once until a quote is
+        made again (S2)."""
+        if self.sales_paused():
+            raise SalesPaused("sales are paused")
+        limit = self.policy.exposure_limit_sats
+        if limit is None:
+            return
+        exposure = self.exposure()
+        if exposure + price > limit:
+            if self._setting("exposure_alerted") != "1":
+                with self.tx():
+                    self._alert(oid, "exposure_limit", {"exposure_sats": exposure,
+                                                        "price_sats": price,
+                                                        "limit_sats": limit})
+                    self._put_setting("exposure_alerted", "1", journaled=False)
+                self.flush_journal()
+            raise SalesPaused("sales are paused: the store is at its exposure limit")
+
     def quote(self, oid):
         """Fix the price and take the name's temporary hold, with a fresh
         destination script from the payment wallet.
@@ -556,6 +652,7 @@ class Ledger:
         n = self._name(o["name"])
         if n["hold_order"] is not None or n["fulfillment_order"] is not None:
             raise Refused("taken for now")
+        self._admit_quote(oid, n["price"])
         if not self.journal.available():
             raise Unconfirmed("the off-host journal is unavailable; no quote was made")
         address, script, skipped = self._fresh_destination(oid)
@@ -564,6 +661,9 @@ class Ledger:
             n = self._name(o["name"])
             if n["hold_order"] is not None or n["fulfillment_order"] is not None:
                 raise Refused("taken for now")
+            if self.sales_paused():
+                raise SalesPaused("sales are paused")
+            self._put_setting("exposure_alerted", "0", journaled=False)
             if skipped:
                 # The payment wallet is behind the journal: the owner is told.
                 self._alert(oid, "destination_held", {"skipped": skipped})
@@ -1357,6 +1457,15 @@ def restore_from_journal(db_path, journal):
                     # when it was taken.
                     _insert(db, "attempts", f"attempt {a.get('txid')} of {key}",
                             dict(a, journaled=1))
+            for key, state in sorted(latest["setting"].items()):
+                _insert(db, "settings", f"setting {key}", state)
+            # A pause the journal never acknowledged left no trace here, so a
+            # restore always comes back paused, until the owner resumes
+            # sales (S5). The marker goes to the journal on the next flush.
+            for key, value in (("sales_paused", "1"), ("sales_paused_reason", "restore")):
+                db.execute("insert or replace into settings(key, value) values (?, ?)",
+                           (key, value))
+                db.execute("insert or ignore into journal_backlog values ('setting', ?)", (key,))
             for kind, table in (("alert", "alerts"), ("authorization", "authorizations")):
                 for key, state in sorted(latest[kind].items(), key=lambda kv: int(kv[0])):
                     _insert(db, table, f"{kind} {key}", state)

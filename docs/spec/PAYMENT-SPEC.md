@@ -445,8 +445,102 @@ acquisition, not only concurrent holds: a per-passport quota that counts
 active holds still lets the same holder take the name again after every
 expiry. Proof-gated names need a rule on how often one nullifier may hold a
 name. Public names have no identity to count, so they need an admission
-policy of their own. No case covers this yet, because the rule isn't
-decided.
+policy of their own. The design below is proposed for them, for review;
+it isn't adopted or implemented, and no case covers it yet.
+
+Proposed: hold admission for public names, with the exposure limit
+(draft 2026-11-10, revised after review; not adopted or implemented).
+Without an identity, the one thing a caller can't repeat for free is a
+payment. So free reservations are rationed per name and store-wide, and
+nothing a caller can do for free may stop sales: at worst it removes the
+reservation, and the name is still sold to whoever pays first. Only money
+that has actually arrived can stop new quotes.
+1. Reservations are rationed per name, whoever asks. Every hold counts
+   against its name's ration unless its order converted while the hold
+   lasted. A payment seen in the mempool exempts nothing: one that never
+   confirms costs nothing at all, since it pays no miner fee and its coins
+   can be spent elsewhere. A name may have at most
+   `free_holds_per_name` counted holds (proposal: 2) among the quotes made
+   for it in the last `free_hold_window` (proposal: 24 hours). The ration
+   counts by name, not by request, link or script, so fresh requests with
+   fresh scripts draw on the same ration.
+2. Store-wide, at most `holds_open` holds (proposal: 10) are active at
+   once, counted the same way.
+3. Admission reads only confirmed money. Confirmed funds are every
+   output at `confirmed` depth or deeper paying an order's address, less
+   what refunds have charged. Reserved funds are the remainder of every
+   active hold: its price less what is confirmed paying it, so a partial
+   payment, seen or confirmed, releases nothing, and an active hold counts
+   at its full price. Pending payments, seen but not confirmed, count in
+   neither: they are reported to the owner, but no admission decision
+   reads them, because they cost nothing to make or withdraw.
+4. A quote takes a hold only if the name's ration and the store-wide cap
+   allow it, and confirmed plus reserved funds plus the price stay within
+   `exposure_limit_sats`. Otherwise the quote is pay-first, not refused.
+   A pay-first quote fixes the price and gives an address but takes no
+   hold and reserves nothing, and the name still shows as available.
+5. A pay-first order wins the name only with the full price: the first
+   whose `confirmed_sum` reaches its quoted price while the name has no
+   hold and no fulfillment reservation takes the hold at that price and
+   proceeds. That holds whenever the payment confirms, before or after the
+   quote's `hold_seconds`. A partial confirmed payment never takes the
+   hold: the late-payment rule's acceptance of any positive confirmed
+   amount doesn't apply to pay-first orders. Any pay-first order that
+   doesn't win is refund due for its settled funds, net of the refund
+   fee. Before showing the address, checkout says plainly that another
+   buyer may pay first, and that the payment then comes back less the fee.
+6. Quotes are refused outright only while sales are paused, or when
+   confirmed funds alone plus the price would pass the limit. Neither
+   unpaid invoices nor mempool payments can bring that about.
+7. Pay-first waits for `confirmed`, not seen, because a mempool payment
+   can be replaced or withdrawn for nothing. A pay-first quote's price
+   holds for `hold_seconds`, like any quote. A full payment confirming
+   later wins at the quoted price only if the current price is no higher,
+   as for a late payment, and anything above the price is excess.
+8. The ration and the cap are journaled with the names and orders they
+   count, so a restore doesn't hand out a fresh ration.
+
+What this design leaves possible:
+- A hold lasts 15 minutes, or, if any payment to it is seen before then,
+  until six blocks after that payment was seen (Extension, below,
+  unchanged). Six blocks is about an hour on average and can be much
+  longer. So a caller who broadcasts a small payment, even one that later
+  disappears, keeps a hold for about 15 minutes plus six blocks. If that
+  payment never confirms it costs them nothing; if it confirms, they pay
+  its fee and get the payment back only above the excess minimum. Each
+  name can be held that way at most twice in 24 hours, and at most 10
+  names at once across the store.
+- A caller can spend every name's ration, or fill the store-wide cap or
+  the reserved part of the limit, for free or for fees. Honest buyers then
+  get pay-first quotes: no reservation, a race risk, and, if they lose,
+  a refund less the fee. Sales go on.
+- The limit bounds confirmed money and the invoices that hold a name. It
+  doesn't bound what is in flight: pending payments and pay-first
+  payments count only once they confirm. So the wallet can pass the limit
+  by every payment already broadcast, plus whatever pay-first buyers pay
+  before the stop takes effect; a pay-first payment that doesn't win is
+  refunded once it settles. Counting pending payments or unpaid pay-first
+  invoices would let anyone trip the stop for free, by broadcasting
+  payments they then withdraw or by asking for quotes, and stop all
+  sales, which is what this design rules out. The owner sees pending
+  payments, and can pause sales by hand.
+- The existing late-payment rule, for an order whose own hold ended, lets
+  any positive confirmed amount take a new hold when the name is free. A
+  small confirmed payment can therefore take a name back for six blocks
+  and more. Under this design that new hold counts against the name's
+  ration. Whether that rule should also require the full price is a point
+  for review; this draft doesn't change it.
+- Two honest buyers can pay the same pay-first name before either
+  confirms. The one who confirms second pays the refund fee. Whether the
+  store refunds that loser in full is a point for the owner.
+- Requests and quotes still create orders and fresh addresses for free.
+  That costs database rows and, for recovery, wallet look-ahead: a payment
+  wallet restored from its backup looks ahead a fixed number of addresses
+  (Bitcoin Core's keypool, 1,000 by default), and misses payments beyond
+  them until that is raised. The proposed mitigations are rate limiting
+  per client address at the HTTPS proxy, an owner alert past a count of
+  open quotes, and a restore procedure that raises the look-ahead to the
+  number of addresses the journal shows given out.
 
 Extension. If one of the order's outputs is first seen before
 `quote_expires_at`, the store records `seen_height`, the tip height at that
@@ -481,6 +575,42 @@ settled funds. Funds above the price are excess and are refundable once
 settled, because `price_reserve` keeps the price back. An excess smaller than
 its refund fee plus 546 sats is not refunded, and checkout discloses that
 minimum (proposal).
+
+Sales pause and exposure limit, as implemented (S1 to S5). Both stop new
+quotes and nothing else. While either applies, a quote is refused before
+anything is taken: no destination, no hold. The buy page says sales are
+paused. Requests, existing quotes and holds, payments, late payments,
+conversion, issuance, cancellation and refunds go on as before. Prices are
+set per name by the owner (`/operator/names`), and a quote fixes the price
+as above.
+- The owner pauses and resumes sales through the operator API. The switch
+  takes effect at once. The answer says whether the journal acknowledged
+  it; until it does, a host loss forgets it, and setting it again confirms
+  it, as with a cancellation. A restore from the journal always comes
+  back with sales paused, marked as paused by the restore, so a pause the
+  journal never acknowledged can't silently reopen sales. The owner
+  resumes them once the recovery is checked (S1, S5).
+- `exposure_limit_sats` (optional) bounds what new quotes can add.
+  Exposure is held funds (every output seen or mined paying an order's
+  address, less what refunds have charged) plus reserved funds (the
+  unpaid remainder of every quoted order holding its name: its price less
+  what is seen paying it). A partial payment therefore releases nothing
+  (S4). A quote that would bring exposure above the limit is refused, and
+  the owner is alerted once until a quote is made again (S2). A refund
+  lowers exposure, and an expired unpaid hold no longer counts (S3).
+- As implemented, unpaid invoices count toward the limit, so anyone can
+  fill it with free quotes and stop all sales until their holds end. The
+  admission design above replaces that refusal with a pay-first quote; a
+  public pilot needs that design, or no limit, not this refusal alone.
+- The limit stops new invoices; it isn't a cap on the wallet's balance.
+  Addresses already given out can still be paid, late or in excess, and a
+  paid order's funds stay in the wallet, so the balance can exceed the
+  limit. Nothing sweeps funds out: the refund builder spends each order's
+  own payment outputs, so moving them would leave that order's refund
+  unbuildable.
+- Proposal for the pilot, once the owner sets the price: a limit of ten
+  orders at the highest listed price. Reaching it pauses new quotes until
+  the owner raises it on purpose.
 
 ## Dutch auction
 
@@ -1414,6 +1544,18 @@ tests are the service's API tests over a simulated chain, not model results.
 | V16 | two converted orders for different handles, stored on one script | the service starts | both alerted; neither passes batch entry; records unchanged |
 | V17 | a quoted order whose hold is active, on a script that another handle's order then converts on; separately, a quoted order with an active hold stored with an OP_RETURN recipient, from a database without the audit column | the quote is asked again; the service starts and the quote is asked again | the first refused "script already used"; the second flagged and alerted once, refused "recipient not accepted", and its order link shows no address; its record and hold unchanged |
 
+
+Sales pause and exposure limit ("Fixed-price sales"). Service API tests
+over a simulated chain, not model results. The price is 10,000.
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| S1 | `one` quoted; the owner pauses sales; a request for `two` | `two`'s quote is asked; `one` is paid; the host is lost and restored from the journal; the owner resumes sales | `two` refused "sales are paused", with no destination and no hold, and the pages say sales are paused; `one` converts; the restored store is still paused and refuses again; after resuming, `two` is quoted; a non-boolean switch is refused |
+| S2 | limit 25,000; `one` converted (10,000 received); `two` quoted with nothing seen | a quote for `three`, twice; then `two` is paid 30,000 | exposure 20,000; both quotes refused at the exposure limit, with no destination and the name still available; the owner alerted once; after the payment, exposure 40,000, above the limit |
+| S3 | limit 25,000; `one` paid and settled; `two` quoted and unpaid; `three`'s quote refused | `two`'s hold expires; `three` quotes; a new `two` quote; `one` is cancelled and its 10,000-charge refund settles | exposure 10,000 after the expiry and `three` quoted; the new `two` quote refused and alerted again; after the refund, exposure 10,000 and the `two` quote made |
+| S4 | limit 25,000; `one` and `two` quoted | 1,000 seen paying each; a quote for `three`; then each paid in full | exposure stays 20,000: each active invoice reserves its unpaid remainder; `three` refused; after full payment, still 20,000, and `three` still refused |
+| S5 | the journal down | the owner pauses sales; the host is lost before the journal acknowledges it and restored; the owner resumes; then the host is lost again and restored | the pause answered 202, in effect but unacknowledged; the restored store paused, by the restore, and refuses a quote; after the acknowledged resume a quote is made; the second restore comes back paused too |
+| S6 | a fresh store, paused before any name is listed: its database holds only the setting | restart; then the host is lost and restored from the journal; restart again | the restart opens it; with the database gone, startup still refuses until a restore; the restored store starts, paused by the restore, and after a resume quotes again |
 Service restore ("Host loss and restore"). The model restores whole from its
 journal (J1 and its generated host losses); these are the service's own
 restore. H1 to H6 and H8 to H11 are service API tests over a simulated
@@ -1529,7 +1671,11 @@ These stay proposals until decided:
 - the hold-abuse rule under "Fixed-price sales", for proof-gated and for
   public names; it blocks any public pilot. The 2026-11-08 launch scope
   makes the admission policy for public names the one that matters first,
-  and doesn't decide it;
+  and doesn't decide it. A design for public names (rationed holds,
+  then pay-first, with the exposure limit) is proposed there for review,
+  with its proposed numbers and whether a buyer who loses a pay-first race
+  is refunded in full;
+- the exposure limit's value (under "Sales pause and exposure limit");
 - the recovery-time targets: how long a store replay from the journal may
   take, and how long the complete operator recovery may take, store,
   controller, `subs` and wallet together, until issuance and refunds can

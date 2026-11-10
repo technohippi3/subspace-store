@@ -294,6 +294,17 @@ class Service:
             b = body()
             led.list_name(b.get("handle"), b.get("price"))
             return 200, {"ok": True}
+        if path == "/operator/sales" and method == "GET":
+            return 200, led.sales_state()
+        if path == "/operator/sales" and method == "POST":
+            if led.set_sales_paused(body().get("paused")):
+                return 200, led.sales_state()
+            # In effect here, but a host loss before the acknowledgment
+            # forgets it; a restore comes back paused either way. Setting
+            # it again confirms it.
+            return 202, dict(led.sales_state(),
+                             detail="recorded locally, not yet acknowledged off-host; "
+                                    "set it again to confirm")
         if path == "/operator/observe" and method == "POST":
             led.observe()
             return 200, {"ok": True}
@@ -305,7 +316,8 @@ class Service:
             backlog = led.db.execute("select count(*) from journal_backlog").fetchone()[0]
             identity = getattr(self.view, "chain_identity", None)
             return 200, {"startup": self.startup, "journal_backlog": backlog,
-                         "tip": self.view.tip, "chain": identity() if identity else None}
+                         "tip": self.view.tip, "chain": identity() if identity else None,
+                         "sales": led.sales_state()}
         if path == "/operator/issuing" and method == "POST":
             return 200, {"acknowledged": led.mark_issuing_all(body().get("oids", []))}
         if path == "/operator/pending" and method == "POST":

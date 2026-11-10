@@ -16,7 +16,8 @@
     "hold_minutes": 15,
     "excess_minimum_over_fee": 546,
     "refund_fee_sats": 300,
-    "hot_wallet_cap_sats": 1000000
+    "hot_wallet_cap_sats": 1000000,
+    "exposure_limit_sats": null
   },
   "poll_seconds": 2
 }

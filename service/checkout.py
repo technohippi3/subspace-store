@@ -106,6 +106,15 @@ def refused(code, title, reason):
 # Pages
 
 
+def _paused_note(led):
+    """While sales are paused no invoice is issued; orders already invoiced
+    go on (PAYMENT-SPEC.md, "Sales pause and exposure limit")."""
+    if not led.sales_paused():
+        return ""
+    return ('<p id="paused" class="box">Sales are paused for now: no new invoices are '
+            'issued. Orders that already have an invoice go on as usual.</p>')
+
+
 def names_page(led):
     rows = led.db.execute("select name, price, hold_order, fulfillment_order from names "
                           "order by name").fetchall()
@@ -117,7 +126,7 @@ def names_page(led):
                 else esc(r["name"]))
         items.append(f'<tr data-handle="{esc(r["name"])}" data-available="{str(free).lower()}">'
                      f'<td>{link}</td><td>{r["price"]:,} sats</td><td>{state}</td></tr>')
-    body = ("<h1>Names for sale</h1>"
+    body = ("<h1>Names for sale</h1>" + _paused_note(led) +
             "<p>Fixed prices, paid in bitcoin. You need a public request from your "
             "client, such as a Nacho request, for the name you choose.</p>"
             + ("<table><tr><th>Name</th><th>Price</th><th></th></tr>" + "".join(items)
@@ -129,7 +138,7 @@ def buy_page(led, handle):
     row = led.db.execute("select name, price from names where name = ?", (handle,)).fetchone()
     if row is None:
         return not_found()
-    body = f"""<h1>{esc(row["name"])}</h1>
+    body = f"""<h1>{esc(row["name"])}</h1>{_paused_note(led)}
 <p>Price: <span id="price">{row["price"]:,}</span> sats, fixed.</p>
 <div class="box"><form method="post" action="/buy/{quote(row["name"], safe="@")}">
 <p><label for="request">Paste the public request your client made for

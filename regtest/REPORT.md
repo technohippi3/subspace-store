@@ -880,6 +880,25 @@ doesn't touch; the machine's five-minute load average was about 7 just
 after the run. The times are recorded as measured and aren't a
 measurement of the change.
 
+## Sales pause after a restore (2026-11-10)
+
+The store's sales pause and exposure limit (cases S1 to S6 in
+`PAYMENT-SPEC.md`) are service API tests over a simulated chain, not
+regtest evidence. One of their rules changes what a restore does: `python3
+-m service restore` now always brings the store back with sales paused,
+marked as paused by the restore, so a pause the journal never acknowledged
+can't silently reopen sales. Scenario 11 buys names after its restore, so
+it gained two required steps, checked against the real stack.
+
+Run `recovery-20261110T063824Z-59ce82`, scenario 11: verdict pass, exit 0,
+all 72 required steps agreeing and 13 informational. The two new steps,
+both S5: the restored store reported sales paused by the restore, and the
+owner's resume answered paused false, acknowledged by the journal. Every
+other step matched `recovery-20261110T050046Z-f7c0fa`, including A19's
+re-delivered certificate and the next batch on `@test10000` reaching
+`fulfilled`. The complete recovery took 29.7 s and the store's replay
+0.16 s.
+
 ## The tightened harness
 
 Since fp4:
@@ -958,9 +977,9 @@ are the relay's `/query` answers from scenario 6: two from before
 publication and two from the delivery lookups. The six combined runs, the
 service runs and `records-20261108T161951Z-0c9721` are kept as well, and so
 are the five passing checkout runs, whose runner verifications are under
-`runner/`, and the four recovery runs of scenario 11, whose lost host's
-runner verifications are under `lost-host-runner/`, and the last one's
-buyer download under `buyer-after-restore/`: 270 messages in all.
+`runner/`, and the five recovery runs of scenario 11, whose lost host's
+runner verifications are under `lost-host-runner/`, and the last two runs'
+buyer downloads under `buyer-after-restore/`: 284 messages in all.
 Each message is kept with its root anchors and libveritas output.
 `verify-evidence.sh` verifies them all offline, and `evidence/README.md`
 says how. fp4's certificate isn't kept in the repository, because its
