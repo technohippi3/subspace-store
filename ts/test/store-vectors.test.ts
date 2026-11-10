@@ -14,7 +14,9 @@ import {
   considerDestination, exposure, startDestinationSearch,
 } from "../src/admission.ts";
 import type { OrderStatus } from "../src/order.ts";
-import { recipientBlock, recipientProblem } from "../src/recipient.ts";
+import {
+  auditRecipients, conflictAlerts, recipientBlock, recipientProblem,
+} from "../src/recipient.ts";
 import { type StoreView, orderIn } from "../src/view.ts";
 import { Failures, describeSources, recordVectors } from "./ledger-vectors.ts";
 
@@ -30,16 +32,18 @@ interface PyView {
   refunded_total: number;
 }
 interface Vector {
-  kind: "request" | "quote" | "recipient_problem" | "recipient_block";
+  kind: "request" | "quote" | "recipient_problem" | "recipient_block" | "audit_recipients"
+    | "alert_conflicts";
   before: PyView & { name?: string; recipient_spk?: string };
   observation: { sales_paused?: boolean; exposure_alerted?: boolean;
                  exposure_limit?: number | null; journal_available?: boolean; exposure?: number;
-                 destinations?: string[] };
+                 destinations?: string[]; conflict_alerted?: string[] };
   event: { handle?: string; script?: string; oid?: string; draws?: Destination[] };
   outcome: { refusal?: string | null;
              result: string | null;
              reason?: string | null; alerts?: StoreAlert[]; destination?: Destination | null;
-             exposure_alerted_after?: boolean };
+             exposure_alerted_after?: boolean;
+             flagged?: { oid: string; problem: string }[] };
   source: "directed" | "generated" | null;
 }
 
@@ -135,6 +139,11 @@ test("the store-wide rules make the Python ledger's decisions and judgements", (
     "recipient_problem:invalid script", "recipient_problem:store destination script",
     "recipient_block:null", "recipient_block:script conflict", "recipient_block:invalid script"];
   assert.deepEqual(required.filter((k) => !outcomes.has(k)), [], "outcomes never recorded");
+  const raised = (kind: string, alert: string) => rec.vectors.some((v) => v.kind === kind
+    && (v.outcome.alerts ?? []).some((a) => a.kind === alert));
+  assert.ok(raised("audit_recipients", "recipient_invalid"), "no audit that flagged a recipient");
+  assert.ok(raised("audit_recipients", "recipient_conflict"), "no audit that alerted a conflict");
+  assert.ok(raised("alert_conflicts", "recipient_conflict"), "no conflict alerted while running");
   assert.ok(rec.vectors.some((v) => v.kind === "quote" && v.outcome.result === "quoted"
     && (v.event.draws?.length ?? 0) > 1), "no quote that skipped a held address");
 
@@ -149,6 +158,15 @@ test("the store-wide rules make the Python ledger's decisions and judgements", (
       continue;
     }
     const view = toView(v.before);
+    if (v.kind === "audit_recipients" || v.kind === "alert_conflicts") {
+      const alerted = new Set(need(v.observation.conflict_alerted, "conflict_alerted"));
+      const got = v.kind === "audit_recipients" ? auditRecipients(view, alerted)
+        : { flagged: [], alerts: conflictAlerts(view, alerted) };
+      if (!same(got.flagged, v.outcome.flagged)) fail(`flagged ${JSON.stringify(got.flagged)}`);
+      const alerts = got.alerts.map(({ oid, kind, detail }) => ({ oid, kind, detail }));
+      if (!same(alerts, v.outcome.alerts)) fail(`alerts ${JSON.stringify(alerts)}`);
+      continue;
+    }
     if (v.kind === "recipient_block") {
       const o = orderIn(view, need(v.event.oid, "oid"));
       const got = o === undefined ? "no such order" : recipientBlock(view, o);

@@ -457,6 +457,35 @@ def wrap_recipient_block(orig):
     return recipient_block
 
 
+def conflict_alerted(led):
+    return sorted({r["oid"] for r in led.db.execute(
+        "select oid from alerts where kind = 'recipient_conflict'")})
+
+
+def wrap_audit(orig, kind):
+    """The start-up audit, or the conflict alerts on their own: the orders it
+    flags and the alerts it raises. The audit's own conflict alerts are part
+    of the audit's vector."""
+    def audit(self):
+        if rec.depth.get("audit"):
+            return orig(self)
+        before = {"state": store_view(self), "obs": {"conflict_alerted": conflict_alerted(self)}}
+        first = last_n(self, "alerts")
+        rec.depth["audit"] = 1
+        try:
+            orig(self)
+        finally:
+            rec.depth["audit"] = 0
+        after = store_view(self)
+        flagged = [{"oid": a["oid"], "problem": a["recipient_problem"]}
+                   for a, b in zip(after["orders"], before["state"]["orders"])
+                   if a["recipient_problem"] != b["recipient_problem"]]
+        alerts = [{"oid": r["oid"], "kind": r["kind"], "detail": json.loads(r["detail"])}
+                  for r in self.db.execute("select * from alerts where n > ? order by n", (first,))]
+        record(kind, before, {}, None, None, {"result": None, "flagged": flagged, "alerts": alerts})
+    return audit
+
+
 def wrap_store_quote(orig):
     """A quote at the store's level: its admission, every address the wallet
     gave out while choosing one, and the result."""
@@ -519,6 +548,8 @@ def install(family):
         Ledger.quote = wrap_store_quote(Ledger.quote)
         Ledger._recipient_problem = wrap_recipient_problem(Ledger._recipient_problem)
         Ledger.recipient_block = wrap_recipient_block(Ledger.recipient_block)
+        Ledger.audit_recipients = wrap_audit(Ledger.audit_recipients, "audit_recipients")
+        Ledger._alert_conflicts = wrap_audit(Ledger._alert_conflicts, "alert_conflicts")
     elif family == "incident":
         for name, (leading, oid_of, event_of) in INCIDENT_COMMANDS.items():
             setattr(Ledger, name, wrap_command(INCIDENT, name, getattr(Ledger, name), leading,
@@ -881,6 +912,19 @@ def run_recipient_audit_directed():
             d.chain.add(Tx(f"pay{d.n}", ((f"coin{d.n}", 0),),
                            ((led._order(oid)["dest_script"], d.PRICE),)))
         d.mine(3)
+        # Two orders for different handles convert on one script while the
+        # store runs: each is alerted once, and not again.
+        for name in ("seven@space", "eight@space"):
+            led.list_name(name, d.PRICE)
+            oid, _ = led.request(name, recipient("audit-shared"))
+            led.quote(oid)
+            d.n += 1
+            d.chain.add(Tx(f"pay{d.n}", ((f"coin{d.n}", 0),),
+                           ((led._order(oid)["dest_script"], d.PRICE),)))
+        rec.source = "directed"
+        d.mine(3)
+        led.observe()
+        rec.source = None
         own = led._order(d.oid)["dest_script"]
         led.close()
         db = sqlite3.connect(d.path)
@@ -907,6 +951,18 @@ def run_recipient_audit_directed():
         db.execute("update orders set recipient_spk = ? where oid = ?",
                    (recipient("audit-two@space"), three))
         db.execute("update orders set recipient_problem = null")
+        # Two issuing orders for different handles on one script, from before
+        # the conflict alerts: the audit alerts both, issuing.
+        for oid, name in (("o92", "nine@space"), ("o93", "ten@space")):
+            db.execute("insert into names(name, price, fulfillment_order) values (?, ?, ?)",
+                       (name, d.PRICE, oid))
+            db.execute("insert into orders(oid, token_hash, name, recipient_spk, status, price, "
+                       "price_reserve, created_at) values (?, ?, ?, ?, 'issuing', ?, ?, 0)",
+                       (oid, f"audit-token-{oid}", name, recipient("audit-issuing"), d.PRICE,
+                        d.PRICE))
+        # A flag its recipient no longer earns: the audit never clears one.
+        db.execute("update orders set recipient_problem = 'invalid script' where oid = ?",
+                   (d.oid,))
         db.commit()
         db.close()
         rec.source = "directed"

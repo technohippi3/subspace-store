@@ -11,7 +11,8 @@ import {
 } from "../src/admission.ts";
 import type { OrderStatus } from "../src/order.ts";
 import {
-  canonicalHandle, conflicting, recipientBlock, recipientProblem, validP2tr,
+  auditRecipients, canonicalHandle, conflictAlerts, conflicting, recipientBlock, recipientProblem,
+  validP2tr,
 } from "../src/recipient.ts";
 import type { OrderSummary, StoreView } from "../src/view.ts";
 
@@ -168,4 +169,33 @@ test("the start-up audit judges a stored recipient by today's rules", () => {
                "store destination script");
   // A malformed handle is reported before anything else.
   assert.equal(judge("One@space", "6a00"), "invalid handle");
+});
+
+test("the audit flags a failing recipient once and never clears a flag", () => {
+  const bad = order("o1", "one@space", "requested", { recipientScript: "6a00" });
+  const stale = order("o2", "two@space", "requested", { recipientScript: key(2),
+                                                        recipientProblem: "invalid script" });
+  const first = auditRecipients(view([bad, stale]), new Set());
+  assert.deepEqual(first.flagged, [{ oid: "o1", problem: "invalid script" }]);
+  assert.deepEqual(first.alerts, [{ oid: "o1", kind: "recipient_invalid", detail: "invalid script" }]);
+  const flaggedBad = { ...bad, recipientProblem: "invalid script" };
+  assert.deepEqual(auditRecipients(view([flaggedBad, stale]), new Set()),
+                   { flagged: [], alerts: [] });
+});
+
+test("each paid order in a conflict is alerted once", () => {
+  const v = view([order("o1", "one@space", "converted"), order("o2", "two@space", "converted"),
+                  order("o3", "three@space", "quoted")]);
+  assert.deepEqual(conflictAlerts(v, new Set()), [
+    { oid: "o1", kind: "recipient_conflict", detail: { status: "converted", conflicts: ["o2"] } },
+    { oid: "o2", kind: "recipient_conflict", detail: { status: "converted", conflicts: ["o1"] } },
+  ]);
+  assert.deepEqual(conflictAlerts(v, new Set(["o1", "o2"])), []);
+  // Every paid status, issuing included; an issuing order yields only to
+  // another issuing one.
+  const issuing = view([order("o1", "one@space", "issuing"), order("o2", "two@space", "issuing")]);
+  assert.deepEqual(conflictAlerts(issuing, new Set()).map((a) => a.detail),
+                   [{ status: "issuing", conflicts: ["o2"] }, { status: "issuing", conflicts: ["o1"] }]);
+  // The audit alerts conflicts too, after flagging.
+  assert.equal(auditRecipients(v, new Set(["o1"])).alerts.length, 1);
 });

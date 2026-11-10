@@ -24,7 +24,8 @@ ported so far, from `service/ledger.py`:
   new one after a resolution.
 - `src/recipient.ts` and `src/admission.ts`, the rules that span orders,
   read from a store-wide view (`src/view.ts`): a request's canonical
-  handle and P2TR key, script claims and conflicts, a quote's guards in
+  handle and P2TR key, script claims and conflicts, the start-up audit's
+  flags and the conflict alerts, each raised once, a quote's guards in
   the service's order (asked again, recipient, taken, the sales pause,
   the exposure limit with its one alert, the journal), the exposure
   figure, and the search for a payment address that no order holds for
@@ -43,15 +44,11 @@ database or performs an effect.
 
 Domain rules of `service/ledger.py` still to port, each with its home:
 
-1. The start-up recipient audit and the conflict alerts
-   (`audit_recipients`, `_alert_conflicts`). Their judgements are ported
-   and replayed against Python (`recipientProblem`, `recipientBlock`);
-   flagging the orders and alerting once each is not.
-2. What the buyer is shown: an address and a cancellation only once the
+1. What the buyer is shown: an address and a cancellation only once the
    journal acknowledged them (`instructions_given`, `order_view`), and a
    certificate only for a ready or fulfilled order (`deliver_certificate`).
-3. The registry callbacks (`pending_for`, `subs_ack`, `subs_committed`).
-4. Restore from the journal (`restore_from_journal`), which always comes
+2. The registry callbacks (`pending_for`, `subs_ack`, `subs_committed`).
+3. Restore from the journal (`restore_from_journal`), which always comes
    back with sales paused.
 
 Then the store layer around the machines (SQLite transactions, the
@@ -101,7 +98,8 @@ For requests and quotes the replay compares the decision, the exposure
 figure, every address the wallet gave out and the one chosen. It also
 compares the start-up audit's judgement of each stored recipient, using
 orders written into a stopped store's database as an older version could
-have left them, and each block check. For refunds
+have left them, each block check, and the orders the audit flags and the
+conflict alerts it and every evaluation raise. For refunds
 and incidents the effects are compared as well as the state:
 alerts, authorizations, and every transaction the ledger handed to the
 node, by group, inputs, outputs and signed bytes, against what the machine
@@ -133,6 +131,8 @@ exposure; the limit alerting on every refusal; refund addresses not
 skipped when choosing a payment address; the journal checked before the
 pause and the limit; the audit judging nothing, missing the store's
 payment scripts, or judging the key before the handle; conflicts not
-blocking; one draw too many; skips miscounted. One mutation survives and is equivalent:
+blocking; one draw too many; skips miscounted; the audit clearing a
+flag; a conflict alerted again; only converted orders alerted for a
+conflict; the audit skipping the conflict alerts. One mutation survives and is equivalent:
 reopening a refund group at exactly settled depth closes it again on the
 same attempt in the same step.

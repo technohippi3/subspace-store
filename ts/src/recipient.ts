@@ -85,3 +85,52 @@ export function recipientBlock(view: StoreView, o: OrderSummary): string | null 
   if (FULFILLABLE.includes(o.status) && conflicting(view, o).length > 0) return "script conflict";
   return null;
 }
+
+export interface RecipientAlert {
+  readonly oid: string;
+  readonly kind: "recipient_invalid" | "recipient_conflict";
+  readonly detail: unknown;
+}
+
+/** Alert the owner once per paid order caught in a script conflict. The
+ * store runs this after every evaluation, and the start-up audit once
+ * more. `alerted` holds the orders already alerted for a conflict. */
+export function conflictAlerts(view: StoreView, alerted: ReadonlySet<string>): RecipientAlert[] {
+  const out: RecipientAlert[] = [];
+  for (const o of view.orders) {
+    if (!FULFILLABLE.includes(o.status) || alerted.has(o.oid)) continue;
+    const conflicts = conflicting(view, o);
+    if (conflicts.length > 0) {
+      out.push({ oid: o.oid, kind: "recipient_conflict", detail: { status: o.status, conflicts } });
+    }
+  }
+  return out;
+}
+
+export interface Audit {
+  /** Orders whose recipient problem the audit records, with the problem. */
+  readonly flagged: readonly { readonly oid: string; readonly problem: string }[];
+  readonly alerts: readonly RecipientAlert[];
+}
+
+/** At every start: judge each stored order's recipient by today's rules.
+ * A failing order is flagged and the owner alerted, once per problem;
+ * nothing else in its record changes, and a flag is never cleared. Then
+ * the conflict alerts. */
+export function auditRecipients(view: StoreView, conflictAlerted: ReadonlySet<string>): Audit {
+  const destinations = destinationScripts(view);
+  const flagged: { oid: string; problem: string }[] = [];
+  const alerts: RecipientAlert[] = [];
+  for (const o of view.orders) {
+    const problem = recipientProblem(o, destinations);
+    if (problem !== null && problem !== o.recipientProblem) {
+      flagged.push({ oid: o.oid, problem });
+      alerts.push({ oid: o.oid, kind: "recipient_invalid", detail: problem });
+    }
+  }
+  const after: StoreView = { ...view, orders: view.orders.map((o) => {
+    const f = flagged.find((x) => x.oid === o.oid);
+    return f === undefined ? o : { ...o, recipientProblem: f.problem };
+  }) };
+  return { flagged, alerts: [...alerts, ...conflictAlerts(after, conflictAlerted)] };
+}
