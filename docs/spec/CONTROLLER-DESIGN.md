@@ -1,4 +1,4 @@
-# Subspace store issuance controller design (draft 9, 2026-11-09)
+# Subspace store issuance controller design (draft 10, 2026-11-10)
 
 Status: draft design. Nothing is built. Payment, reservation, cancellation
 and refund rules are in `PAYMENT-SPEC.md`, including the depth arithmetic
@@ -30,7 +30,12 @@ journaled batches needs a restore, recorded before anything writes; the
 replay is one transaction and an interrupted restore resumes; an older
 database is migrated (A16 to A18). Certificate verification accepts a
 later root of the same space as its own text already said, which the
-code hadn't done (A19).
+code hadn't done (A19). Draft 10 says what counts as no answer to
+`/broadcast`, and settles a call the controller stopped in the middle of:
+both leave the batch `broadcast_uncertain`, where readback applies. Before,
+either could leave it `issuing` with the call attempted, a state no command
+could leave (A20, A21, X11). A database behind its journal for a sent batch
+takes the journal's copy (A22).
 
 ## Pinned upstream versions
 
@@ -351,7 +356,25 @@ back after it, and never repeat an effect whose outcome is unknown.
    intent is journaled again, and the send goes ahead as above.
 9. Record. A returned `txid` is journaled and the batch becomes `broadcast`.
    No answer makes it `broadcast_uncertain`, which follows the adapter rule
-   above. The signed transaction is read by its `txid` from the controller's
+   above. An answer without a transaction id, 64 hex digits, counts as no
+   answer: an error, a body that isn't JSON, an empty one, one with a
+   missing or malformed `txid`, or an answer cut short or otherwise
+   failing partway. The answer's body is recorded as it came,
+   up to 2,000 characters, with a note of its length when it is cut, and
+   an answer that never came is recorded as the kind of failure (A20). A
+   controller that stops after attempting the call and before recording
+   its answer finds the batch `issuing`, with the call attempted, at its
+   next start. Before anything else it marks the batch
+   `broadcast_uncertain` and alerts the owner, the two committed together,
+   then journals it, so readback applies and nothing is sent again. If
+   the journal can't acknowledge the change then, a later start journals
+   it, without another alert. None of this runs while a restore is needed
+   or under way: the journal is then the authority, and the replay decides
+   each batch's state (A21). A batch held `issuing` or uncertain here and
+   sent in the journal, with a later state there, means this database is
+   behind its journal for that batch; the controller's own writes never
+   leave that, since the database is written first. The batch takes the
+   journal's copy at the next start, and the owner is alerted (A22). The signed transaction is read by its `txid` from the controller's
    node, or from the operator wallet, and journaled as soon as it is seen.
    With U1(c) it is journaled before the send. The operator wallet funds a
    commitment from unconfirmed change, and that change can be another

@@ -19,6 +19,7 @@ it are regtest results until it has run anywhere else.
 
 import hashlib
 import json
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -30,6 +31,16 @@ from .journal import JournalDown
 from .rpc import HttpError
 
 FINAL_D = 150
+TXID_RE = re.compile(r"[0-9a-f]{64}")
+# How much of an answer from subs is kept: bounded, so a large body can't
+# swell the journal, and said when cut.
+ANSWER_LIMIT = 2000
+
+
+def _bounded(text):
+    if len(text) <= ANSWER_LIMIT:
+        return text
+    return f"{text[:ANSWER_LIMIT]} [cut: {len(text)} characters in all]"
 ANCHOR_FINALITY = 144  # libveritas: newest anchor - commitment height
 PREPARING = ("frozen", "staged", "committed_local", "proved", "checkpointed")
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
@@ -137,6 +148,8 @@ class Controller:
         # Before anything else can write: a database that lacks batches its
         # journal holds is recorded as needing a restore.
         self.recovery_state()
+        # A broadcast this database records as attempted but unanswered.
+        self._settle_interrupted()
 
     def _migrate(self):
         """Add the columns a database from an earlier schema lacks. Each is
@@ -559,21 +572,114 @@ class Controller:
             raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
         self._save(bid, journal=False, attempted=1)
         try:
-            answer = self.subs.post(f"/spaces/{b['space']}/broadcast",
-                                    {"fee_rate": b["fee_rate"]}, timeout=600)
+            # The body as it came, so that whatever subs answered is kept.
+            body = self.subs.post(f"/spaces/{b['space']}/broadcast",
+                                  {"fee_rate": b["fee_rate"]}, timeout=600, raw=True)
         except HttpError as e:
             # subs answered with an error. The wallet send may still have
             # happened (subs stores the txid only after the send returns), so
             # an error without a txid is not proof that nothing was sent.
-            self._save(bid, state="broadcast_uncertain", answer=f"HTTP {e.status}: {e.body[:300]}")
-            self.alert("broadcast_uncertain", bid, "error answer without txid")
+            self._uncertain(bid, _bounded(f"HTTP {e.status}: {e.body}"),
+                            "error answer without txid")
             return
         except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
-            self._save(bid, state="broadcast_uncertain", answer=f"no answer: {type(e).__name__}")
-            self.alert("broadcast_uncertain", bid, "no answer")
+            self._uncertain(bid, f"no answer: {type(e).__name__}", "no answer")
             return
-        self._save(bid, state="broadcast", txid=answer["txid"], answer=json.dumps(answer))
+        except Exception as e:  # noqa: BLE001 - a truncated read, a protocol error
+            # The call was made and no usable answer came back, whatever the
+            # failure: uncertain, and never sent again.
+            self._uncertain(bid, _bounded(f"no usable answer: {type(e).__name__}: {e}"),
+                            "no usable answer")
+            return
+        text = body.decode("utf-8", errors="replace") if isinstance(body, bytes) else str(body)
+        try:
+            answer = json.loads(text) if text else None
+        except ValueError:
+            answer = None
+        txid = answer.get("txid") if isinstance(answer, dict) else None
+        if not (isinstance(txid, str) and TXID_RE.fullmatch(txid)):
+            # An answer without a transaction id is no answer (A20).
+            self._uncertain(bid, _bounded(f"answer without a txid: {text}"),
+                            "answer without txid")
+            return
+        self._save(bid, state="broadcast", txid=txid, answer=_bounded(text))
         self.capture_bytes(bid)
+
+    def _atomically(self, *statements):
+        """Several writes to this database in one SQLite transaction."""
+        self.db.execute("begin immediate")
+        try:
+            for sql, args in statements:
+                self.db.execute(sql, args)
+        except BaseException:
+            self.db.execute("rollback")
+            raise
+        self.db.execute("commit")
+
+    def _uncertain(self, bid, answer, why):
+        """The call may have reached the network and no txid came back: the
+        batch is an uncertain broadcast, never sent again (CONTROLLER-DESIGN.md
+        step 9). The state and its alert are committed together, so neither
+        is ever left without the other; the journal entry follows, and if the
+        journal can't take it now, a later opening journals it."""
+        self._atomically(
+            ("update batches set state = 'broadcast_uncertain', answer = ? where bid = ?",
+             (answer, bid)),
+            ("insert into alerts(kind, bid, detail) values (?, ?, ?)",
+             ("broadcast_uncertain", bid, why)))
+        self._journal(bid)
+
+    # A batch's states once its commitment may have left the host.
+    SENT = ("broadcast", "broadcast_uncertain", "mined", "final", "fulfilled", "superseded")
+
+    def _settle_interrupted(self):
+        """At every opening in normal operation, before anything else runs
+        (A21, A22). Never while a restore is needed or under way: the
+        journal is then the authority, and the replay decides.
+
+        For each batch this database holds `issuing` or uncertain, against
+        its latest journaled copy:
+        - the journal holds it sent, in a later state than here: this
+          database is behind its journal for it, which this controller's own
+          writes never leave (the database is written first). It takes the
+          journal's copy, and the owner is alerted (A22);
+        - `issuing` with its broadcast attempted, journaled at most
+          `issuing`: the controller stopped after the call and before
+          recording an answer. It is an uncertain broadcast (A21);
+        - uncertain here, journaled at most `issuing`: the journal was down
+          or the controller stopped before the entry. It is journaled now,
+          without another alert."""
+        if self.recovery_state() is not None:
+            return
+        for r in self.db.execute("select bid from batches where state in "
+                                 "('issuing', 'broadcast_uncertain') order by rowid").fetchall():
+            b, acked = self.batch(r["bid"]), self.acknowledged(r["bid"])
+            journaled = acked["state"] if acked else None
+            behind = journaled in self.SENT and journaled != b["state"] and not (
+                b["state"] == "broadcast_uncertain" and journaled == "broadcast_uncertain")
+            if behind:
+                self._adopt_journal_copy(acked)
+            elif journaled in (None, "issuing"):
+                if b["state"] == "issuing" and b["attempted"]:
+                    self._uncertain(b["bid"], "interrupted: the controller stopped before "
+                                              "recording an answer",
+                                    "interrupted before an answer was recorded")
+                elif b["state"] == "broadcast_uncertain":
+                    self._journal(b["bid"])
+
+    def _adopt_journal_copy(self, acked):
+        """Replace a row this database is behind on with the journal's copy,
+        and alert the owner, in one transaction (A22)."""
+        row = dict(acked)
+        row["members"] = json.dumps(row["members"])
+        cols = ", ".join(row)
+        self._atomically(
+            ("delete from batches where bid = ?", (row["bid"],)),
+            (f"insert into batches({cols}) values ({', '.join('?' for _ in row)})",
+             tuple(row.values())),
+            ("insert into alerts(kind, bid, detail) values (?, ?, ?)",
+             ("database_behind_journal", row["bid"],
+              f"held here as an older state; took the journal's {acked['state']}")))
 
     def resume(self, bid):
         self.require_restored()

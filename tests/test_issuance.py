@@ -1,4 +1,4 @@
-"""Named cases X1 to X10, B1 to B7, J1 to J12, L1 to L9 and N12 (fixed-price
+"""Named cases X1 to X11, B1 to B7, J1 to J12, L1 to L9 and N12 (fixed-price
 issuance).
 
 B6, B7, J3 to J10 and L1 to L5 are regressions from the model review of
@@ -92,6 +92,30 @@ class CancellationAgainstIssuance(unittest.TestCase):
                      ("controller", "rollback_local", bid)):
             with self.assertRaises(Refused):
                 sim.do(*call)
+
+    def test_X11_a_controller_stopped_mid_broadcast_restarts_uncertain(self):
+        for outcome, reached in (("crash_sent", True), ("crash_unsent", False)):
+            with self.subTest(outcome=outcome):
+                sim = setup()
+                bid = prepare(sim)
+                issue(sim, bid, outcome=outcome)
+                b = sim.controller.batches[bid]
+                self.assertEqual((b.state, b.attempted), ("issuing", True))
+                commits = lambda: [t for t in sim.chain.txs if t.startswith("commit-")]
+                sent = commits()
+                self.assertEqual(len(sent), 1 if reached else 0)
+                sim.do("controller", "restart")
+                self.assertEqual(b.state, "broadcast_uncertain")
+                self.assertEqual(sim.controller.offhost["batches"][bid].state,
+                                 "broadcast_uncertain")
+                self.assertIn(("broadcast_uncertain", bid), sim.controller.alerts)
+                for call in (("store", "cancel", "o1"), ("controller", "resume", bid),
+                             ("controller", "retry_broadcast", bid)):
+                    with self.assertRaises(Refused):
+                        sim.do(*call)
+                self.assertEqual(sim.do("controller", "readback", bid), reached)
+                self.assertEqual(b.state, "broadcast" if reached else "broadcast_uncertain")
+                self.assertEqual(commits(), sent)  # never a second send
 
     def test_X5_absent_from_every_mempool_is_not_supersession(self):
         sim = setup()

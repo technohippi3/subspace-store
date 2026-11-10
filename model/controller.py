@@ -11,7 +11,9 @@ draft 9. It covers:
   waits for both the store's order locks and the controller's broadcast
   intent to be acknowledged off-host;
 - broadcast with a known, lost or unsent outcome, through one send path that
-  checks both acknowledgments immediately before transmission;
+  checks both acknowledgments immediately before transmission, or cut short
+  by the controller stopping after the call, which its next start settles as
+  uncertain (X11);
 - readback of an uncertain broadcast, which is never retried;
 - safe supersession, which only the owner can start;
 - operational finality at `d >= 150`, its loss after a deep reorg, "ready",
@@ -153,6 +155,17 @@ class Controller:
             if b.state == "broadcast_uncertain":
                 self.readback(b.bid)
         self.observe()
+
+    def restart(self):
+        """The controller's process starts again on its own database, after
+        stopping anywhere. A batch left `issuing` with its broadcast
+        attempted had no answer recorded: it is an uncertain broadcast,
+        settled before anything else runs, and never sent again (X11)."""
+        for b in self.batches.values():
+            if b.state == "issuing" and b.attempted:
+                b.state = "broadcast_uncertain"
+                self.alerts.append(("broadcast_uncertain", b.bid))
+        self.ack_journal()
 
     def _issuance_acknowledged(self, b):
         """Both halves of the `issuing` step are in the off-host journals: the
@@ -309,8 +322,11 @@ class Controller:
     def check_and_issue(self, bid, outcome="ok"):
         """The binding check, then `issuing` and the broadcast.
 
-        outcome: "ok" (answer recorded), "lost" (sent, answer lost) or
-        "unsent" (the call failed before reaching the network, unknown to us).
+        outcome: "ok" (answer recorded), "lost" (sent, answer lost),
+        "unsent" (the call failed before reaching the network, unknown to us),
+        or "crash_sent" and "crash_unsent": the controller stopped after the
+        call, before recording any answer, with the transaction sent or not
+        (X11). A stopped controller records nothing more until `restart`.
         Returns the batch that went on, which is a rebuilt one if a member
         failed the check. If either journal doesn't acknowledge, the batch
         stays `issuing` with nothing sent, and `resume` continues it.
@@ -381,8 +397,11 @@ class Controller:
             raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
         b.attempted = True
         tx = b.raw if b.raw is not None else self._build(b)
-        if outcome in ("ok", "lost"):
+        if outcome in ("ok", "lost", "crash_sent"):
             self.chain.add(tx)
+        if outcome.startswith("crash"):
+            # The process stops here: the batch stays `issuing`, attempted.
+            return
         if outcome == "ok":
             b.txid = tx.txid
             b.state = "broadcast"
