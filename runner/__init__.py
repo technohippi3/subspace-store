@@ -1,1 +1,1 @@
-"""The attended operator runner (regtest only); see runner/cli.py."""
+"""The attended operator runner; mainnet requires the explicit private test."""

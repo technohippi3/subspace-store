@@ -19,9 +19,10 @@ Before the loss, on four spaces, one in-flight state each:
 - A (`@test10000`): b1 fulfilled, then a later batch `broadcast` with its
   txid known, sent after the latest snapshot;
 - B (`@test9999`): a batch `checkpointed`;
-- C (`@test9998`): a batch `issuing`, its broadcast sent but the answer
-  withheld by the fault proxy in front of `subs`, so the host is lost while
-  the runner waits;
+- C (`@test9998`): a broadcast whose answer is withheld by the fault
+  proxy. A second runner refuses while the sender is alive (A23). The
+  sender is then killed; the next opening settles it to uncertain (A21),
+  before A spends its unconfirmed change and before the whole host is lost;
 - D (`@test9997`): a batch `committed_local` after the latest snapshot;
 plus a cancellation refund from the store's hot wallet, broadcast, and an
 unpaid quote. The world's node has every transaction in its mempool when
@@ -728,8 +729,12 @@ def recovery_rehearsal(run):
                    lambda c, o: c == 0 and o.get("to_buyer") == PRICE - 300)
     gid, refund_txid = built["gid"], built["txid"]
 
+    code, status, _ = runner("status")
+    if code != 0:
+        raise RuntimeError(f"status before held broadcast failed: {status}")
+
     # C: the broadcast goes out, and the fault proxy in front of subs holds
-    # its answer. The runner waits; the host is lost while it does.
+    # its answer. The runner waits while a second runner is refused.
     (s.dir / "subs_proxy.ctl").write_text(json.dumps({"hold_response": "/broadcast",
                                                       "count": 1}))
     bc = bids[C]
@@ -746,11 +751,44 @@ def recovery_rehearsal(run):
            match=held_proc.poll() is None and journaled["state"] == "issuing"
            and journaled["intent"] == 1 and not journaled.get("txid") and bool(c_txid))
 
+    code, busy, _ = runner("status")
+    r.step(scen, "A23", "second runner refuses while the broadcast owner is alive",
+           {"exit": code, "answer": busy}, {EXPECT: {"exit": 3, "refused": "controller busy"}},
+           match=code == 3 and "controller busy" in busy.get("refused", "")
+           and held_proc.poll() is None)
+    # Evidence only: a read-only SQLite connection, never a controller
+    # opening that could reconcile or write while the sender owns it.
+    with sqlite3.connect((s.dir / "runner" / "controller.db").as_uri() + "?mode=ro",
+                         uri=True) as db:
+        db.row_factory = sqlite3.Row
+        before_batches = {b["bid"]: dict(b) for b in db.execute("select * from batches")}
+        alert_count = db.execute("select count(*) from alerts").fetchone()[0]
+    r.step(scen, "A23", "refused status leaves the live attempt and alerts unchanged",
+           {"state": before_batches[bc]["state"], "alerts": alert_count},
+           {EXPECT: {"state": "issuing", "alerts": len(status["controller_alerts"])}},
+           match=before_batches[bc]["state"] == "issuing"
+           and alert_count == len(status["controller_alerts"])
+           and _journaled_batch(run, bc) == journaled)
+    # Release ownership by a genuine process death, not by deleting the
+    # lock. A can then spend C's unconfirmed change, preserving A15's
+    # ancestor-rebroadcast coverage as well as A23's live-owner check.
+    killed_sender = s.kill("runner-held")
+    held_proc.wait(timeout=10)
+    r.step(scen, "A23", "the held sender is killed before another runner opens",
+           {"killed": bool(killed_sender), "exit": held_proc.returncode},
+           {EXPECT: {"killed": True}}, match=bool(killed_sender))
+
     ba = bids[A]
     out = _rstep(run, scen, None, f"runner issue {ba} confirmed: sent after the latest snapshot",
                  runner("issue", ba, "--confirm", ba), {"exit": 0, "state": "broadcast"},
                  lambda c, o: c == 0 and o.get("state") == "broadcast" and o.get("txid"))
     a_txid = out.get("txid")
+    _rstep(run, scen, "A5", f"runner broadcast-refund {gid} confirmed",
+           runner("broadcast-refund", gid, "--confirm", gid), {"exit": 0, "acknowledged": True},
+           lambda c, o: c == 0 and o.get("acknowledged") is True)
+    # An unpaid quote, the newest address the store's wallet gave out.
+    o7 = _buy(run, scen, "seven", B, pay=False)
+
     # The host's node, which sent it: the world may not have it yet.
     vin = [v["txid"] for v in s.btc().call("getrawtransaction", a_txid, True)["vin"]]
     unconfirmed = [t for t in vin
@@ -763,15 +801,10 @@ def recovery_rehearsal(run):
             "spends_the_change_of": f"{bc}'s commitment" if c_txid in vin else None,
             "journaled_ancestors": journaled_ancestors},
            {EXPECT: {"journaled_ancestors": "every unconfirmed transaction it spends from"}},
-           match=all(t in journaled_ancestors for t in unconfirmed),
+           match=bool(unconfirmed) and c_is_parent
+           and all(t in journaled_ancestors for t in unconfirmed),
            note="the operator wallet funds a commitment from unconfirmed change, which can be "
                 "another space's commitment in flight (R26)")
-    _rstep(run, scen, "A5", f"runner broadcast-refund {gid} confirmed",
-           runner("broadcast-refund", gid, "--confirm", gid), {"exit": 0, "acknowledged": True},
-           lambda c, o: c == 0 and o.get("acknowledged") is True)
-    # An unpaid quote, the newest address the store's wallet gave out.
-    o7 = _buy(run, scen, "seven", B, pay=False)
-
     propagated = run.chain.network_has([c_txid, a_txid, refund_txid])
     net_pool = set(s.net().call("getrawmempool"))
     got = {"in_network_mempool": {"C": c_txid in net_pool, "A": a_txid in net_pool,
@@ -780,6 +813,8 @@ def recovery_rehearsal(run):
            {EXPECT: {"in_network_mempool": {"C": True, "A": True, "refund": True}}},
            match=propagated and all(got["in_network_mempool"].values()))
     code, status, _ = runner("status")
+    if code != 0:
+        raise RuntimeError(f"status after sender death failed: {status}")
     before = _store_state(run)
     before_alerts = {"store": len(status["alerts"]), "controller": len(status["controller_alerts"])}
     blocks_since_first = run.chain.tip() - first_order_tip
@@ -787,10 +822,11 @@ def recovery_rehearsal(run):
     r.step(scen, None, "batches before the loss",
            {b: (v["space"], v["state"], v["txid"]) for b, v in before_batches.items()},
            {EXPECT: {b1: "final", bids[A]: "broadcast", bids[B]: "checkpointed",
-                     bids[C]: "issuing", bids[D]: "committed_local"}},
+                     bids[C]: "broadcast_uncertain", bids[D]: "committed_local"}},
            match={b1: "final", bids[A]: "broadcast", bids[B]: "checkpointed",
-                  bids[C]: "issuing", bids[D]: "committed_local"}
-           == {b: v["state"] for b, v in before_batches.items()})
+                  bids[C]: "broadcast_uncertain", bids[D]: "committed_local"}
+           == {b: v["state"] for b, v in before_batches.items()},
+           note="A21: only after the sender dies does a new owner settle it to uncertain")
 
     # The host is lost.
     scen = "11b. host loss and a fresh host from the recovery set"

@@ -182,6 +182,10 @@ def build(config, registry, cwd=None):
                             _need(config, "controller", "operator_wallet"), capabilities(config),
                             snapshot_dir=cc.get("snapshot_dir"),
                             ready_timeout=s.get("ready_timeout", 120))
-    publisher = Publisher(controller, registry, journal, host / "publication.db",
-                          controller.subs, _need(config, "relay", "url"))
+    try:
+        publisher = Publisher(controller, registry, journal, host / "publication.db",
+                              controller.subs, _need(config, "relay", "url"))
+    except BaseException:
+        controller.close()
+        raise
     return controller, publisher

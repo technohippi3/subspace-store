@@ -131,6 +131,8 @@ class Run:
     def stop(self):
         self.registry.shutdown()
         self.stack.stop_all()
+        if self.controller is not None:
+            self.controller.close()
 
     # Chain helpers
 
@@ -488,6 +490,7 @@ def restore(run):
     # from its onboarding backup.
     run.registry.shutdown()
     run.stack.stop_process("subs")
+    c.close()
     shutil.rmtree(run.host)
     shutil.rmtree(run.stack.subs_dir)
     m.host_loss()

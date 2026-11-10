@@ -13,8 +13,8 @@ gives it clients, the `subs` process control, the operator wallet's name
 and what the running `subs` can do (`Capabilities`). The regtest harness
 gives it the harness stack (`regtest/harness/controller.py`); the runner
 gives it a host configuration (`controller/host.py`). Nothing here depends
-on the network, and the runner still runs it on regtest only. Results from
-it are regtest results until it has run anywhere else.
+on the network; mainnet in the runner requires the explicit private test.
+Results from it are regtest results until it has run anywhere else.
 """
 
 import hashlib
@@ -28,6 +28,7 @@ import urllib.error
 from pathlib import Path
 
 from .journal import JournalDown
+from .locking import LockedConnection
 from .rpc import HttpError
 
 FINAL_D = 150
@@ -127,29 +128,34 @@ class Controller:
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
-        self.db = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
-        self.db.row_factory = sqlite3.Row
-        self.db.executescript(SCHEMA)
-        self._migrate()
-        self.journal = journal
-        self.registry = registry
-        self.clients = clients
-        self.subs_process = subs_process
-        self.verifier_bin = verifier_bin
-        self.workdir = Path(workdir)
-        self.workdir.mkdir(parents=True, exist_ok=True)
-        self.operator_wallet = operator_wallet
-        self.capabilities = capabilities or Capabilities()
-        # Snapshots sit beside the controller's journal unless placed
-        # elsewhere, so they leave with it when the host is lost.
-        self.snapshot_dir = Path(snapshot_dir) if snapshot_dir else Path(journal.dir) / "snapshots"
-        self.ready_timeout = ready_timeout
-        self.snapshots = 0
-        # Before anything else can write: a database that lacks batches its
-        # journal holds is recorded as needing a restore.
-        self.recovery_state()
-        # A broadcast this database records as attempted but unanswered.
-        self._settle_interrupted()
+        self.db = LockedConnection(db_path, check_same_thread=False, isolation_level=None)
+        try:
+            self.db.row_factory = sqlite3.Row
+            self.db.executescript(SCHEMA)
+            self._migrate()
+            self.journal = journal
+            self.registry = registry
+            self.clients = clients
+            self.subs_process = subs_process
+            self.verifier_bin = verifier_bin
+            self.workdir = Path(workdir)
+            self.workdir.mkdir(parents=True, exist_ok=True)
+            self.operator_wallet = operator_wallet
+            self.capabilities = capabilities or Capabilities()
+            # Snapshots sit beside the controller's journal unless placed
+            # elsewhere, so they leave with it when the host is lost.
+            self.snapshot_dir = Path(snapshot_dir) if snapshot_dir else Path(journal.dir) / "snapshots"
+            self.ready_timeout = ready_timeout
+            self.snapshots = 0
+            # Ownership is held before schema work or startup reconciliation.
+            self.recovery_state()
+            self._settle_interrupted()
+        except BaseException:
+            self.db.close()
+            raise
+
+    def close(self):
+        self.db.close()
 
     def _migrate(self):
         """Add the columns a database from an earlier schema lacks. Each is

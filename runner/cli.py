@@ -31,6 +31,12 @@ space's restored root agrees with the chain and every adopted txid subs
 lacks is attached, `issue` and `resume` are refused; `status` and
 `restore` say what waits.
 
+Each command holds exclusive ownership of the controller database until
+it finishes, including RPC waits. A second command, even `status`, returns
+`controller busy` with exit code 3. Do not delete the lock file to force
+entry; process exit releases ownership, and the next opening reconciles
+any interrupted broadcast.
+
 A database that lacks batches the controller's journal holds, a fresh
 one included, needs a restore, and that is recorded in it when it is
 opened, before anything writes. Until a restore has replayed the journal
@@ -58,8 +64,8 @@ Every command prints one JSON object. The runner drives the controller of
 `CONTROLLER-DESIGN.md` (`controller/core.py`), built from the host
 configuration by `controller/host.py`: addresses, cookie files, the store's
 operator token file, and the commands that stop and start subs. It imports
-nothing from the regtest harness. It still refuses any network but
-regtest, and results from it are regtest results.
+nothing from the regtest harness. Mainnet additionally requires the private
+attended test configuration. Existing acceptance evidence is regtest only.
 """
 
 import argparse
@@ -71,6 +77,7 @@ import sys
 from pathlib import Path
 
 from controller.core import RESTORE_REQUIRED
+from controller.locking import ControllerBusy
 
 
 class NotConfirmed(Exception):
@@ -87,7 +94,9 @@ def _files(directory, prefix):
 
 # The configured network, as each component names it.
 NAMES = {"regtest": {"bitcoind": "regtest", "spaced": "regtest", "subs": "regtest",
-                     "store": "regtest"}}
+                     "store": "regtest"},
+         "mainnet": {"bitcoind": "main", "spaced": "mainnet", "subs": "mainnet",
+                     "store": "main"}}
 
 
 def _confirm(what, expected, given, ask):
@@ -101,12 +110,23 @@ def _confirm(what, expected, given, ask):
 
 
 class Runner:
-    def __init__(self, store, controller, publisher=None, ask=None, network="regtest"):
+    def __init__(self, store, controller, publisher=None, ask=None, network="regtest",
+                 private_purchase=None):
+        if network == "mainnet" and private_purchase is None:
+            raise NotConfirmed("mainnet requires the explicit private attended test")
         self.store = store
         self.c = controller
         self.publisher = publisher
         self.ask = ask
         self.network = network
+        self.private_purchase = private_purchase
+
+    def close(self):
+        try:
+            if self.publisher is not None:
+                self.publisher.db.close()
+        finally:
+            self.c.close()
 
     # The networks the clients actually reach
 
@@ -147,7 +167,13 @@ class Runner:
         try:
             btc = self.c.btc.call("getblockchaininfo")
             sp = self.c.spaced.call("getserverinfo")
-            store = (self.store.status() or {}).get("chain") or {}
+            status = self.store.status() or {}
+            store = status.get("chain") or {}
+            if self.private_purchase and status.get("private_attended_test") != vars(self.private_purchase):
+                problems.append("the store's private test configuration differs from the runner's")
+            if self.network == "mainnet":
+                from service.private_purchase import require_indexed_node
+                require_indexed_node(self.c.btc)
             seen = {"bitcoind": btc.get("chain"), "spaced": sp.get("network"),
                     "store": store.get("network")}
             if subs:
@@ -379,7 +405,19 @@ class Runner:
 
     # Sends a transaction: confirmed by the operator
 
-    def issue(self, bid, fee_rate=1, confirm=None):
+    def _fee_rate(self, rate):
+        if self.private_purchase:
+            from service.private_purchase import ConfigError
+            try:
+                return self.private_purchase.fee_rate(rate)
+            except ConfigError as e:
+                raise NotConfirmed(str(e) + "; nothing was sent") from e
+        return 1 if rate is None else rate
+
+    def issue(self, bid, fee_rate=None, confirm=None):
+        fee_rate = self._fee_rate(fee_rate)
+        if self.network == "mainnet":
+            self.require_networks()
         self.require_recovered()
         b = self.c.batch(bid)
         if b["state"] != "checkpointed":
@@ -395,6 +433,10 @@ class Runner:
         the intent journaled again, then one send."""
         self.require_recovered()
         b = self.c.batch(bid)
+        if self.private_purchase:
+            self._fee_rate(b.get("fee_rate"))
+        if self.network == "mainnet":
+            self.require_networks()
         if b["state"] != "issuing" or b["attempted"]:
             raise NotConfirmed(f"{bid} is {b['state']}"
                                + (", and its broadcast was attempted" if b["attempted"] else "")
@@ -409,6 +451,10 @@ class Runner:
         """Send the identical journaled bytes of a commitment that this node
         has on neither its chain nor its mempool. Never /broadcast."""
         b = self.c.batch(bid)
+        if self.private_purchase:
+            self._fee_rate(b.get("fee_rate"))
+        if self.network == "mainnet":
+            self.require_networks()
         if b["state"] not in ("broadcast", "broadcast_uncertain") or not b["txid"]:
             raise NotConfirmed(f"{bid} is {b['state']} with no known txid; nothing to "
                                "rebroadcast, nothing was sent")
@@ -420,6 +466,8 @@ class Runner:
                 "ancestors": [{"txid": a, "in_mempool": a in pool} for a in ancestors]}
 
     def broadcast_refund(self, gid, confirm=None):
+        if self.network == "mainnet":
+            self.require_networks()
         _confirm("refund group id", gid, confirm, self.ask)
         return self.store.broadcast(gid)
 
@@ -427,19 +475,23 @@ class Runner:
 # Construction from a configuration file
 
 
-NETWORKS = ("regtest",)  # nothing else runs at this checkpoint
+NETWORKS = ("regtest", "mainnet")  # mainnet additionally requires the private test
 
 
 def build(config, ask=None):
-    if config.get("network") not in NETWORKS:
-        raise SystemExit(f"the runner runs on {', '.join(NETWORKS)} only; "
-                         f"the configuration names {config.get('network')!r}")
+    from service.private_purchase import ConfigError, private_config, private_runner_urls
+    try:
+        private = private_config(config)
+    except ConfigError as e:
+        raise SystemExit(str(e)) from e
     from controller import host
     from .store import Store
 
     try:
         host.check(config)
-    except host.ConfigError as e:
+        if private:
+            private_runner_urls(config)
+    except (host.ConfigError, ConfigError) as e:
         raise SystemExit(f"configuration: {e}")
     s = config["store"]
     store = Store(s["url"], s["operator_token_file"], s["db"], s["journal_dir"])
@@ -447,7 +499,8 @@ def build(config, ask=None):
         controller, publisher = host.build(config, store)
     except host.ConfigError as e:
         raise SystemExit(f"configuration: {e}")
-    return Runner(store, controller, publisher, ask=ask, network=config["network"])
+    return Runner(store, controller, publisher, ask=ask, network=config["network"],
+                  private_purchase=private)
 
 
 def main(argv=None, ask=None):
@@ -458,7 +511,7 @@ def main(argv=None, ask=None):
     sub.add_parser("prepare").add_argument("space")
     p = sub.add_parser("issue")
     p.add_argument("bid")
-    p.add_argument("--fee-rate", type=int, default=1)
+    p.add_argument("--fee-rate", type=int)
     p.add_argument("--confirm")
     for name in ("watch", "certify", "publish"):
         sub.add_parser(name).add_argument("bid")
@@ -478,8 +531,9 @@ def main(argv=None, ask=None):
     if ask is None and sys.stdin.isatty():
         ask = input
     config = json.loads(Path(args.config).read_text())
-    r = build(config, ask=ask)
+    r = None
     try:
+        r = build(config, ask=ask)
         # Every command but status needs every component on the configured
         # network first; status reports the check instead. A restore checks
         # subs once it has started it.
@@ -517,11 +571,14 @@ def main(argv=None, ask=None):
             out = r.rebroadcast(args.bid, args.confirm)
         else:
             out = r.broadcast_refund(args.gid, args.confirm)
-    except NotConfirmed as e:
+    except (NotConfirmed, ControllerBusy) as e:
         print(json.dumps({"refused": str(e)}))
         return 3
     except Exception as e:  # noqa: BLE001 - reported, never a trace with state
         print(json.dumps({"error": f"{type(e).__name__}: {e}"}))
         return 1
+    finally:
+        if r is not None:
+            r.close()
     print(json.dumps(out, indent=1, default=str))
     return 0

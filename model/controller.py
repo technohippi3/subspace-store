@@ -158,7 +158,9 @@ class Controller:
 
     def restart(self):
         """The controller's process starts again on its own database, after
-        stopping anywhere. A batch left `issuing` with its broadcast
+        stopping anywhere. The model assumes one owner; A23 tests the real
+        process lock that prevents restart while that owner is still live.
+        A batch left `issuing` with its broadcast
         attempted had no answer recorded: it is an uncertain broadcast,
         settled before anything else runs, and never sent again (X11)."""
         for b in self.batches.values():

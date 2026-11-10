@@ -144,6 +144,7 @@ class Snapshot(unittest.TestCase):
                             FakeRegistry(self.tmp), Clients(fake, fake, None, None), self.subs,
                             self.tmp / "verifier", self.tmp / "certs", "made-up-wallet",
                             ready_timeout=1)
+        self.addCleanup(self.c.close)
         self.c.db.execute("insert into batches(bid, space, members, digest, state) "
                           "values ('b1', '@space', '[]', 'made-up-digest', 'proved')")
 
@@ -190,6 +191,7 @@ class Capability(unittest.TestCase):
                                    Journal(tmp / "offhost", f"runner-{caps.attach_txid}"),
                                    FakeRegistry(tmp), Clients(subs.client, subs.client, None, None),
                                    subs, tmp / "verifier", tmp / "certs", "made-up-wallet", caps)
+                    self.addCleanup(c.close)
                     c.db.execute("insert into batches(bid, space, members, digest, state, txid) "
                                  "values ('b1', '@space', '[]', 'made-up-digest', 'final', "
                                  "'made-up-txid')")
@@ -296,6 +298,7 @@ class Networks(unittest.TestCase):
             path = Path(d) / "runner.json"
             path.write_text(json.dumps({"network": "regtest"}))
             built = stand.runner()
+            built.close = lambda: None  # this fixture owns no database
             original = cli.build
             cli.build = lambda config, ask=None: built
             try:

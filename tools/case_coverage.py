@@ -1,10 +1,10 @@
 """Report which named specification cases have tests.
 
-Reads the case tables in docs/spec/PAYMENT-SPEC.md and the test names in
+Reads the case tables in the payment and private-purchase specifications and test names in
 tests/, and prints implemented and missing case identifiers. Most cases are
 tested against the reference model. The recipient-request cases (V), the
 service restore cases (H), the checkout cases (C), the attended-runner
-cases (A), the sales-pause cases (S) and the refund-destination cases (T)
+cases (A), the sales-pause cases (S), refund-destination cases (T) and private-test cases (Y)
 are the service's and the runner's own. Their tests are service API tests,
 runner tests or, for H7, a model-twin test, and they are reported
 separately, never as model results.
@@ -22,7 +22,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def spec_cases():
-    text = (ROOT / "docs/spec/PAYMENT-SPEC.md").read_text()
+    text = "\n".join((ROOT / "docs/spec" / name).read_text()
+                     for name in ("PAYMENT-SPEC.md", "PRIVATE-PURCHASE.md"))
     return sorted(set(re.findall(r"^\| ([A-Z]\d+) \|", text, re.M)),
                   key=lambda c: (c[0], int(c[1:])))
 
@@ -35,7 +36,7 @@ def tested_cases():
 
 
 DEFERRED_AFTER_MVP = lambda c: c[0] in "DE" or c == "N6"
-SERVICE_CASES = lambda c: c[0] in "VHCAST"
+SERVICE_CASES = lambda c: c[0] in "VHCASTY"
 
 
 def main(argv=None):

@@ -267,7 +267,14 @@ The registry owns orders, payments, refunds and eligibility, in SQLite. Its
 `/pending` returns exactly the frozen batch's members, and nothing else.
 
 The controller is the only caller of `subs`' write endpoints and of the
-`spaced` operator wallet. It holds a single-writer lock in its database.
+`spaced` operator wallet. Before opening or migrating its database or
+reconciling interrupted sends, it takes an exclusive, nonblocking process
+lock beside that database. It holds the lock until the database closes,
+including every RPC wait. A second runner command, including `status`,
+refuses immediately with `controller busy` and changes nothing (A23).
+Startup reconciliation therefore runs only after the previous owner has
+closed or died. The operating system releases ownership on process death;
+the lock file stays in place and must not be deleted to force entry.
 
 That lock doesn't stop `subs` itself. `subs` still writes through its proving
 loop and through anything that reaches its UI or API, and `spaced` writes its

@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, urlparse
 from . import checkout
 from .bitcoin import RefundBuilder
 from .ledger import ISSUED, Invalid, Refused, Unconfirmed
+from .private_purchase import loopback
 
 TOKEN_RE = r"([A-Za-z0-9_-]{16,64})"
 OID_RE = r"(o\d+)"
@@ -73,7 +74,9 @@ class Service:
                  poll_seconds=2.0):
         self.ledger = ledger
         self.view = view
-        self.builder = RefundBuilder(view, hot_wallet_cap_sats)
+        private = ledger.private_purchase.config
+        self.builder = RefundBuilder(view, min(hot_wallet_cap_sats, private.price_sats)
+                                     if private else hot_wallet_cap_sats)
         self.operator_token = operator_token
         self.subs_token = subs_token
         self.lock = threading.RLock()
@@ -90,14 +93,17 @@ class Service:
         the same signed transaction, then evaluate."""
         with self.lock:
             rebroadcast = self.ledger.reconcile_attempts()
-            for txid in rebroadcast:
+            # Private mainnet sends remain attended, including a restart.
+            for txid in (() if self.ledger.private_purchase.config else rebroadcast):
                 gid = self.ledger._attempt(txid)["gid"]
                 try:
                     self.ledger.rebroadcast(gid, txid)
                 except Refused:
                     pass
             self.ledger.observe()
-            self.startup = {"rebroadcast": rebroadcast, "at": time.time()}
+            private = bool(self.ledger.private_purchase.config)
+            self.startup = {"rebroadcast": [] if private else rebroadcast,
+                            "pending_rebroadcast": rebroadcast if private else [], "at": time.time()}
 
     def loop(self):
         while not self._stop.wait(self.poll_seconds):
@@ -117,19 +123,24 @@ class Service:
         o = led.operator_view(oid)
         if kind == "cancellation" and o["status"] not in ("cancelled", "refund_due"):
             raise Refused("order is not cancelled or refund due")
-        fee = led.policy.refund_fee
-        charged = led.available(oid)
-        if kind == "excess" and charged < fee + led.policy.excess_minimum_over_fee:
-            raise Refused("excess below the refund minimum")
-        to_buyer = charged - fee
-        if to_buyer <= 0:
-            raise Refused("nothing refundable")
-        tx, actual_fee = self.builder.build(led, oid, to_buyer, fee)
+        private = led.private_purchase.config
+        if private:
+            from .private_fees import build_refund
+            tx, to_buyer, actual_fee, charged = build_refund(self.builder, led, oid, kind, private)
+        else:
+            fee = led.policy.refund_fee
+            charged = led.available(oid)
+            if kind == "excess" and charged < fee + led.policy.excess_minimum_over_fee:
+                raise Refused("excess below the refund minimum")
+            to_buyer = charged - fee
+            if to_buyer <= 0:
+                raise Refused("nothing refundable")
+            tx, actual_fee = self.builder.build(led, oid, to_buyer, fee)
         n = led.db.execute("select coalesce(max(seq), 0) + 1 from groups").fetchone()[0]
         gid = f"g{n}"
-        led.open_group(gid, oid, kind, tx, to_buyer, actual_fee, charged=to_buyer + fee)
+        led.open_group(gid, oid, kind, tx, to_buyer, actual_fee, charged=charged)
         return {"gid": gid, "txid": tx["txid"], "to_buyer": to_buyer, "fee": actual_fee,
-                "charged": to_buyer + fee}
+                "charged": charged}
 
     def broadcast(self, gid, txid=None):
         led = self.ledger
@@ -137,12 +148,18 @@ class Service:
         if not attempts:
             raise Refused("no such refund")
         txid = txid or attempts[-1]["txid"]
+        if led.private_purchase.config:
+            from .private_fees import check_refund
+            a = led._attempt(txid)
+            check_refund(self.view, led.private_purchase.config, a, a["fee"])
         sent = led.broadcast(gid, txid)
         return {"gid": gid, "txid": txid, "acknowledged": sent}
 
     # HTTP
 
     def serve(self, host, port):
+        if self.ledger.private_purchase.config and not loopback(host):
+            raise Refused("the private test listens on loopback only")
         service = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -317,7 +334,9 @@ class Service:
             identity = getattr(self.view, "chain_identity", None)
             return 200, {"startup": self.startup, "journal_backlog": backlog,
                          "tip": self.view.tip, "chain": identity() if identity else None,
-                         "sales": led.sales_state()}
+                         "sales": led.sales_state(),
+                         "private_attended_test": (vars(led.private_purchase.config).copy()
+                                                   if led.private_purchase.config else None)}
         if path == "/operator/issuing" and method == "POST":
             return 200, {"acknowledged": led.mark_issuing_all(body().get("oids", []))}
         if path == "/operator/pending" and method == "POST":
