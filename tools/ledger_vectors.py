@@ -1,6 +1,8 @@
 """Record the transitions the service ledger makes, as vectors for the
 TypeScript port: `order` for `ts/src/order.ts`, `funds` for
-`ts/src/funds.ts` and `incident` for `ts/src/incident.ts`.
+`ts/src/funds.ts`, `incident` for `ts/src/incident.ts`, and `store` for the
+store-wide request and quote rules in `ts/src/recipient.ts` and
+`ts/src/admission.ts`.
 
 It watches the real `service.ledger.Ledger` while two things run:
 - directed runs on a fresh ledger and a simulated chain. For the order
@@ -10,7 +12,10 @@ It watches the real `service.ledger.Ledger` while two things run:
   few refund scenarios (`FUNDS_SCENARIOS`) for what the generated sequences
   reach rarely or never, such as a PSBT export or the refund address. For
   the incident family, one run through every incident outcome, which the
-  generated sequences don't reach at all;
+  generated sequences don't reach at all. For the store family, every
+  outcome of a request and a quote (`run_store_directed`): the generated
+  sequences never pause sales, set an exposure limit or refuse a
+  recipient;
 - the model twin's seeded generated sequences (tests/test_generated.py
   through tests/service_twin.py, with a process restart every 17 steps).
 
@@ -27,7 +32,7 @@ is equivalence to the Python service, transition by transition: not a model
 result and not regtest evidence. Deterministic: seeded sequences, a
 simulated chain and a simulated clock.
 
-    python3 tools/ledger_vectors.py --family order|funds|incident [--seeds N] [--steps N]
+    python3 tools/ledger_vectors.py --family order|funds|incident|store [--seeds N] [--steps N]
 """
 
 import argparse
@@ -42,7 +47,7 @@ sys.path.insert(0, str(ROOT))
 
 from model.chain import Chain, Tx  # noqa: E402
 from service.journal import MemoryJournal  # noqa: E402
-from service.ledger import (BATCHABLE, CONFIRMED, Ledger, Policy, Refused,  # noqa: E402
+from service.ledger import (BATCHABLE, CONFIRMED, Invalid, Ledger, Policy, Refused,  # noqa: E402
                             SendFailed, SendUncertain)
 from tests.service_twin import ModelChainView, TwinStore, new_workdir, recipient  # noqa: E402
 from tests.test_generated import Generator  # noqa: E402
@@ -154,6 +159,32 @@ class Family:
 ORDER = Family("order", order_state, order_observation)
 FUNDS = Family("funds", funds_state, funds_observation)
 INCIDENT = Family("incident", incident_state, lambda led, oid: {})
+
+
+def store_view(led, oid=None):
+    """Every order and name, as the store-wide rules read them."""
+    orders = []
+    for o in led.db.execute("select * from orders order by seq").fetchall():
+        seen = sum(x["value"] for x in led.outputs(o["oid"])) if o["dest_script"] else 0
+        orders.append({k: o[k] for k in ("oid", "seq", "name", "status", "price", "recipient_spk",
+                                         "dest_script", "refund_spk", "recipient_problem")}
+                      | {"seen": seen})
+    names = {n["name"]: {k: n[k] for k in ("name", "price", "hold_order", "fulfillment_order")}
+             for n in led.db.execute("select * from names").fetchall()}
+    refunded = led.db.execute("select coalesce(sum(a.charged), 0) from groups g join attempts a "
+                              "on a.txid = g.closed_by").fetchone()[0]
+    return {"orders": orders, "names": names, "refunded_total": refunded}
+
+
+def quote_context(led, oid=None):
+    return {"sales_paused": led.sales_paused(),
+            "exposure_alerted": led._setting("exposure_alerted") == "1",
+            "exposure_limit": led.policy.exposure_limit_sats,
+            "journal_available": led.journal.available(),
+            "exposure": led.exposure()}
+
+
+STORE = Family("store", store_view, quote_context)
 
 
 # Recording
@@ -382,6 +413,98 @@ INCIDENT_COMMANDS = {
 }
 
 
+def wrap_store_request(orig):
+    """A recipient request: accepted, refused, or invalid before any state
+    is read."""
+    def request(self, handle, recipient_spk, oid=None):
+        if rec.command is not None:
+            return orig(self, handle, recipient_spk, oid)
+        before = {"state": store_view(self), "obs": {}}
+        event = {"handle": handle, "script": recipient_spk}
+        try:
+            result = orig(self, handle, recipient_spk, oid)
+        except Invalid as e:
+            record("request", before, event, None, None, {"result": "invalid", "reason": str(e)})
+            raise
+        except Refused as e:
+            record("request", before, event, None, None, {"result": "refused", "reason": str(e)})
+            raise
+        record("request", before, event, None, None, {"result": "accepted", "reason": None})
+        return result
+    return request
+
+
+def wrap_recipient_problem(orig):
+    """The start-up audit's judgement of one stored order's recipient."""
+    def _recipient_problem(self, o, destinations):
+        result = orig(self, o, destinations)
+        record("recipient_problem",
+               {"state": {"name": o["name"], "recipient_spk": o["recipient_spk"]},
+                "obs": {"destinations": sorted(destinations)}},
+               {}, None, None, {"result": result})
+        return result
+    return _recipient_problem
+
+
+def wrap_recipient_block(orig):
+    """Why an order's recipient may not be issued to, judged over every
+    order."""
+    def recipient_block(self, oid):
+        result = orig(self, oid)
+        record("recipient_block", {"state": store_view(self), "obs": {}}, {"oid": oid}, None, None,
+               {"result": result})
+        return result
+    return recipient_block
+
+
+def wrap_store_quote(orig):
+    """A quote at the store's level: its admission, every address the wallet
+    gave out while choosing one, and the result."""
+    def quote(self, oid):
+        if rec.command is not None:
+            return orig(self, oid)
+        chain = self.chain
+        own = "new_destination" in vars(chain)
+        inner = chain.new_destination
+        draws = []
+
+        def drawing(o):
+            address, script = inner(o)
+            draws.append({"address": address, "script": script})
+            return address, script
+        chain.new_destination = drawing
+        start = point(STORE, self, oid)
+        rec.command = cmd = {"fam": STORE, "oid": oid, "observes": []}
+        refusal, result = None, None
+        try:
+            result = orig(self, oid)
+        except Refused as e:
+            refusal, result = str(e), e
+        finally:
+            rec.command = None
+            if own:
+                chain.new_destination = inner
+            else:
+                del chain.new_destination
+        end = point(STORE, self, oid)
+        before = cmd["observes"][0][1] if cmd["observes"] else start
+        fresh = refusal is None and len(cmd["observes"]) > 1
+        mid = cmd["observes"][1][0] if fresh else end
+        extra = effects_between(self, before, mid)
+        mine = next(o for o in mid["state"]["orders"] if o["oid"] == oid)
+        extra.update({
+            "result": "refused" if refusal else ("quoted" if fresh else "requote"),
+            "destination": {"address": self._order(oid)["dest_address"],
+                            "script": mine["dest_script"]} if fresh else None,
+            "exposure_alerted_after": mid["obs"]["exposure_alerted"],
+        })
+        record("quote", before, {"oid": oid, "draws": draws}, None, refusal, extra)
+        if isinstance(result, Refused):
+            raise result
+        return result
+    return quote
+
+
 def install(family):
     Ledger.observe = wrap_observe(Ledger.observe)
     if family == "order":
@@ -391,6 +514,11 @@ def install(family):
                                                name in ORDER_LEADING,
                                                lambda led, oid, *a: oid,
                                                lambda led, oid, *a, **k: {}))
+    elif family == "store":
+        Ledger.request = wrap_store_request(Ledger.request)
+        Ledger.quote = wrap_store_quote(Ledger.quote)
+        Ledger._recipient_problem = wrap_recipient_problem(Ledger._recipient_problem)
+        Ledger.recipient_block = wrap_recipient_block(Ledger.recipient_block)
     elif family == "incident":
         for name, (leading, oid_of, event_of) in INCIDENT_COMMANDS.items():
             setattr(Ledger, name, wrap_command(INCIDENT, name, getattr(Ledger, name), leading,
@@ -424,21 +552,33 @@ class Directed:
 
     PRICE = 10_000
 
-    def __init__(self, workdir):
+    def __init__(self, workdir, policy=None):
         self.chain = Chain()
         self.view = ModelChainView(self.chain)
         self.view.new_destination = self._destination
         self.journal = MemoryJournal()
         self.n = 0
         self.now = [0]
-        self.led = Ledger(Path(workdir) / "store.db", self.view, self.journal, Policy(),
-                          clock=lambda: self.now[0])
+        # The wallet's next scripts, when a run fixes them; otherwise fresh.
+        self.next_scripts = []
+        self.path = Path(workdir) / "store.db"
+        self.policy = policy or Policy()
+        self.led = self._open()
         self.led.list_name("one@space", self.PRICE)
         self.oid, _ = self.led.request("one@space", recipient("directed-buyer"))
 
+    def _open(self):
+        return Ledger(self.path, self.view, self.journal, self.policy, clock=lambda: self.now[0])
+
+    def restart(self):
+        """A process restart: the store reopens from its database."""
+        self.led.close()
+        self.led = self._open()
+
     def _destination(self, oid):
         self.n += 1
-        return f"dest-{self.n}", recipient(f"dest-{self.n}")
+        script = self.next_scripts.pop(0) if self.next_scripts else recipient(f"dest-{self.n}")
+        return f"dest-{self.n}", script
 
     def pay(self, value, blocks):
         self.n += 1
@@ -619,6 +759,173 @@ FUNDS_SCENARIOS = (scenario_excess, scenario_cancellation_lost, scenario_refusal
                    scenario_refund_address_before_quote)
 
 
+def _attempt(call, *args):
+    """A call that may be refused, or refused as malformed."""
+    try:
+        return call(*args)
+    except (Refused, Invalid):
+        return None
+
+
+def run_store_directed():
+    """Every outcome of a request and a quote, in two ledgers: one with an
+    exposure limit of 25,000, for the pause and the limit, and one without,
+    for the recipient, the journal and the wallet."""
+    rec.source = "directed"
+    with new_workdir() as wd:
+        d = Directed(wd, Policy(exposure_limit_sats=25_000))
+        led = d.led
+        for name in ("two@space", "three@space", "four@space"):
+            led.list_name(name, d.PRICE)
+        buyer = recipient("store-buyer")
+        off_curve = "5120" + format(5, "064x")  # below the field size, not on the curve
+        for handle, script in (("One@space", buyer), ("one@space\n", buyer), ("one", buyer),
+                               ("one@space", "0014" + "11" * 20),
+                               ("one@space", "5120" + "ff" * 32), ("one@space", off_curve),
+                               ("five@space", buyer)):
+            _attempt(led.request, handle, script)
+        o1 = d.oid
+        led.quote(o1)
+        # One of the store's payment scripts as a recipient.
+        _attempt(led.request, "two@space", led._order(o1)["dest_script"])
+        d.pay(d.PRICE, 3)
+        # Claimed by a paid order for another handle.
+        _attempt(led.request, "two@space", recipient("directed-buyer"))
+        o2, _ = led.request("two@space", recipient("store-buyer-2"))
+        led.quote(o2)
+        led.quote(o2)  # asked again: the same quote
+        # An unpaid quote claims nothing: another handle may request its script.
+        led.request("three@space", recipient("store-buyer-2"))
+        o3, _ = led.request("two@space", recipient("store-buyer-3"))
+        _attempt(led.quote, o3)  # taken for now
+        # 1,000 seen paying o2 releases nothing: exposure is still 20,000,
+        # o1's 10,000 received and o2's unpaid invoice whole.
+        d.n += 1
+        d.chain.add(Tx(f"pay{d.n}", ((f"coin{d.n}", 0),),
+                       ((led._order(o2)["dest_script"], 1_000),)))
+        led.observe()
+        o4, _ = led.request("three@space", recipient("store-buyer-4"))
+        _attempt(led.quote, o4)  # at the limit, alerted
+        _attempt(led.quote, o4)  # at the limit again, not alerted again
+        led.set_sales_paused(True)
+        led.quote(o2)  # the same quote while paused
+        o5, _ = led.request("four@space", recipient("store-buyer-5"))
+        _attempt(led.quote, o5)  # sales are paused
+        d.journal.set_available(False)
+        _attempt(led.quote, o5)  # paused, and the journal down: the pause decides
+        d.journal.set_available(True)
+        led.set_sales_paused(False)
+        d.mine(7)  # o2's extension lapses short of the price: refund due
+        led.quote(o4)  # admitted, and the limit's alert re-armed
+        _attempt(led.quote, o2)  # already quoted
+        d.led.close()
+    with new_workdir() as wd:
+        d = Directed(wd)
+        led = d.led
+        for name in ("two@space", "three@space", "four@space"):
+            led.list_name(name, d.PRICE)
+        # A recipient the wallet then gives out as a payment address: the
+        # next start's audit flags it, and its quote is refused.
+        ox, _ = led.request("two@space", recipient(f"dest-{d.n + 1}"))
+        led.quote(d.oid)
+        d.restart()
+        led = d.led
+        _attempt(led.quote, ox)
+        # A refund address given before the quote is skipped (T3).
+        oy, _ = led.request("three@space", recipient("store-buyer-y"))
+        refund = recipient("store-refund-y")
+        led.set_refund_address(oy, "refund-y", refund)
+        d.journal.set_available(False)
+        _attempt(led.quote, oy)  # the journal is down
+        d.journal.set_available(True)
+        d.next_scripts = [refund]
+        led.quote(oy)
+        # Another handle's order converts on oy's script: oy's quote asked
+        # again is refused (V17).
+        ov, _ = led.request("four@space", recipient("store-buyer-y"))
+        led.quote(ov)
+        d.n += 1
+        d.chain.add(Tx(f"pay{d.n}", ((f"coin{d.n}", 0),),
+                       ((led._order(ov)["dest_script"], d.PRICE),)))
+        d.mine(3)
+        _attempt(led.quote, oy)
+        # A wallet that gives out only held addresses, more times than
+        # orders hold one.
+        held = led._order(d.oid)["dest_script"]
+        d.now[0] += led.policy.hold_seconds
+        led.observe()
+        oz, _ = led.request("one@space", recipient("store-buyer-z"))
+        d.next_scripts = [held] * 20
+        _attempt(led.quote, oz)
+        d.next_scripts = []
+        d.led.close()
+
+
+def run_recipient_audit_directed():
+    """Stored orders whose recipients fail today's rules, as a database from
+    before them could hold: written with the store stopped, then judged by
+    the audit at the next start. And conflicts between paid orders."""
+    import sqlite3
+    with new_workdir() as wd:
+        d = Directed(wd)
+        led = d.led
+        names = ("two@space", "three@space", "four@space", "five@space", "six@space")
+        for name in names:
+            led.list_name(name, d.PRICE)
+        led.quote(d.oid)
+        oids = {name: led.request(name, recipient(f"audit-{name}"))[0] for name in names}
+        two, three = oids["two@space"], oids["three@space"]
+        for oid in (two, three):  # both converted, for later conflicts
+            led.quote(oid)
+            d.n += 1
+            d.chain.add(Tx(f"pay{d.n}", ((f"coin{d.n}", 0),),
+                           ((led._order(oid)["dest_script"], d.PRICE),)))
+        d.mine(3)
+        own = led._order(d.oid)["dest_script"]
+        led.close()
+        db = sqlite3.connect(d.path)
+        db.execute("pragma foreign_keys = on")
+        for bad in ("Bad@space", "bad@space\n", "bad"):
+            db.execute("insert into names(name, price) values (?, ?)", (bad, d.PRICE))
+        rewrites = (
+            ("four@space", "update orders set name = 'Bad@space' where oid = ?"),
+            ("five@space", "update orders set recipient_spk = ? where oid = ?",
+             "6a" + "00" * 33),  # OP_RETURN
+            ("six@space", "update orders set recipient_spk = ? where oid = ?",
+             "5120" + format(5, "064x")),  # off the curve
+        )
+        for name, sql, *arg in rewrites:
+            db.execute(sql, (*arg, oids[name]))
+        # A bad handle and a bad key at once: the handle is reported.
+        db.execute("insert into orders(oid, token_hash, name, recipient_spk, status, created_at) "
+                   "values ('o90', 'audit-token-hash', 'bad@space\n', ?, 'requested', 0)",
+                   ("6a" + "00" * 33,))
+        # One of the store's payment scripts as a recipient.
+        db.execute("insert into orders(oid, token_hash, name, recipient_spk, status, created_at) "
+                   "values ('o91', 'audit-token-hash-2', 'two@space', ?, 'requested', 0)", (own,))
+        # Two paid orders for different handles on one script.
+        db.execute("update orders set recipient_spk = ? where oid = ?",
+                   (recipient("audit-two@space"), three))
+        db.execute("update orders set recipient_problem = null")
+        db.commit()
+        db.close()
+        rec.source = "directed"
+        d.led = d._open()  # the audit runs at the start
+        led = d.led
+        for oid in [d.oid, *oids.values(), "o90", "o91"]:
+            led.recipient_block(oid)
+        led.close()
+        # An issuing order yields only to another issuing one.
+        db = sqlite3.connect(d.path)
+        db.execute("update orders set status = 'issuing' where oid = ?", (two,))
+        db.commit()
+        db.close()
+        d.led = d._open()
+        for oid in (two, three):
+            d.led.recipient_block(oid)
+        d.led.close()
+
+
 def run_incident_directed():
     """Opened, extended, refused without a resolution, resolved, refused
     again, and a new incident after the resolution."""
@@ -683,13 +990,14 @@ def fingerprint():
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--family", choices=("order", "funds", "incident"), required=True)
+    ap.add_argument("--family", choices=("order", "funds", "incident", "store"), required=True)
     ap.add_argument("--seeds", type=int, default=24)
     ap.add_argument("--steps", type=int, default=150)
     args = ap.parse_args(argv)
     install(args.family)
     {"order": run_order_directed, "funds": run_funds_directed,
-     "incident": run_incident_directed}[args.family]()
+     "incident": run_incident_directed,
+     "store": lambda: (run_store_directed(), run_recipient_audit_directed())}[args.family]()
     rec.source = "generated"
     for seed in range(args.seeds):
         run_seed(seed, args.steps)

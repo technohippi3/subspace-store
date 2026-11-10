@@ -25,7 +25,7 @@ export interface Recorded<V> {
   vectors: V[];
 }
 
-export function recordVectors<V>(family: "order" | "funds" | "incident"): Recorded<V> {
+export function recordVectors<V>(family: "order" | "funds" | "incident" | "store"): Recorded<V> {
   const out = execFileSync("python3", [
     "tools/ledger_vectors.py", "--family", family,
     "--seeds", process.env["SUBSPACE_VECTOR_SEEDS"] ?? "8",
