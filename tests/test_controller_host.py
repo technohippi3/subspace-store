@@ -274,6 +274,12 @@ class Stand:
                 stand.calls.append(("issue", bid))
                 return bid
 
+            def restore_pending(self):
+                return None
+
+            def recovery_state(self):
+                return None
+
         class Store:
             def status(self):
                 return {"chain": stand.store}

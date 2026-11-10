@@ -26,6 +26,11 @@ The `records` run adds scenario 9's signed records: in each
 `-records-` directory, either a message the harness signed and sent to the
 relay (with its `records.json`) or the relay's answer read back. Their
 libveritas output also lists each zone's verified records.
+The `recovery` runs (scenario 11) add the spaces `@test9998` and
+`@test9997`. The lost host's runner verifications are under
+`lost-host-runner/`, moved out of the host before it was deleted, and the
+fresh host's under `runner/`, numbered from 001 again, because its
+runner started with an empty directory.
 
 To check them again offline, build the verifier once (`cargo build
 --release` in `../verifier`) and run, from the repository root:

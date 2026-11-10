@@ -441,3 +441,39 @@ relay's answer, verified against the operator's own root anchors, carries
 it, equal to what was signed. The verifier reports a carried set that was
 dropped (`dropped` in its `records` output), so a verified message with no
 records isn't mistaken for a check that passed.
+
+## Recovery on a fresh host
+
+R26. Commitments of different spaces chain through the operator wallet's
+unconfirmed change. In run `probe-recovery-20261109T192504Z-dc4d1f`, b4 on
+`@test10000` was sent while b3, the commitment of `@test9998`, was still
+unconfirmed, and the operator wallet funded b4 from b3's change: b4's
+inputs were the space's delegate output and output 2 of b3. `subs` asks
+`spaced` to build with `confirmed_only: false`. The host was then lost, and
+the fresh host's node knew neither transaction, since a node learns no
+earlier mempool from its peers. The controller's journaled bytes of b4 were
+refused with `bad-txns-inputs-missingorspent`, and b3's bytes had never
+been journaled, because b3's broadcast answer was withheld before the
+controller could read them. Both stayed in the world's mempool and were
+mined in the next block, so nothing was lost here; had the world dropped
+b3, b4 would have been lost with it, although its own bytes were journaled.
+So one commitment per space doesn't keep spaces apart. The controller now
+journals the bytes of every unconfirmed ancestor the node holds when it
+first journals a commitment's bytes, parents first, and a rebroadcast sends
+each one the node lacks before the commitment (case A15). In the rerun,
+`recovery-20261109T193734Z-832b65`, the wallet again funded b4 from b3's
+change. After the loss, the rebroadcast sent b3's bytes, journaled as b4's
+ancestor, then b4's, and the readback of b3 then adopted it from the fresh
+node's mempool, before any block. Still open: a commitment whose parent the
+controller never saw can't be rebroadcast, and whether the wallet should
+fund one space's commitment from another's unconfirmed change at all is a
+question for `subs` and the operator wallet's configuration.
+
+Two faults in the recovery code were found by review on 2026-11-10, not
+on regtest, so they carry no R number here; `REPORT.md` records them with
+their fixes (cases A16 to A18). A controller database without its
+journaled batches, a fresh one included, could be used before any
+restore, and an interrupted replay could leave a partial database that
+the readiness check then called ready. And a database from the schema of
+commit `5226810` wasn't migrated, so capturing a commitment's bytes after
+its broadcast failed for want of the `ancestors` column.

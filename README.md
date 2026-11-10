@@ -57,8 +57,17 @@ order was cancelled and refunded through the same pages and runner. The
 runner builds the controller (`controller/`) from a host configuration,
 without the regtest harness, which runs the same controller through an
 adapter; it still runs on regtest only. `deploy/` holds credential-free
-examples of the host configuration and service units, not yet used. There is also no
-restore of the controller and `subs` together with the store, and no
+examples of the host configuration and service units, not yet used.
+
+The operator gate's recovery was rehearsed on regtest (scenario 11). With
+batches in flight on four spaces and a refund broadcast, the host was
+lost whole, its own bitcoind included, and a fresh host was brought up
+from the off-host recovery set alone: the journals, the latest
+coordinated snapshot and the two wallets' onboarding backups. The runner
+reconciled it, every check held (no name issued twice, no refund paid
+twice, no reservation lost, each restored tree root agreeing with the
+chain), and it issued again to fulfilled. That is regtest evidence, with
+`subs` patched for U1(b); it isn't the gate passed. There is no
 installer. Nothing here is fit for selling
 names, and paid sales stay closed until the buyer and operator acceptance
 gates in the specification pass. The service runs on regtest only.
@@ -94,6 +103,8 @@ upstream Spaces software or buyers behave that way.
 - `tools/case_coverage.py`: reports which named cases have tests.
   `tools/check_request.py` checks the format of a public recipient request,
   such as a Nacho export, as `POST /requests` does before reading any state.
+  `tools/replay_timing.py` times the store's replay from its journal on a
+  generated journal of a given size, labelled generated.
 
 ## Running the checks
 

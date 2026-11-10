@@ -1,4 +1,4 @@
-# Subspace store issuance controller design (draft 8, 2026-11-07)
+# Subspace store issuance controller design (draft 9, 2026-11-09)
 
 Status: draft design. Nothing is built. Payment, reservation, cancellation
 and refund rules are in `PAYMENT-SPEC.md`, including the depth arithmetic
@@ -20,7 +20,15 @@ restore (R17, R18). Draft 8 takes U1(b)'s evidence from the nums block
 index (R18, R22), and accepts a certificate built on a later root than the
 batch's only once that root is final and covered (R23, R24, case L9 in
 `PAYMENT-SPEC.md`). Publication checks the batch's own commitment by its
-root, not the space's latest.
+root, not the space's latest. Draft 9 takes in the operator gate's
+recovery rehearsal on regtest (scenario 11): a commitment's unconfirmed
+ancestors are journaled with its bytes (R26), snapshots are numbered,
+reconciliation rebuilds a local commitment the restored `subs` doesn't
+hold, and no new commitment is sent until a restore is reconciled (cases
+A11 to A15 in `PAYMENT-SPEC.md`). After a review: a database that lacks
+journaled batches needs a restore, recorded before anything writes; the
+replay is one transaction and an interrupted restore resumes; an older
+database is migrated (A16 to A18).
 
 ## Pinned upstream versions
 
@@ -343,7 +351,13 @@ back after it, and never repeat an effect whose outcome is unknown.
    No answer makes it `broadcast_uncertain`, which follows the adapter rule
    above. The signed transaction is read by its `txid` from the controller's
    node, or from the operator wallet, and journaled as soon as it is seen.
-   With U1(c) it is journaled before the send.
+   With U1(c) it is journaled before the send. The operator wallet funds a
+   commitment from unconfirmed change, and that change can be another
+   space's commitment still in flight, so one commitment per space doesn't
+   keep spaces apart (regtest R26). The bytes of every unconfirmed
+   transaction the commitment spends from, directly or not, are journaled
+   with it, parents first, as the node holds them then. A rebroadcast sends
+   each one the node lacks, as journaled, before the commitment.
 10. Watch until `d >= 150`. Use `/commit/status` together with the
     controller's own lookup of the `txid` and the root, because `confirmed`
     there doesn't check the `txid`. A commitment that loses depth stays
@@ -381,7 +395,8 @@ broadcast intent together with the members' `issuing` marks, so a lagging
 registry journal blocks the broadcast too. The journal is what covers the
 time between snapshots.
 
-A coordinated snapshot:
+A coordinated snapshot (numbered after every snapshot already there, so
+that the latest is well defined whichever process took it):
 1. take the controller lock;
 2. stop `subs` and wait until its process has exited, which stops the
    proving loop;
@@ -410,8 +425,19 @@ exported all involve credentials, so the owner decides them.
 
 ## Restore and reconciliation
 
+A controller whose database lacks a batch its journal holds, a fresh one
+included, needs a restore. It records that in its database when it is
+opened, before anything writes, and refuses every write and send until a
+restore has replayed and reconciled. Otherwise it would give out a batch
+id the journal already holds, and could supersede an uncertain broadcast.
+
 1. Restore the snapshot onto a fresh host. Replay the journal into the
-   registry and controller databases.
+   registry and controller databases. The controller's replay writes every
+   batch in one transaction, with the record that it was replayed. Each
+   phase of the restore is recorded, and an interrupted restore resumes
+   where it stopped: the snapshot's files are moved into place whole and
+   not copied twice, a replay that committed isn't repeated, and the
+   reconciliation below, which is idempotent, runs again.
 2. For each space, compare the journal with the restored `subs` state:
    - a local commitment in the journal but absent from `subs` means the
      snapshot predates it. If no broadcast intent follows, redo it from
@@ -437,11 +463,33 @@ exported all involve credentials, so the owner decides them.
      gets a recovery incident;
    - `/rollback-local` is only for a batch before `issuing`;
    - never call `/broadcast` or `/rollback-local` for a commitment with a
-     journaled broadcast intent.
+     journaled broadcast intent;
+   - a batch at `committed_local`, `proved` or `checkpointed` whose members
+     the restored `subs` doesn't read back on its root was committed after
+     the snapshot, and nothing escaped: it is journaled as `rebuilt`, its
+     members stay paid, and the cycle redoes it from step 2;
+   - a commitment with a known `txid` that the fresh host's node has on
+     neither its chain nor its mempool is rebroadcast from its journaled
+     bytes, its unconfirmed ancestors first. A fresh node learns no earlier
+     mempool from its peers.
 3. For each refund family, look up every member before doing anything. Keep
    every reservation.
 4. Start the controller only when every batch and refund family is
-   reconciled or explicitly paused.
+   reconciled or explicitly paused. Until then no new commitment is sent:
+   neither `issue` nor `resume`. A wallet restored from its backup doesn't
+   know a transaction that this host hasn't seen again, and a new send
+   could spend the same inputs. Reconciled means every batch closed,
+   reconciled or paused; every commitment with a known `txid` on this
+   node's chain or in its mempool; each space's restored `subs` root equal
+   to the chain's, or one local commitment of an unsent or pending batch
+   ahead of it; every adopted `txid` that `subs` lacks attached (U1(b)),
+   or the space paused without that capability; and the store started,
+   which reconciles its refund attempts before serving. Readback, the
+   attach, a rebroadcast of journaled bytes and refunds go ahead meanwhile.
+
+The runner's `restore`, `readback`, `attach-txid`, `resume` and
+`rebroadcast` commands carry these steps (`PAYMENT-SPEC.md`, "Checkout and
+the attended runner").
 
 ## Certificate verification
 
@@ -471,11 +519,22 @@ space and alerts the owner.
 
 ## Operator gate rehearsal
 
+Status (2026-11-09): rehearsed on regtest, scenario 11
+(`regtest/run-recovery.sh`), with `subs` carrying U1(b) but not U1(a) or
+U1(c), four throwaway spaces instead of one so that every state of step 1
+is in flight at once, and the world on a separate node. The refund family
+with an exported PSBT wasn't opened: the API can't export one, and the
+gate needs it only if the launch uses owner-signed PSBTs. The
+"off-host" store is a local directory, written with per-object read-back,
+not a separate store with its own credentials. `regtest/REPORT.md` has the
+results and the times.
+
 On a throwaway space, with U1 in place:
 1. Run one batch to `fulfilled`. Stop a second batch at each of
    `committed_local`, `checkpointed`, `issuing` with the broadcast answer
-   withheld, and `broadcast`. Open one refund family with an exported PSBT and
-   one with a broadcast hot-wallet refund.
+   withheld, and `broadcast`. Open one refund family in each refund funding
+   method the launch uses: a broadcast hot-wallet refund, an exported PSBT,
+   or both. The method is undecided (PAYMENT-SPEC.md, open points).
 2. Destroy the host. Restore the snapshot and journal onto a fresh host.
 3. Reconcile as above. No name may be issued twice, no refund may pay twice,
    no reservation may disappear, and the restored tree's root must match the
@@ -514,7 +573,12 @@ Still open:
   of 1 and 2 names took 35 to 141 s, step and fold together, varying between
   runs;
 - the operator-side effect of R16 after a later commitment without a
-  `txid`, which was read from the source but not run.
+  `txid`, which was read from the source but not run;
+- whether the operator wallet should fund one space's commitment from
+  another's unconfirmed change (R26). `subs` asks for `confirmed_only:
+  false`. Journaling the ancestors' bytes recovers the chain when the
+  controller saw them; a commitment whose parent's bytes it never saw
+  waits until the parent is mined, and is lost with it if the parent is.
 
 ## Out of scope for this draft
 

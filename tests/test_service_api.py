@@ -8,7 +8,7 @@ evidence about the store's rules.
 
 The `test_V*` tests are the recipient-request cases V1 to V17 of
 PAYMENT-SPEC.md, and the `test_H*` tests are its service restore cases H1
-to H6 and H8 to H10. The model has neither recipient requests nor the service's database,
+to H6 and H8 to H11. The model has neither recipient requests nor the service's database,
 so these are service API results, not model results.
 """
 
@@ -748,6 +748,48 @@ class Api(unittest.TestCase):
         self.start()
         self.assertEqual(self.c.call("GET", link1)[1]["address"], q["address"])
         self.assertEqual(self.service.ledger.acknowledged_status(o2), "requested")
+
+    def test_H11_a_restored_wallet_never_gives_a_held_address_to_a_new_quote(self):
+        self.list("one@space", "two@space", "three@space")
+        o1, link1 = self.paid("one@space", SPK)
+        o2, link2 = self.order("two@space", SPK2)
+        held = {oid: self.service.ledger.operator_view(oid)["dest_script"] for oid in (o1, o2)}
+        self.lose_host()
+        self.restore()
+        # The payment wallet is restored from a backup older than both
+        # quotes: it gives out o2's unpaid address, then o1's, then a fresh
+        # one. Each request advances it.
+        replay = [("dest-again-2", held[o2]), ("dest-again-1", held[o1])]
+        fresh = self.view.new_destination
+        asked = []
+
+        def restored_wallet(oid):
+            asked.append(oid)
+            return replay.pop(0) if replay else fresh(oid)
+        self.view.new_destination = restored_wallet
+        self.start()
+        o3, link3 = self.order("three@space", recipient("h11-three"))
+        led = self.service.ledger
+        scripts = [r["dest_script"] for r in led.db.execute(
+            "select dest_script from orders where dest_script is not null")]
+        self.assertEqual(len(scripts), len(set(scripts)))
+        self.assertNotIn(led.operator_view(o3)["dest_script"], held.values())
+        self.assertEqual(len(asked), 3)
+        self.assertEqual({oid: led.operator_view(oid)["dest_script"] for oid in (o1, o2)}, held)
+        # The owner is told that the wallet is behind the journal, once.
+        alerts = [a for a in led.alerts() if a["kind"] == "destination_held"]
+        self.assertEqual([(a["oid"], json.loads(a["detail"])) for a in alerts],
+                         [(o3, {"skipped": 2})])
+        self.assertEqual(self.c.call("GET", link3)[1]["status"], "quoted")
+        # A wallet that only ever gives out held addresses makes no quote and
+        # takes no hold.
+        self.list("four@space")
+        o4, link4 = self.order("four@space", recipient("h11-four"), quote=False)
+        self.view.new_destination = lambda oid: ("dest-held", held[o1])
+        code, out = self.c.call("POST", link4 + "/quote")
+        self.assertEqual(code, 409, out)
+        self.assertEqual(led.operator_view(o4)["status"], "requested")
+        self.assertTrue(self.c.call("GET", "/names/four@space")[1]["available"])
 
     def test_H10_a_cancellation_is_final_only_once_acknowledged(self):
         self.list("one@space", "two@space")

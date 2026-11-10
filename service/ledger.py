@@ -558,12 +558,15 @@ class Ledger:
             raise Refused("taken for now")
         if not self.journal.available():
             raise Unconfirmed("the off-host journal is unavailable; no quote was made")
-        address, script = self.chain.new_destination(oid)
+        address, script, skipped = self._fresh_destination(oid)
         with self.tx():
             self._recipient_quotable(self._order(oid))
             n = self._name(o["name"])
             if n["hold_order"] is not None or n["fulfillment_order"] is not None:
                 raise Refused("taken for now")
+            if skipped:
+                # The payment wallet is behind the journal: the owner is told.
+                self._alert(oid, "destination_held", {"skipped": skipped})
             self._set_order(oid, status="quoted", price=n["price"], dest_script=script,
                             dest_address=address)
             self._set_name(o["name"], hold_order=oid,
@@ -571,6 +574,23 @@ class Ledger:
                            hold_seen_height=None, hold_latched=None)
         self.observe()
         return self._quote(oid)
+
+    def _fresh_destination(self, oid):
+        """A destination no order holds. A payment wallet restored from an
+        earlier backup has seen only the addresses that were paid, so it can
+        give out again an address a restored, unpaid quote still holds. Each
+        request advances the wallet, so it is asked again, at most once more
+        than the number of addresses orders hold. Returns the address, its
+        script and how many held ones were skipped."""
+        held = self.db.execute("select count(*) from orders where dest_script is not null"
+                               ).fetchone()[0]
+        for skipped in range(held + 1):
+            address, script = self.chain.new_destination(oid)
+            if not self.db.execute("select 1 from orders where dest_script = ?",
+                                   (script,)).fetchone():
+                return address, script, skipped
+        raise Refused("the payment wallet gave out only addresses that orders hold; no quote "
+                      "was made")
 
     def instructions_given(self, o):
         """Whether the order's payment address may be shown: its latest

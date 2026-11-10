@@ -20,7 +20,7 @@ pass.
 - `tests/test_service_api.py` exercises the HTTP boundaries and a restart
   over a simulated chain. Its `test_V*` tests are the recipient-request
   cases V1 to V17 of `spec/PAYMENT-SPEC.md`, and its `test_H*` tests are
-  the restore and acknowledgment cases H1 to H6 and H8 to H10. They are
+  the restore and acknowledgment cases H1 to H6 and H8 to H11. They are
   service API results, not model results: the model has neither recipient
   requests nor the service's database.
 - The twin test also runs the generator's host losses (case H7). At each
@@ -29,8 +29,18 @@ pass.
   two must then agree as before. This is a model-twin result.
 - `tests/test_checkout.py` exercises the checkout pages over a simulated
   chain (cases C1 to C12), and `tests/test_runner.py` the attended runner
-  against recording stand-ins (cases A1 to A5). They are service and runner
+  against recording stand-ins (cases A1 to A5). `tests/test_controller_host.py`
+  and `tests/test_runner_recovery.py` run the runner and the controller
+  against stand-ins for `subs`, `spaced`, `bitcoind` and the store (cases
+  A6 to A15, the recovery commands among them). They are service and runner
   results, not model results.
+- `regtest/run-recovery.sh` runs scenario 11, the operator gate's recovery
+  rehearsal: the host lost whole with batches in flight on four spaces and
+  a refund broadcast, a fresh host brought up from the off-host recovery
+  set alone, reconciled through the runner, and issuing again to
+  fulfilled. Its results are regtest results. `tools/replay_timing.py`
+  times the store's replay on a generated journal; those results are
+  labelled generated.
 - `regtest/run-checkout.sh` runs scenario 10: a buyer using only the
   checkout pages, and every operator step after listing a name done by the
   attended runner as its own process, through issuance, certificate
@@ -120,6 +130,12 @@ These are this milestone's choices, recorded so that they can be changed.
   same rule, in one transaction. A start that finds no store database, or
   one with no names and no orders, while the journal has entries refuses to
   serve and writes nothing.
+- The payment and refund wallet is backed up at onboarding. Restored from
+  that backup, it has seen only the addresses that were paid since, so it
+  can give out again an address a restored, unpaid quote holds. A quote
+  never takes an address an order holds: the store asks the wallet again
+  and alerts the owner once (`destination_held`, with the number
+  skipped). Scenario 11 showed it on regtest (H11).
 - Start-up reconciles every refund attempt against the chain before
   serving anything, and rebroadcasts an attempted one that the node doesn't
   know as the same signed transaction.
@@ -177,13 +193,31 @@ These are this milestone's choices, recorded so that they can be changed.
   configuration states whether `subs` has the U1(b) route; without it the
   attach of an adopted txid is refused, and continued issuance after such
   a recovery needs that capability or another reviewed procedure.
+- After a host loss the runner carries the controller's recovery:
+  `restore` (the latest coordinated snapshot's `subs` files, checked
+  against its manifest and copied only into an empty data directory while
+  `subs` is down, then the controller's batches from its journal,
+  reconciled), `readback`, `attach-txid`, and `resume` and `rebroadcast`,
+  which send and so need the batch id confirmed. Until the restore is
+  reconciled, `issue` and `resume` are refused, and `status` says what
+  waits. The store is restored first, with `python3 -m service restore`,
+  and started. A controller database that lacks batches its journal
+  holds, a fresh one included, records that a restore is required when it
+  is opened, and nothing but `status` and `restore` runs until a restore
+  has replayed the journal, in one transaction, and reconciled. An
+  interrupted `restore` resumes when run again. A database from an earlier
+  schema is migrated when it is opened.
 
 ## Not in this milestone
 
-- Restore from a snapshot plus the journal since it, and the operator
-  gate's full restoration with the controller and `subs`. The service
-  restores only its own database, from its journal alone, and not yet on
-  regtest.
+- Restore from a snapshot plus the journal since it. The store restores
+  from its journal alone; the operator gate's rehearsal (scenario 11)
+  restored it that way on regtest, with `subs` from the snapshot and the
+  controller from its journal, and didn't use the snapshot's copies of
+  the store's and the controller's databases.
+- An off-host store that is separate, with its own credentials and
+  per-object confirmation from the provider. The journals and snapshots
+  are a directory written with read-back.
 - An owner-signed PSBT for refunds, fee bumps and replacement families
   through the API (the ledger implements both rules, and the twin tests
   them), and a refund after an earlier refund spent the order's payment

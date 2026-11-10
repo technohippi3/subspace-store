@@ -32,6 +32,12 @@ class FakeController:
         self.state = "broadcast"
         return bid
 
+    def restore_pending(self):
+        return None
+
+    def recovery_state(self):
+        return None
+
     def post(self, path, body=None):
         self.calls.append(("subs", path))
         return {}

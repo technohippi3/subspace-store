@@ -575,6 +575,273 @@ the attach itself, stating the missing capability, where `subs` used to
 answer that it has no such route. Those steps are informational, and the
 next local commit is still refused by `subs` (R17).
 
+## The operator gate's recovery rehearsal (scenario 11, 2026-11-09)
+
+Script: `regtest/run-recovery.sh`, from `main` at `5226810` plus this
+round's changes. `subs` is the `subs-combined` build (U1(b) and
+`--fabric-seed`). Full table: `runs/recovery-20261109T194227Z-a5f2e7.md`
+and `.json`. Verdict pass, exit 0. All 65 required steps agree with the
+recovery rules of `CONTROLLER-DESIGN.md` and `PAYMENT-SPEC.md` (not the
+model), and 14 are informational. This is the rehearsal of
+`CONTROLLER-DESIGN.md`, "Operator gate rehearsal", on regtest. It isn't the
+operator gate passed: see what it doesn't cover, below.
+
+The world and the host. A separate "network" bitcoind holds the preset
+chain, the buyers' and the miner's wallets, a `spaced` of its own and the
+relay, which reads from that `spaced`. They stand for the world and are
+never touched by the loss. The host is its own bitcoind, which starts
+empty and syncs from the network node as its one peer, `spaced`, `subs`,
+the prover, the store service, the fault proxies and the attended runner.
+Off the host are the store's journal, the runner's journal, the
+coordinated snapshots and two backups taken at onboarding: the operator
+wallet exported from `spaced` (`walletexport`) and the store's payment and
+refund wallet backed up by Bitcoin Core (`backupwallet`). The backups hold
+regtest key material; they stay in the run directory, mode 0600, and
+aren't kept in the repository.
+
+In flight when the host was lost, one state per space, so that every
+state of the rehearsal's step 1 coexists:
+- `@test10000`: b1 fulfilled, through `prepare`, `issue`, `watch`,
+  `certify` and `publish`; then b4 `broadcast`, sent after the latest
+  snapshot, with its txid known;
+- `@test9999`: b2 `checkpointed`;
+- `@test9998`: b3 `issuing`. Its broadcast went out, and the fault proxy
+  in front of `subs` withheld the answer from the runner, which was still
+  waiting when the host was lost. The runner's journal had b3 `issuing`
+  with its intent, and no txid;
+- `@test9997`: b5 `committed_local`, after the latest snapshot. No runner
+  command stops there, so the harness built the runner's controller from
+  the same host configuration (`controller.host.build`) and took the
+  first three steps;
+- a cancellation refund of 9,700 from the store's hot wallet, built by
+  `runner refund` and sent by `runner broadcast-refund` with its group id
+  confirmed;
+- an unpaid quote, the newest address the store's wallet had given out.
+
+The wallet funded b4 from b3's unconfirmed change (R26). The world's node
+had b3, b4 and the refund in its mempool when the host was lost. Nothing
+was mined while the host was down.
+
+The loss. Every host process was killed with SIGKILL, the waiting runner
+among them, and every host path deleted: the host node's and `spaced`'s
+data, `subs`' data, the store's and the controller's databases, the
+runner's directory, the service's configuration and tokens, and the
+credential files. Left were the two journals, four snapshots
+(`001-b1` to `004-b4`) and the two backups.
+
+The fresh host, in order, each step timed:
+1. Its bitcoind started empty and synced from the network node. Its
+   mempool was empty: a node learns no earlier mempool from its peers.
+2. `spaced` started empty and synced.
+3. The operator wallet was imported from its backup and synced; it owns
+   the four spaces.
+4. The store's wallet was restored from its backup (`restorewallet`).
+5. `python3 -m service restore` rebuilt the store's database from its
+   journal alone: 7 names, 7 orders, 1 refund group, 1 authorization.
+6. The store started. Before serving, it reconciled the refund attempt,
+   which the fresh node didn't know, and sent the same signed bytes again
+   (H6).
+7. `runner restore` checked the latest snapshot, `004-b4`, against its
+   manifest (13 files of `subs`), copied it into `subs`' empty data
+   directory while `subs` was down, started `subs`, rebuilt the
+   controller's five batches from its journal and reconciled them. b5 was
+   rebuilt, because the restored `subs` didn't hold its local commitment;
+   its order stayed paid. b3, an intent with no answer, became
+   `broadcast_uncertain`, and its readback found nothing. b4 waited for
+   its bytes to be sent again, b2 was reconciled, and b1 was closed.
+8. The fresh host's tokens are new, so `subs` was given the store's new
+   registry token. That is host provisioning, not part of the recovery
+   set.
+9. `runner issue b2` was refused, saying what the restore still waited
+   for (A14).
+10. `runner readback b3` found nothing on this host: the commitment was in
+    the world's mempool only.
+11. `runner rebroadcast b4` without its confirmation was refused, and
+    nothing reached the mempool (A11). Confirmed, it sent b3's bytes,
+    journaled as b4's unconfirmed ancestor, then b4's own (A15).
+12. `runner readback b3` again adopted b3's txid, now in this node's
+    mempool, before any block.
+13. A block arrived (the world mined one), and `runner attach-txid` told
+    `subs` the txids of b4 and b3 (U1(b)).
+14. `runner status` reported the restore reconciled, with nothing waiting.
+
+Checks against the state before the loss, all required and all passing:
+- every order's status as before;
+- every order's reservation, available amount, refunded total, sums
+  (recomputed from the chain), destination, recipient and refund groups
+  as before, so no reservation disappeared. The refund had one
+  confirmation then, so its group stayed open and its reservation with
+  it;
+- every name's fulfillment reservation as before, and the unpaid quote's
+  hold kept;
+- no name issued twice: each handle committed once in `subs`, and each
+  order in one batch that wasn't rebuilt;
+- each space's restored tree root against the chain: on `@test10000` and
+  `@test9998`, `subs`' root equal to the chain's, with the txid attached;
+  on `@test9999`, one local commitment ahead, b2 never sent; on
+  `@test9997`, no commitment on either side;
+- no refund paid twice: one group with one attempt, and one transaction
+  paying the buyer's refund address, 9,700 sats;
+- every buyer's order link, kept by the buyer, opening its own order with
+  the status it had (H1, on regtest).
+
+Then issuance and refunds resumed:
+- `runner issue b2`, with the binding check again, and `runner prepare`
+  on `@test9997`, which redid b5's order as b6 from staging; both sent;
+- b4, b3, b2 and b6 mined to d >= 150 and an anchor that covers them,
+  certified, published and confirmed by verified lookups through the
+  relay: their four orders fulfilled;
+- the first quote after the restore: the restored wallet's next address
+  was the unpaid quote's, and the store skipped it, with one
+  `destination_held` alert (H11);
+- another batch on `@test10000`, b7, after the recovery: prepared, proved
+  with a step and a fold (107 s; b4's step proof had taken 36 s), issued,
+  finalized, certified and delivered, its order fulfilled. The fresh
+  host's runner numbered its snapshots on from the restored ones,
+  `005-b6` and `006-b7`;
+- a new cancellation refund after the recovery, built and sent through
+  the runner; both refunds settled at 6 confirmations, each paid once.
+
+The two times, with the history they were measured on (regtest, one run):
+
+| Measure | Seconds | History |
+| --- | --- | --- |
+| Store replay, `python3 -m service restore` | 0.15 | store journal of 41 entries, 34,908 bytes; 7 orders, 1 refund group, no alert |
+| Complete recovery, until issuance and refunds can safely resume | 28.2 | the above, and the runner's journal of 41 entries, 21,288 bytes; five batches; four spaces |
+
+The complete recovery runs from starting the fresh host's bitcoind to
+`runner status` reporting the restore reconciled. Of it, 13.7 s went to
+the host node's sync from the network node and 4.4 s to `spaced`'s,
+over a regtest chain of about 3,640 blocks; the operator wallet's import
+and sync took 3.1 s, `runner restore` 0.55 s and each other runner
+command under half a second. One block was needed before the
+attaches; on regtest the harness mined it at once, so the time holds no
+wait for a block, which on mainnet would add one block interval or more.
+The rehearsal stands for no sales period: its 7 orders were placed over
+180 blocks mined at once. The targets for both times are open
+points for the workspace_owner, and these numbers don't set them.
+
+The replay on generated journals. A rehearsal's few orders can't show
+whether a whole sales period replays fast enough, so `tools/replay_timing.py`
+writes journals with the service's own ledger over the model's simulated
+chain and times `python3 -m service restore` on them. Each order is a name
+listed, a request and a quote; every tenth expires unpaid, every twentieth
+paid one is cancelled and refunded from a hot-wallet group that settles,
+and every fiftieth issued one gets an owner alert and stays issuing; the
+rest are fulfilled. These results are labelled generated: not regtest,
+and no real sales history. The sales periods are assumptions, not the
+workspace_owner's. The replay is the timed step; generating the journal
+isn't. A profile of the 1,000-order generation put most of its time in the
+ledger's database queries and the journal's fsync per entry, and the time
+per order grew with the history: 20 s for 1,000 orders, 69 s for 3,000
+and 357 s for 10,000. That growth in the store's own operations wasn't
+investigated further.
+
+| Orders (assumed sales period) | Outcomes | Journal | Replay |
+| --- | --- | --- | --- |
+| 1,000 (a three-month pilot at about 11 orders a day) | 830 fulfilled, 100 expired, 50 refunded, 20 alerted | 5,040 entries, 4,746,237 bytes | 0.23 s |
+| 3,000 (three times that, as headroom) | 2,490 fulfilled, 300 expired, 150 refunded, 60 alerted | 15,120 entries, 14,335,342 bytes | 0.52 s |
+| 10,000 (ten times that, as headroom) | 8,300 fulfilled, 1,000 expired, 500 refunded, 200 alerted | 50,400 entries, 47,950,396 bytes | 1.39 s |
+
+Each replay restored every record the generation built, and was timed
+once, on the same machine as the rehearsal, with Python 3.12.
+
+What the rehearsal doesn't cover:
+- the refund family with an exported, owner-signed PSBT: the API can't
+  export one, so it wasn't opened. The gate needs it only if the launch
+  uses owner-signed PSBTs; refund funding is undecided;
+- a separate off-host store with its own credentials and the provider's
+  per-object checksums. The journals, snapshots and backups are a
+  directory of the run, written with read-back;
+- U1(a) and U1(c). Without U1(c) the controller reads a commitment's bytes
+  only after the send; b3's own bytes were never read, and only b4's
+  ancestry saved them (R26). A commitment whose parent the controller
+  never saw can't be rebroadcast;
+- the snapshot's copies of the store's and the controller's databases.
+  The store and the controller were each restored from their own journal
+  alone, as the rehearsal asks; restoring from a snapshot plus the journal
+  since it isn't built;
+- the certificate of b1's order on its order page. Certificates aren't
+  journaled, and `runner certify` verifies a member's certificate only on
+  its own batch's root, while `subs` now builds it on b4's later root. So
+  the order page for b1's order offers no certificate after the restore;
+  the buyer's copy and the relay's are unaffected. Re-delivering it needs
+  the later-root rule of "Certificate verification" in `certify`;
+- the publisher's outstanding sets, which were lost with the host and
+  started empty; batches published after the restore were enrolled again
+  from their ready members;
+- a mainnet host, a real operator wallet, a host with a pruned or `yuki`
+  node, and recovery times over a long chain.
+
+Earlier attempts:
+- `probe-recovery-20261109T192504Z-dc4d1f`, the first attempt, is kept as
+  R26's evidence. Verdict fail, 2 of 61 required steps disagreeing. b4's
+  rebroadcast was refused by the fresh node for a missing input, its
+  parent b3, which the controller hadn't journaled; that is R26, and the
+  ancestors rule (A15) followed. The other was a harness slip: it read
+  the new refund before the store's next evaluation and found it not yet
+  closed. Its recovery took 29.5 s, with the store's replay 0.16 s, on a
+  history of the same size. It also showed that each runner process
+  numbered its snapshots from 1 (`001-b1` to `001-b4`), so which one was
+  latest rested on the batch label alone; snapshots are now numbered after
+  every one already there.
+- `recovery-20261109T193541Z-b9c69e` ended in error, a harness bug: it
+  read b4 from the world's node before the commitment had reached it. Not
+  kept.
+- `recovery-20261109T193734Z-832b65` passed, 64 required steps agreeing,
+  with a complete recovery of 29.0 s and a replay of 0.16 s. Its recorded
+  history counted the alerts after the recovery, not before the loss, so
+  it was rerun with that corrected, and with the checks on the buyers'
+  order links and on b1's certificate added. Not kept.
+
+## Review of the recovery rehearsal (2026-11-10)
+
+A review of the scenario 11 work found two faults that the rehearsal
+didn't reach, because its fresh host always ran `runner restore` first
+and its controller databases were all new. Both are fixed, and neither
+fix is regtest evidence on its own: they are tested against stand-ins
+(cases A16 to A18 in `PAYMENT-SPEC.md`).
+
+1. A restore could be skipped or left half done. The recovery gate
+   applied only once `restore` had recorded a restore. A fresh controller
+   database beside an existing journal ran normally, so the reviewer
+   froze a new b1 while the journal held an uncertain b1. And the replay
+   inserted batches one by one: interrupted between inserts and reopened,
+   the readiness check reported ready, cleared the marker and allowed
+   issuance without the uncertain batch, and `restore` then refused,
+   because the database held a batch. Now a controller database that
+   lacks a batch its journal holds records that a restore is required
+   when it is opened, before anything writes. Until a restore has
+   replayed and reconciled, the controller refuses every write and send,
+   and the runner every command but `status` and `restore` (A16). The
+   replay is one transaction, recorded with it, and `restore` records its
+   phases and resumes an interrupted restore without copying `subs` or
+   replaying twice (A17). The tests kill a process in the middle of the
+   replay, and stop `restore` during the replay and during
+   reconciliation, then reopen the database each time.
+2. An existing controller database wasn't migrated. One with the schema
+   of commit `5226810` opened, then capturing a commitment's bytes, which
+   issuance does right after its broadcast, failed for want of the
+   `ancestors` column. Now the columns a database lacks are added when
+   it is opened, with its rows kept (A18).
+
+The restore path changed, so the rehearsal ran again:
+`recovery-20261110T043551Z-402374`, verdict pass, exit 0, all 67 required
+steps agreeing and 14 informational. It adds two required steps on the
+fresh host before the restore: `runner prepare` refused with "restore
+required", and `runner status` reporting the restore required with every
+journaled batch missing and no batch in the database. Its `runner
+restore` recorded that it resumed from "required", copied `subs` and
+replayed. Everything else matched `recovery-20261109T194227Z-a5f2e7` step
+for step. The complete recovery took 28.0 s and the store's replay 0.14 s,
+on the same history: a store journal of 41 entries and 34,903 bytes, a
+runner journal of 41 entries and 21,288 bytes, 7 orders, 1 refund group
+and no alert. Both runs are kept. The interruptions themselves weren't
+run on regtest.
+
+The missing certificate download on b1's order page after the restore
+stays open; this review didn't change it.
+
 ## The tightened harness
 
 Since fp4:
@@ -600,8 +867,9 @@ Since fp4:
 ## Not exercised
 
 Not exercised on regtest:
-- a restore of the store service from its off-host journal alone, without
-  its own database (its restarts in scenarios 7 and 8 keep the database);
+- a restore from a snapshot plus the journal since it (scenario 11
+  restores the store and the controller from their journals alone, and
+  `subs` from the snapshot);
 - publication beyond one local relay: propagation between relays, the
   public relay network, chunks of more than one handle, an oversized chunk
   and its halving, temp certificates, a reorg between the live check
@@ -616,7 +884,7 @@ Not exercised on regtest:
   (scenario 9 signs with libveritas's builder for an untransferred handle);
 - a fulfilled order whose commitment then loses finality or is superseded
   (L4, L5);
-- refunds other than one cancellation refund through the store service
+- refunds other than cancellation refunds through the store service
   (excess refunds, fee bumps, replacement families, PSBT export), late
   payments, hold extensions and eligibility proofs;
 - a lost answer between `subs` and the controller (only `spaced`'s answer to
@@ -629,30 +897,32 @@ Not exercised on regtest:
 - auctions, and a natural competing-chain reorg as opposed to
   `invalidateblock`.
 
-The restore scenario isn't the operator gate. Bitcoin Core and `spaced`
-stayed up through the "host loss", the operator wallet wasn't restored
-from its backup, and the "off-host" journal and snapshots are another
-local directory, not a separate store with per-object confirmation. So it
-shows the registry, controller and `subs` restore and reconcile. It doesn't
-show a clean-host backup and wallet restore.
+The restore scenario (scenario 3) isn't the operator gate. Bitcoin Core
+and `spaced` stayed up through its "host loss", and the operator wallet
+wasn't restored from its backup. Scenario 11 is the rehearsal on a fresh
+host, with the world on its own node and both wallets restored from their
+onboarding backups. In both, the "off-host" journals and snapshots are a
+directory of the run, not a separate store with its own credentials and
+the provider's checksums.
 
 ## Evidence kept
 
-The run directories under `.run/` are ignored by git. `keep-run.sh` copies a
-run's report into `runs/` and its certificate verifications into
+The run directories under `.run/` are ignored by git. `keep-run.sh` copies
+a run's report into `runs/` and its certificate verifications into
 `evidence/<run id>/`, with the repository's absolute path made relative. It
 never replaces or removes anything already kept: a run id that is already
 kept is refused, the copies are checked in a temporary directory before
 they're published, and a run id must be a plain name.
-`tests/test_regtest_keep_run.py` covers this. The kept runs are the two full
-runs, four continued runs and `publication-20261107T094250Z-76605c`. Four
-of the publication run's verifications, in its `-relay` directories, are
-the relay's `/query` answers from scenario 6: two from before publication
-and two from the delivery lookups. The six combined runs, the service runs and
-`records-20261108T161951Z-0c9721` are kept as well, and so are the five
-passing checkout runs, whose runner verifications are under `runner/`: 220
-messages in all. Each message is kept with its root anchors and
-libveritas output. `verify-evidence.sh` verifies them all offline, and
-`evidence/README.md` says how. fp4's certificate isn't kept in the repository,
-because its handle label was a personal name and is part of the signed
-message.
+`tests/test_regtest_keep_run.py` covers this. The kept runs are the two
+full runs, four continued runs and `publication-20261107T094250Z-76605c`.
+Four of the publication run's verifications, in its `-relay` directories,
+are the relay's `/query` answers from scenario 6: two from before
+publication and two from the delivery lookups. The six combined runs, the
+service runs and `records-20261108T161951Z-0c9721` are kept as well, and so
+are the five passing checkout runs, whose runner verifications are under
+`runner/`, and the three recovery runs of scenario 11, whose lost host's
+runner verifications are under `lost-host-runner/`: 256 messages in all.
+Each message is kept with its root anchors and libveritas output.
+`verify-evidence.sh` verifies them all offline, and `evidence/README.md`
+says how. fp4's certificate isn't kept in the repository, because its
+handle label was a personal name and is part of the signed message.

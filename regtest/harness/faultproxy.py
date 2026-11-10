@@ -9,6 +9,12 @@ and answered upstream, and then the client connection is closed without a
 reply. The upstream effect happens; only the answer is lost. That is the
 "lost response" fault in CONTROLLER-DESIGN.md.
 
+`{"hold_response": "<substring>", "count": 1}` withholds the answer
+instead: the request is forwarded and answered upstream, the answer is
+logged, and the client gets nothing and waits until the proxy stops. The
+recovery rehearsal uses it to lose the host while a broadcast's answer is
+still on its way, with the batch `issuing`.
+
 `GET /__proxy__` returns the rule and the log of dropped requests.
 """
 
@@ -21,6 +27,7 @@ from pathlib import Path
 
 LOCK = threading.Lock()
 DROPPED = []
+HELD = []
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -38,21 +45,23 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     def _consume(self, path, body):
+        """"drop" or "hold" when the rule matches this request, else None."""
         with LOCK:
             rule = self._rule()
-            needle = rule.get("drop_response")
+            mode = "hold" if rule.get("hold_response") else "drop"
+            needle = rule.get(f"{mode}_response")
             count = rule.get("count", 0)
             if not needle or count <= 0:
-                return False
+                return None
             if needle not in path and needle.encode() not in body:
-                return False
+                return None
             rule["count"] = count - 1
             Path(self.control).write_text(json.dumps(rule))
-            return True
+            return mode
 
     def _handle(self):
         if self.path == "/__proxy__":
-            out = json.dumps({"rule": self._rule(), "dropped": DROPPED}).encode()
+            out = json.dumps({"rule": self._rule(), "dropped": DROPPED, "held": HELD}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(out)))
@@ -61,7 +70,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else b""
-        drop = self._consume(self.path, body)
+        fault = self._consume(self.path, body)
         headers = {k: v for k, v in self.headers.items()
                    if k.lower() not in ("host", "connection", "content-length")}
         conn = http.client.HTTPConnection("127.0.0.1", self.target, timeout=3600)
@@ -69,7 +78,17 @@ class Handler(BaseHTTPRequestHandler):
         resp = conn.getresponse()
         payload = resp.read()
         conn.close()
-        if drop:
+        if fault == "hold":
+            with LOCK:
+                HELD.append({"method": self.command, "path": self.path,
+                             "request": body.decode(errors="replace")[:2000],
+                             "upstream_status": resp.status,
+                             "upstream_response": payload.decode(errors="replace")[:2000]})
+            # The upstream call completed; the caller waits for an answer
+            # that never comes while the proxy runs.
+            threading.Event().wait()
+            return
+        if fault == "drop":
             with LOCK:
                 DROPPED.append({"method": self.command, "path": self.path,
                                 "request": body.decode(errors="replace")[:2000],

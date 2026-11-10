@@ -32,6 +32,7 @@ from .rpc import HttpError
 FINAL_D = 150
 ANCHOR_FINALITY = 144  # libveritas: newest anchor - commitment height
 PREPARING = ("frozen", "staged", "committed_local", "proved", "checkpointed")
+COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
 WATCHED = ("broadcast", "broadcast_uncertain", "mined")
 LIVE = ("issuing", "broadcast", "broadcast_uncertain", "mined", "final")
@@ -42,10 +43,25 @@ create table if not exists batches (
   digest text not null, state text not null, prior_root text, root text,
   delegate_in text, fee_rate integer, txid text, mined_height integer,
   intent integer not null default 0, attempted integer not null default 0,
-  supersedes text, answer text, raw text, recovery_paused integer not null default 0
+  supersedes text, answer text, raw text, recovery_paused integer not null default 0,
+  ancestors text
 );
 create table if not exists alerts (n integer primary key, kind text, bid text, detail text);
+create table if not exists recoveries (
+  n integer primary key, snapshot text, restored_at real not null, subs_at real,
+  replayed_at real, reconciled_at real, ready_at real
+);
 """
+
+# Columns added since the first released schema (commit 5226810), added to an
+# existing database when it is opened: table -> {column: declaration}.
+MIGRATIONS = {"batches": {"ancestors": "text"},
+              "recoveries": {"snapshot": "text", "subs_at": "real", "replayed_at": "real",
+                             "reconciled_at": "real", "ready_at": "real"}}
+
+RESTORE_REQUIRED = ("restore required: the controller's journal holds batches this database "
+                    "doesn't, or a restore hasn't finished replaying and reconciling them; "
+                    "run restore")
 
 
 class Refused(Exception):
@@ -103,6 +119,7 @@ class Controller:
         self.db = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        self._migrate()
         self.journal = journal
         self.registry = registry
         self.clients = clients
@@ -117,6 +134,18 @@ class Controller:
         self.snapshot_dir = Path(snapshot_dir) if snapshot_dir else Path(journal.dir) / "snapshots"
         self.ready_timeout = ready_timeout
         self.snapshots = 0
+        # Before anything else can write: a database that lacks batches its
+        # journal holds is recorded as needing a restore.
+        self.recovery_state()
+
+    def _migrate(self):
+        """Add the columns a database from an earlier schema lacks. Each is
+        nullable, so existing rows keep their values."""
+        for table, columns in MIGRATIONS.items():
+            have = {r["name"] for r in self.db.execute(f"pragma table_info({table})")}
+            for name, decl in columns.items():
+                if name not in have:
+                    self.db.execute(f"alter table {table} add column {name} {decl}")
 
     # Clients
 
@@ -274,6 +303,7 @@ class Controller:
     # 1. Freeze
 
     def freeze(self, space, members=None, supersedes=None):
+        self.require_restored()
         open_ = [b for b in self.batches(space) if b["state"] not in CLOSED]
         if open_:
             raise Refused(f"another batch is open ({open_[0]['bid']}); one commitment per space")
@@ -299,6 +329,7 @@ class Controller:
     # 2. Stage
 
     def stage(self, bid):
+        self.require_restored()
         b = self.batch(bid)
         if b["state"] != "frozen":
             raise Refused("not frozen")
@@ -328,6 +359,7 @@ class Controller:
     # 3. Local commit
 
     def commit_local(self, bid):
+        self.require_restored()
         b = self.batch(bid)
         if b["state"] != "staged":
             raise Refused("not staged")
@@ -351,6 +383,7 @@ class Controller:
     # 4. Prove
 
     def prove(self, bid, timeout=6 * 3600, poll=5):
+        self.require_restored()
         b = self.batch(bid)
         if b["state"] != "committed_local":
             raise Refused("not committed locally")
@@ -390,6 +423,7 @@ class Controller:
     # 7. Checkpoint: the coordinated snapshot
 
     def checkpoint(self, bid):
+        self.require_restored()
         b = self.batch(bid)
         if b["state"] != "proved":
             raise Refused("not proved")
@@ -427,6 +461,13 @@ class Controller:
         raise Refused(f"subs did not answer /status within {self.ready_timeout} s of its start; "
                       "nothing resumes")
 
+    @staticmethod
+    def snapshot_number(path):
+        """A coordinated snapshot's sequence number, from its directory name
+        `NNN-label`; -1 for anything else."""
+        head = Path(path).name.split("-", 1)[0]
+        return int(head) if head.isdigit() else -1
+
     def snapshot(self, label):
         """Stop subs, copy its data directory, back up both databases with
         SQLite's backup API, record the journal positions, start subs.
@@ -437,8 +478,12 @@ class Controller:
         any other failure leaves the shutdown unestablished, and nothing is
         copied. Work resumes only once subs answers /status with a status
         again after its start."""
+        # Numbered from what is already there, so the latest is well defined
+        # however many processes took them (each runner command is its own).
         self.snapshots += 1
-        dest = self.snapshot_dir / f"{self.snapshots:03d}-{label}"
+        n = max((self.snapshot_number(d) for d in self.snapshot_dir.glob("*")), default=0) \
+            if self.snapshot_dir.is_dir() else 0
+        dest = self.snapshot_dir / f"{n + 1:03d}-{label}"
         dest.mkdir(parents=True)
         self.subs_process.stop()
         if not self._subs_stopped():
@@ -482,6 +527,7 @@ class Controller:
         """The binding check, the serialized `issuing` step, both journals, and
         one `/broadcast`. Returns the batch that went on (a rebuilt one if a
         member failed)."""
+        self.require_restored()
         b = self.batch(bid)
         if b["state"] != "checkpointed":
             raise Refused("not checkpointed")
@@ -530,6 +576,7 @@ class Controller:
         self.capture_bytes(bid)
 
     def resume(self, bid):
+        self.require_restored()
         b = self.batch(bid)
         if b["state"] != "issuing":
             raise Refused("nothing to resume")
@@ -551,6 +598,7 @@ class Controller:
         raise Refused("never repeat a broadcast whose outcome is unknown")
 
     def rollback_local(self, bid):
+        self.require_restored()
         b = self.batch(bid)
         if b["state"] not in PREPARING or b["intent"] or b["attempted"]:
             raise Refused("never roll back a commitment that may have escaped")
@@ -628,6 +676,7 @@ class Controller:
     def attach_txid_value(self, bid, txid):
         """Ask subs to attach a given txid to the last commitment of the
         batch's space. Used to check that a wrong one is refused."""
+        self.require_restored()
         if not self.capabilities.attach_txid:
             raise Refused(NO_ATTACH)
         b = self.batch(bid)
@@ -639,6 +688,7 @@ class Controller:
         status and its next local commit see it. Only through the
         `/commit/txid` route of the patch in `regtest/upstream/`; the pinned
         subs has no such route. It sends nothing."""
+        self.require_restored()
         if not self.capabilities.attach_txid:
             raise Refused(NO_ATTACH)
         b = self.batch(bid)
@@ -654,7 +704,13 @@ class Controller:
     def capture_bytes(self, bid):
         """Journal the signed commitment as soon as the controller's node has
         it. Without a prepare/send split in subs (U1(c)) this is the earliest
-        the bytes can be had."""
+        the bytes can be had.
+
+        The operator wallet funds a commitment from unconfirmed change, which
+        can be another space's commitment still in flight. A node that knows
+        neither, such as a fresh host's, refuses the commitment's own bytes
+        for a missing input. So the bytes of every unconfirmed ancestor the
+        node holds now are journaled with it, parents first."""
         b = self.batch(bid)
         if b["raw"] or not b["txid"]:
             return bool(b["raw"])
@@ -662,8 +718,31 @@ class Controller:
             raw = self.btc.call("getrawtransaction", b["txid"])
         except Exception:  # noqa: BLE001 - not known to the node
             return False
-        self._save(bid, raw=raw)
+        self._save(bid, raw=raw, ancestors=json.dumps(self._unconfirmed_ancestors(b["txid"])))
         return True
+
+    def _unconfirmed_ancestors(self, txid):
+        """[(txid, raw)] of every unconfirmed transaction `txid` spends from,
+        directly or not, parents before children, as the node has them."""
+        out, seen = [], set()
+
+        def visit(t):
+            tx = self.btc.call("getrawtransaction", t, True)
+            for vin in tx.get("vin", []):
+                parent = vin.get("txid")
+                if not parent or parent in seen:
+                    continue
+                seen.add(parent)
+                try:
+                    ptx = self.btc.call("getrawtransaction", parent, True)
+                except Exception:  # noqa: BLE001 - unknown to the node
+                    continue
+                if ptx.get("blockhash") and ptx.get("confirmations", 1) > 0:
+                    continue
+                visit(parent)
+                out.append([parent, ptx["hex"]])
+        visit(txid)
+        return out
 
     def commitment_seen(self, bid):
         b = self.batch(bid)
@@ -675,6 +754,7 @@ class Controller:
         """Send the identical journaled bytes of a commitment that is in no
         mempool and not on the best chain. Without journaled bytes the
         recovery pauses for the owner. Never /broadcast."""
+        self.require_restored()
         b = self.batch(bid)
         if b["state"] not in ("broadcast", "broadcast_uncertain"):
             raise Refused("nothing to recover")
@@ -688,6 +768,16 @@ class Controller:
             raise Refused("no journaled commitment bytes: recovery paused for the owner")
         if not self._issuance_acknowledged(self.batch(bid)):
             raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
+        # Its unconfirmed ancestors first, each as journaled, unless the node
+        # already has it. They are no new spend: each is the identical bytes
+        # of a transaction that was sent before.
+        if acked.get("ancestors") != b["ancestors"]:
+            raise Refused("the ancestors' bytes aren't the journaled ones; nothing sent")
+        pool = set(self.btc.call("getrawmempool"))
+        for atxid, araw in json.loads(b["ancestors"] or "[]"):
+            if atxid in pool or self.tx_position(atxid):
+                continue
+            self.btc.call("sendrawtransaction", araw)
         txid = self.btc.call("sendrawtransaction", b["raw"])
         self._save(bid, recovery_paused=0)
         return txid
@@ -702,6 +792,7 @@ class Controller:
         return "verified" if newest - b["mined_height"] >= ANCHOR_FINALITY else "awaiting_anchor"
 
     def watch(self, bid):
+        self.require_restored()
         """Move a batch along with the chain, including loss of finality."""
         self.wait_synced()
         self.capture_bytes(bid)
@@ -737,6 +828,7 @@ class Controller:
         """Fetch each member's certificate message from subs, read the root
         anchors from spaced directly, verify with libveritas, and compare
         handle, script_pubkey and root with the batch record."""
+        self.require_restored()
         b = self.batch(bid)
         if b["state"] != "final":
             raise Refused("not final")
@@ -794,17 +886,47 @@ class Controller:
     # reconciliation"), from the restored snapshot plus the journal.
 
     def restore_from_journal(self):
+        """Replay the journal into the batches table, in one transaction, then
+        reconcile. A restore that was interrupted resumes: a replay that
+        didn't commit left nothing and runs again; one that committed isn't
+        repeated, and reconciliation, which is idempotent, runs again."""
+        pending = self.restore_pending()
+        if pending is None or not pending["replayed_at"]:
+            self._replay(pending["n"] if pending else None)
+        log = self._reconcile()
+        if pending is not None:
+            self.db.execute("update recoveries set reconciled_at = ? where n = ?",
+                            (time.time(), pending["n"]))
+        return log
+
+    def _insert_batch(self, row):
+        row = dict(row)
+        row["members"] = json.dumps(row["members"])
+        cols = ", ".join(row)
+        self.db.execute(f"insert into batches({cols}) values ({', '.join('?' for _ in row)})",
+                        tuple(row.values()))
+
+    def _replay(self, recovery):
+        """Every batch's latest journaled state, written whole or not at all,
+        with the restore's replay recorded in the same transaction."""
         latest = {}
         for e in self.journal.entries():
             if e["kind"] == "batch":
                 latest[e["batch"]["bid"]] = e["batch"]
-        self.db.execute("delete from batches")
-        for row in latest.values():
-            row = dict(row)
-            row["members"] = json.dumps(row["members"])
-            cols = ", ".join(row)
-            self.db.execute(f"insert into batches({cols}) values ({', '.join('?' for _ in row)})",
-                            tuple(row.values()))
+        self.db.execute("begin immediate")
+        try:
+            self.db.execute("delete from batches")
+            for row in latest.values():
+                self._insert_batch(row)
+            if recovery is not None:
+                self.db.execute("update recoveries set replayed_at = ? where n = ?",
+                                (time.time(), recovery))
+            self.db.execute("commit")
+        except BaseException:
+            self.db.execute("rollback")
+            raise
+
+    def _reconcile(self):
         log = []
         orders = {r["oid"]: r["status"] for r in self.registry.db.execute("select oid, status from orders")}
         for b in self.batches():
@@ -812,6 +934,14 @@ class Controller:
             if b["state"] in PREPARING and any(m not in orders for m in b["members"]):
                 self._save(bid, state="rebuilt")
                 log.append((bid, "rebuilt: a member is missing from the restored registry"))
+                continue
+            if b["state"] in COMMITTED_UNSENT and not self.subs_holds(b):
+                # The snapshot predates the local commitment, and no
+                # broadcast intent follows it: nothing escaped. Redo it
+                # from step 2; its members are still paid.
+                self._save(bid, state="rebuilt")
+                log.append((bid, "rebuilt: the restored subs doesn't hold its local commitment "
+                                 "(the snapshot predates it); its members stay paid"))
                 continue
             if b["state"] == "issuing" and b["intent"]:
                 # A journaled intent without a recorded answer: the call may
@@ -841,3 +971,157 @@ class Controller:
             if b["state"] == "broadcast_uncertain":
                 log.append((b["bid"], f"readback: {self.readback(b['bid'])['adopted']}"))
         return log
+
+    # Readiness after a restore (CONTROLLER-DESIGN.md, "Restore and
+    # reconciliation", step 4): what still waits before a new commitment may
+    # be sent.
+
+    def subs_holds(self, b):
+        """Whether subs holds the batch's local commitment: every member
+        read back on the batch's root. A handle subs doesn't know, or one
+        on another root or none, means it doesn't."""
+        if not b["root"]:
+            return False
+        for m in b["members"]:
+            try:
+                info = self.handle(b["space"], label(self.registry.order(m)["name"]))
+            except HttpError as e:
+                if e.status == 404:
+                    return False
+                raise
+            if not info or info.get("commitment_root") != b["root"]:
+                return False
+        return True
+
+    def missing_batches(self):
+        """Batches the journal holds that this database doesn't."""
+        journaled = {e["batch"]["bid"] for e in self.journal.entries() if e["kind"] == "batch"}
+        have = {r["bid"] for r in self.db.execute("select bid from batches")}
+        return sorted(journaled - have, key=lambda b: (len(b), b))
+
+    def restore_pending(self):
+        """The latest restore, while it hasn't yet been found ready."""
+        row = self.db.execute("select * from recoveries order by n desc limit 1").fetchone()
+        return dict(row) if row and row["ready_at"] is None else None
+
+    def recovery_state(self):
+        """None in normal operation; otherwise where a restore stands:
+        "required" (not replayed), "incomplete" (replayed, not reconciled)
+        or "reconciling" (reconciled, not yet found ready). A database that
+        lacks batches its journal holds needs a restore, and that is
+        recorded here, before anything else can write, so it survives a
+        restart. It is never cleared but by a restore."""
+        pending = self.restore_pending()
+        if self.missing_batches() and (pending is None or pending["replayed_at"]):
+            self.db.execute("insert into recoveries(restored_at) values (?)", (time.time(),))
+            pending = self.restore_pending()
+        if pending is None:
+            return None
+        if not pending["replayed_at"]:
+            return "required"
+        if not pending["reconciled_at"]:
+            return "incomplete"
+        return "reconciling"
+
+    def require_restored(self):
+        """Normal writes wait until a restore has replayed and reconciled."""
+        if self.recovery_state() in ("required", "incomplete"):
+            raise Refused(RESTORE_REQUIRED)
+
+    def mark_subs_restored(self, snapshot):
+        self.db.execute("update recoveries set snapshot = ?, subs_at = ? where n = ?",
+                        (snapshot, time.time(), self.restore_pending()["n"]))
+
+    def mark_recovered(self):
+        if self.recovery_state() == "reconciling":
+            self.db.execute("update recoveries set ready_at = ? where ready_at is null",
+                            (time.time(),))
+
+    def _batch_readiness(self, b):
+        st = b["state"]
+        if st in CLOSED:
+            return "closed", st
+        if st in ("frozen", "staged"):
+            return "reconciled", "not committed locally: the cycle continues from staging"
+        if st in COMMITTED_UNSENT:
+            if self.subs_holds(b):
+                return "reconciled", "subs holds its local commitment; never sent"
+            return "waiting", "subs doesn't hold its local commitment"
+        if b["recovery_paused"]:
+            return "paused", "recovery paused for the owner"
+        if st == "issuing":
+            if not b["attempted"]:
+                return "reconciled", ("never sent: a resume repeats the binding check, journals "
+                                      "the intent again and sends once")
+            return "waiting", "attempted without an answer"
+        if st == "broadcast_uncertain":
+            return "waiting", ("uncertain: no transaction carrying its root found yet; read back "
+                               "again (finding nothing proves nothing)")
+        # broadcast or mined, with the txid known.
+        if self.commitment_seen(b["bid"]):
+            return "reconciled", "its transaction is on this node's chain or in its mempool"
+        if b["raw"]:
+            n = len(json.loads(b["ancestors"] or "[]"))
+            return "waiting", ("its transaction is on neither this node's chain nor its "
+                               "mempool: rebroadcast the journaled bytes"
+                               + (f", with its {n} unconfirmed ancestor"
+                                  + ("s" if n > 1 else "") if n else ""))
+        return "waiting", "its transaction isn't seen and no bytes were journaled"
+
+    def recovery_report(self):
+        """Every batch, and every space's restored subs against the chain.
+        Ready when nothing waits: each batch closed, reconciled or paused;
+        each space's subs root on the chain, or one local commitment of an
+        unsent or pending batch ahead of it; and every adopted txid subs
+        lacks attached, or the space paused for want of the U1(b)
+        capability. It reads only."""
+        waiting, paused = [], []
+        state = self.recovery_state()
+        if state in ("required", "incomplete"):
+            missing = self.missing_batches()
+            waiting.append(RESTORE_REQUIRED + (f" (missing: {', '.join(missing)})"
+                                               if missing else f" (the restore is {state})"))
+        batches = {}
+        for b in self.batches():
+            verdict, why = self._batch_readiness(b)
+            batches[b["bid"]] = {"space": b["space"], "state": b["state"], "verdict": verdict,
+                                 "why": why}
+            if verdict == "waiting":
+                waiting.append(f"{b['bid']}: {why}")
+            elif verdict == "paused":
+                paused.append(f"{b['bid']}: {why}")
+        spaces = {}
+        for space in sorted({b["space"] for b in self.batches()}):
+            pipe = self.subs_read.get(f"/spaces/{space}/pipeline") or {}
+            chain = self.onchain_commitment(space)
+            subs_root, subs_txid = pipe.get("root"), pipe.get("txid")
+            chain_root = chain["state_root"] if chain else None
+            ours = [b for b in self.batches(space) if b["root"] == subs_root and subs_root
+                    and b["state"] not in ("rebuilt", "superseded")]
+            last = ours[-1] if ours else None
+            entry = {"subs_root": subs_root, "subs_txid": subs_txid, "chain_root": chain_root,
+                     "batch": last and last["bid"]}
+            if subs_root == chain_root:
+                entry["root"] = "matches the chain"
+            elif last and last["state"] in PREPARING + ("issuing", "broadcast",
+                                                         "broadcast_uncertain") \
+                    and chain_root == last["prior_root"]:
+                entry["root"] = (f"one local commitment ahead of the chain ({last['bid']}, "
+                                 f"{last['state']})")
+            else:
+                entry["root"] = "doesn't match the chain"
+                waiting.append(f"{space}: subs' root {subs_root} doesn't match the chain's "
+                               f"{chain_root}")
+            if last and last["txid"] and subs_txid != last["txid"]:
+                if not self.capabilities.attach_txid:
+                    entry["attach"] = "paused: " + NO_ATTACH
+                    paused.append(f"{space}: subs lacks {last['bid']}'s txid and can't be told")
+                elif chain_root == last["root"]:
+                    entry["attach"] = f"needed: attach {last['bid']}'s adopted txid"
+                    waiting.append(f"{space}: attach {last['bid']}'s adopted txid to subs")
+                else:
+                    entry["attach"] = f"needed once {last['bid']}'s commitment is mined"
+                    waiting.append(f"{space}: attach {last['bid']}'s txid once it is mined")
+            spaces[space] = entry
+        return {"ready": not waiting, "waiting": waiting, "paused": paused,
+                "batches": batches, "spaces": spaces}

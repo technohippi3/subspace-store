@@ -1,4 +1,4 @@
-# Subspace store payment specification (draft 14, 2026-11-08)
+# Subspace store payment specification (draft 15, 2026-11-09)
 
 MVP scope (workspace_owner, 2026-11-06): fixed-price sales first. The Dutch
 auction section, its cases D1 to D35, case N6, and the auction evidence
@@ -64,6 +64,14 @@ to the operator and on the buyer's order link (J11, J12, H8 to H10). A
 second review found that a quote asked again skipped the recipient checks
 (V17). The cancellation reporting rule follows a reviewer's recommendation
 of 2026-11-08; the workspace_owner hasn't ruled on it (see the open points).
+Draft 15 adds the runner's recovery commands and the rule that a restore
+sends no new commitment until it is reconciled (A11 to A15), and that a
+payment wallet restored from an earlier backup never gives a new quote an
+address an order holds (H11). Both came from the operator gate's recovery
+rehearsal on regtest (scenario 11, `regtest/REPORT.md`). A review of that
+work (2026-11-10) added a persisted "restore required" state, an atomic
+and resumable replay, and the migration of an older controller database
+(A16 to A18).
 
 ## Terms, depth arithmetic and thresholds
 
@@ -890,6 +898,15 @@ state; it was reported unconfirmed, never final (H10). A quote that was
 never acknowledged is undone too, and its address was never given out, so
 no payment can be stranded by it (H9).
 
+A restored payment wallet can be behind the journal. The store's payment
+and refund wallet is backed up at onboarding, and a wallet restored from
+that backup has seen only the addresses that were paid since. It can give
+out again an address that a restored, unpaid quote still holds. A quote
+never takes an address an order holds: the store asks its wallet again,
+which advances it, and alerts the owner once for the quote, saying how
+many it skipped. If the wallet gives out only held addresses, more times
+than orders hold one, the quote is refused and nothing is taken (H11).
+
 No empty start over a history. A start that finds no database, or one with
 no names and no orders, while the journal has entries refuses to serve and
 writes nothing. An empty store started over an existing journal would hand
@@ -1022,6 +1039,71 @@ network but regtest; the interfaces don't depend on the network.
   recovery procedure. Chain readback and adopting the transaction into
   the controller's journal work either way.
 
+After a host loss the runner carries the controller's part of the
+recovery (`CONTROLLER-DESIGN.md`, "Restore and reconciliation"), one
+command per step, on a fresh host whose store has already been restored
+from its journal and started:
+- `restore` refuses a controller database that holds batches and a `subs`
+  data directory that isn't empty, so it never overwrites. It takes the
+  latest coordinated snapshot by its sequence number, and checks every
+  `subs` file in it against the snapshot's manifest: a changed, missing or
+  extra file refuses the restore, and nothing is copied. It copies only
+  once a connection to `subs` is refused, starts `subs` and waits until it
+  answers, as a snapshot does, and runs the network check of every other
+  command first without `subs` and then with it. It then rebuilds the
+  controller's batches from its journal and reconciles them (A12, A13).
+  Snapshots are numbered after every snapshot already there, so the latest
+  is well defined whichever process took them.
+- `readback` reads an uncertain broadcast back from the operator wallet,
+  the node's mempool and the chain, and adopts a `txid` only when a
+  transaction carrying the batch's root is found. Finding nothing changes
+  nothing. `attach-txid` tells `subs` an adopted `txid`, only with the
+  U1(b) capability (A9). Neither sends anything.
+- `resume` sends a batch left `issuing` and never sent, after the binding
+  check again, and `rebroadcast` sends a commitment's identical journaled
+  bytes to a node that has it on neither its chain nor its mempool. Each
+  sends a transaction, so each needs the batch id confirmed like `issue`
+  (A11).
+- A commitment is often funded from the operator wallet's unconfirmed
+  change, which can be another space's commitment still in flight
+  (regtest R26). A fresh node knows none of them, and refuses the
+  commitment's own bytes for a missing input. So the controller journals
+  the bytes of every unconfirmed ancestor the node holds when it first
+  journals a commitment's bytes, parents first, and `rebroadcast` sends
+  each one the node lacks, as journaled, before the commitment itself.
+  Ancestors that aren't the journaled ones refuse the rebroadcast with
+  nothing sent (A15).
+- After a restore, `issue` and `resume` are refused until the restore is
+  reconciled: every batch closed, reconciled or paused for the owner;
+  every commitment with a known `txid` on the node's chain or in its
+  mempool; each space's restored `subs` root equal to the chain's, or one
+  local commitment of an unsent or pending batch ahead of it; every
+  adopted `txid` that `subs` lacks attached, or the space paused for want
+  of the U1(b) capability; and the store started, which reconciles its
+  refund attempts before serving (H6). A wallet restored from its backup
+  doesn't know a transaction that this host hasn't seen again, so a new
+  send could spend the same inputs. `status` and `restore` say what still
+  waits. Readback, attach, rebroadcast and refunds aren't held up (A14).
+- A controller database that lacks a batch its journal holds, a fresh
+  one beside an existing journal included, needs a restore. That is
+  recorded in the database when it is opened, before anything writes, so
+  a restart doesn't forget it, and only a restore clears it. Until the
+  restore has replayed and reconciled, the controller refuses every
+  write and send, freezing a batch included, so no batch id is given out
+  twice, and the runner refuses every command but `status` and `restore`
+  (A16).
+- The replay writes every journaled batch in one database transaction,
+  together with the record that it was replayed, so an interruption
+  leaves all of it or none. `restore` records each phase and resumes an
+  interrupted restore when run again: `subs`' files, copied beside its
+  data directory and moved into place whole, aren't copied twice, and a
+  data directory holding exactly the snapshot's files counts as copied; a
+  replay that didn't commit runs again and one that did doesn't; and the
+  reconciliation, which is idempotent, runs again. A restore is found
+  ready only once reconciled (A17).
+- A controller database from an earlier schema gets the columns it lacks
+  when it is opened, with its rows kept (A18).
+
 ## Acceptance gates
 
 Paid sales stay closed until both gates pass. They are independent:
@@ -1060,6 +1142,22 @@ blocks the space's next local commit (R17), and the gate can't pass. It
 needs `subs` with the U1(b) capability or another reviewed recovery
 procedure. Pausing safely when recovery can't continue is right, but it
 doesn't pass the gate.
+
+Status (2026-11-09): rehearsed on regtest, not passed. Scenario 11
+(`regtest/run-recovery.sh`) ran the rehearsal of `CONTROLLER-DESIGN.md`
+on a fresh host, with the world on a separate node, `subs` with U1(b),
+and the runner for every operator step it has a command for.
+`regtest/REPORT.md` records what it showed, its two times with their
+history, and what it didn't cover: an owner-signed PSBT refund family,
+which the API can't export, a separate off-host store with its own
+credentials, and anything off regtest. Passing the gate needs at least a
+separate off-host store, the workspace_owner's recovery-time targets, a
+reviewed recovery procedure for the deployment's `subs`, and a rehearsal
+of the refund funding method the launch uses. That method is undecided
+(open points). A reviewer recommends one complete operating method for
+launch: if v1 uses capped hot-wallet refunds, rehearse that method, which
+the regtest run covered, and defer owner-signed PSBTs. If v1 uses
+owner-signed PSBTs, the gate also needs a PSBT refund family rehearsed.
 
 A second buyer client is future compatibility work, not a launch
 prerequisite.
@@ -1277,7 +1375,7 @@ tests are the service's API tests over a simulated chain, not model results.
 
 Service restore ("Host loss and restore"). The model restores whole from its
 journal (J1 and its generated host losses); these are the service's own
-restore. H1 to H6 and H8 to H10 are service API tests over a simulated
+restore. H1 to H6 and H8 to H11 are service API tests over a simulated
 chain. H7 runs the service beside the model and is a model-twin result.
 None is regtest evidence.
 
@@ -1293,13 +1391,16 @@ None is regtest evidence.
 | H8 | a requested order, and the store's journal down | the buyer asks for a quote; then the host is lost and restored | 503, no address; no destination taken, no hold, the order still `requested` and the name available; after the restore the quote succeeds and the link shows its address |
 | H9 | two requested orders; the journal looks up but acknowledges nothing | each is quoted; the journal recovers between the two, and the host is lost after the second; then a database from before the journaled status restarts | 503 and no address from `/quote`, and none on the order link, for each while unacknowledged; after the recovery the first quote returns its recorded address; after the loss the second order is `requested` with no address and its name available, the first keeps its address; the old database takes the acknowledged statuses from the journal |
 | H10 | two converted orders | one cancelled with the journal down, which then recovers; the other cancelled twice with it down; then the host is lost and restored | the first 202 "unconfirmed", its order link `converted` with the cancellation unconfirmed, then `cancelled` and final once the journal recovers, and still after the loss; the second 202 "unconfirmed" both times, without the cancelled status, its link `converted` and unconfirmed, and undone by the loss: converted with its fulfillment reservation, the link showing no cancellation; cancelled again after the restore, it is final on both |
+| H11 | a paid order and an unpaid quote, then a host loss and a restore with a payment wallet that gives out the unpaid quote's address, then the paid one's, then a fresh one; separately, a wallet that gives out only held addresses | a new order is quoted after the restore | the quote takes the fresh address after asking three times; no two orders share a destination, the held ones unchanged; one `destination_held` alert for the quote, with 2 skipped; with the second wallet, 409, the order still `requested` and the name available |
 
 Checkout and the attended runner ("Checkout and the attended runner").
 These are the service's and the runner's own rules. C1 to C11 are service
 API tests over a simulated chain. A1 to A5 are runner tests against a
-recording stand-in for the store and the controller. Neither is a model
-result or regtest evidence; the regtest demonstration is scenario 10
-(`regtest/run-checkout.sh`).
+recording stand-in for the store and the controller, and A6 to A15 run
+the runner and the controller against stand-ins for `subs`, `spaced`,
+`bitcoind` and the store. None is a model result or regtest evidence; the
+regtest demonstrations are scenario 10 (`regtest/run-checkout.sh`) and,
+for the recovery commands, scenario 11 (`regtest/run-recovery.sh`).
 
 | Case | Given | When | Then |
 | --- | --- | --- | --- |
@@ -1325,6 +1426,14 @@ result or regtest evidence; the regtest demonstration is scenario 10
 | A8 | a proved batch | `checkpoint` | `subs` stopped, then its data copied, then started and answering, then the batch checkpointed, with `subs`' files in the snapshot's manifest |
 | A9 | a final batch with an adopted txid; `subs` with and without the stated U1(b) capability | attach the adopted txid, and a given one | without it, both refused, saying continued issuance needs the capability or another reviewed recovery procedure, and nothing is sent to `subs`; with it, one attach call each |
 | A10 | a regtest configuration; `bitcoind`, `spaced` or the store on another network; the `subs` endpoint for writes, or the one for reads, backed by a `spaced` on mainnet, or on another regtest chain at a lower height with the same wallet name, or using another wallet; `spaced`'s tip or the store's best block on another chain; a store that reports no chain; or a component that doesn't answer | `issue` and `broadcast-refund`, each confirmed | refused before anything is called or written to `subs`, saying the network check failed; with every component on one regtest chain, the command runs |
+| A11 | a batch `issuing` and never sent; a batch `broadcast` with journaled bytes | `resume` and `rebroadcast` without the batch id confirmed, with another id, or with an empty or differently cased one; `resume` for a batch whose broadcast was attempted, and `rebroadcast` for one with no `txid` | refused, nothing sent, the latter two before anything is asked; with the id confirmed, at the prompt or as `--confirm`, the controller's resume and rebroadcast each run once |
+| A12 | a fresh host | `restore` with a controller database that holds batches, a `subs` data directory that isn't empty, no snapshot, a snapshot whose `subs` file changed, is missing or has an extra file beside its manifest; separately, `subs` still answering after its stop | refused naming the reason; nothing copied, written or recorded, and `subs` neither stopped nor started for the first five; nothing copied for the last |
+| A13 | journaled batches `final`, `checkpointed` (held by the snapshot), `issuing` with its intent (no answer), `broadcast` with its bytes, and `committed_local` after the snapshot; snapshots 009 and 010 | `restore` | the network check without `subs`, the stop, the copy of snapshot 010 only once `subs` refuses connections, the start, the network check with `subs`; the `committed_local` batch rebuilt and journaled, its member still paid; the `issuing` one `broadcast_uncertain`, read back, nothing adopted, sent or rolled back; the others as journaled; the next snapshot numbered 011 |
+| A14 | A13 restored: one uncertain broadcast, one commitment the node doesn't have, attaches needed; separately, the store not reconciled, and a `subs` without U1(b) | `issue` and `status` after each recovery step | `issue` refused, saying what waits, until the rebroadcast, a readback that adopts the uncertain one, and both attaches; then it runs once; a store not reconciled waits; without U1(b) the space is paused, not waiting |
+| A15 | a commitment spending from two unconfirmed transactions in a chain and a confirmed one | its bytes captured; then `rebroadcast` to a node that has none of them, to one that has the first, and with ancestors that aren't the journaled ones | the two ancestors journaled with it, parents first, the confirmed one not; sent parents first, then the commitment; one the node has isn't sent again; the last refused, nothing sent |
+| A16 | a journal holding five batches, one an uncertain broadcast; a fresh, empty controller database beside it, and separately one holding only the first | the controller is opened, closed and opened again; then a freeze, an issue, a resume, a watch, a rebroadcast, an attach, a certificate check, a checkpoint and a local rollback; and every runner command but `status` and `restore` | "restore required" recorded once and kept across the restart, naming the missing batches; each refused, no batch created, nothing sent or written to `subs`; the runner exits 3 for every command; the readiness report not ready; after `restore` every journaled batch is present |
+| A17 | the A16 journal and a snapshot | the replay killed after its second insert; `restore` stopped after its first insert, after `subs`' files were moved in; stopped again during reconciliation; then run again; and separately a `subs` directory already holding exactly the snapshot's files | after each stop, on reopening: no batch, then no batch, then all five; "required", "required", then "incomplete"; never ready, `issue` refused and every command refused; `subs` not copied again and the journal not replayed again; the last run reconciles, and the batches are as A13 has them; the exact directory taken as copied |
+| A18 | a controller database with the schema of commit `5226810` holding a broadcast batch and an alert, and the batch's journal entry from before `ancestors` | opened, its bytes captured as after a broadcast, opened again and replayed | `ancestors` and the recovery columns added, the rows unchanged, no restore required; the bytes and their ancestor journaled; nothing changed by the second opening; the older entry replayed into the migrated table |
 
 Evidence:
 
@@ -1388,7 +1497,9 @@ These stay proposals until decided:
   refunds can resume, and a small rehearsal alone doesn't show that a full
   replay is fast enough for a representative history. Restoring from a
   snapshot plus the journal since it is needed only if replay misses its
-  target;
+  target. Both were measured once on regtest, and the replay on generated
+  journals sized for assumed pilot periods (`regtest/REPORT.md`, scenario
+  11); those numbers inform the targets and don't set them;
 - the delivery time stated at checkout. "Usually 1 to 2 days" is
   provisional until the operating schedule (batch cadence, proving,
   `d >= 150`, anchor coverage) supports it, and checkout says that delivery

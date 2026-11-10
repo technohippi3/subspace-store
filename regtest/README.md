@@ -85,13 +85,25 @@ wallets are made fresh for each run inside `.run/`.
   listing a name done by `python3 -m runner` as its own process, through
   issuance, certificate delivery to the order page, publication and a
   cancellation refund. It uses the `subs-relay` build.
+- `run-recovery.sh [prefix]`: scenario 11, the operator gate's recovery
+  rehearsal. A separate "network" bitcoind, with its own `spaced` and the
+  relay, stands for the world. The host (its own bitcoind, synced from the
+  network node as its one peer, `spaced`, `subs`, the prover, the store
+  service and the runner) is lost whole with batches in flight on four
+  spaces and a refund broadcast. A fresh host is brought up from the
+  off-host recovery set alone: the journals, the latest coordinated
+  snapshot, and the operator wallet's and the store wallet's backups taken
+  at onboarding. It is reconciled through the runner's recovery commands,
+  checked against the state before the loss, and issues again to
+  fulfilled. It uses the `subs-combined` build.
 - `keep-run.sh <run id>`: keeps a run's report and certificates in `runs/`
   and `evidence/`. It never replaces or removes anything already kept.
 - `verify-evidence.sh`: verifies every kept certificate offline.
 - `harness/`: the harness, standard-library Python.
   - `procs.py`: the processes and their ports.
   - `faultproxy.py`: a proxy in front of `spaced` and one in front of
-    `subs`, each able to lose one response after the upstream call happened.
+    `subs`, each able to lose one response after the upstream call happened,
+    or to withhold it, so that the caller waits until the host is lost.
   - `registry.py`: a minimal fixed-price registry, with the endpoints `subs`
     polls.
   - `controller.py`: the adapter that runs the controller of
@@ -114,6 +126,8 @@ wallets are made fresh for each run inside `.run/`.
   - `checkout.py`: scenario 10, the checkout pages and the runner.
   - `service.py`: scenarios 7 and 8, with `ServiceRegistry`, the
     registry's interface served by the real service over HTTP.
+  - `recovery.py`: scenario 11, the recovery rehearsal, with the stack
+    split into the world and the host.
 - `verifier/`: a small Rust program that verifies a certificate message with
   `libveritas` 0.4.4, the version `subs` locks, against root anchors read
   from `spaced` directly. The same call verifies the message's signed

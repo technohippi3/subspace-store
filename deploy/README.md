@@ -21,7 +21,7 @@ the cookie files they write at start-up, and the store's tokens are files
 it creates with mode 0600 on its first start. The configurations name
 those files and never contain their contents.
 
-Four of the requirements are not obvious from the files:
+Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,
   with the commands in `subs.stop_command` and `subs.start_command`. The
   stop command must return only once `subs` has exited; `systemctl stop`
@@ -40,6 +40,13 @@ Four of the requirements are not obvious from the files:
   with it.
 - The journal and snapshot directories must be on storage that survives
   the host, which is what makes a journal-only restore possible.
+- So must two backups taken at onboarding, which hold key material and
+  are the operator's to protect: the operator wallet's export from
+  `spaced` (`walletexport`) and the store's payment and refund wallet's
+  backup from Bitcoin Core (`backupwallet`). The recovery rehearsal
+  (scenario 11) restored a fresh host from those, the journals and the
+  latest snapshot alone. Tokens and cookies aren't in that set: a fresh
+  host makes new ones, and `subs` is given the store's new registry token.
 
 The test operator's machine and its network confinement are described in
 `docs/BUYER-GATE.md`, not here.

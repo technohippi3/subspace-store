@@ -1,0 +1,2389 @@
+{
+ "meta": {
+  "label": "regtest",
+  "run": "probe-recovery-20261109T192504Z-dc4d1f",
+  "scenarios": [
+   "recovery_rehearsal"
+  ],
+  "isolation": "unprivileged user and network namespace (unshare -rn), loopback only",
+  "subs_binary": ".cache/bin/subs-combined",
+  "pins": {
+   "SUBS_REPO": "https://github.com/spacesprotocol/subs",
+   "SUBS_COMMIT": "4dcc9237af3a807497d4b1532729842ee5dcdb68",
+   "SPACES_REPO": "https://github.com/spacesprotocol/spaces",
+   "SPACES_TAG": "spaces_client-v0.5.0",
+   "SPACES_COMMIT": "77653f01889ddc86337e4b27d7d3ae4fc334a117",
+   "BITCOIN_VERSION": "26.0",
+   "BITCOIN_TARBALL": "bitcoin-26.0-x86_64-linux-gnu.tar.gz",
+   "BITCOIN_URL": "https://bitcoincore.org/bin/bitcoin-core-26.0/bitcoin-26.0-x86_64-linux-gnu.tar.gz",
+   "BITCOIN_SHA256": "23e5ab226d9e01ffaadef5ffabe8868d0db23db952b90b0593652993680bb8ab",
+   "CERTRELAY_REPO": "https://github.com/spacesprotocol/certrelay",
+   "CERTRELAY_COMMIT": "fb446487af4f9702109999f96d2ec11d3dd0b0ef"
+  },
+  "completed": [
+   "recovery_rehearsal"
+  ],
+  "recovery_times": {
+   "store_replay_seconds": 0.16,
+   "complete_recovery_seconds": 29.52,
+   "steps": {
+    "host node synced from the network node": 14.32,
+    "spaced synced": 4.42,
+    "operator wallet restored from its onboarding backup and synced": 3.08,
+    "store wallet restored from its onboarding backup": 0.5,
+    "store replay from its journal (python3 -m service restore)": 0.16,
+    "store started (refund attempts reconciled before serving)": 0.3,
+    "runner restore: subs from the snapshot, the controller from its journal, reconciled": 0.61,
+    "rebroadcast b4": 0.31,
+    "readback b3": 0.34,
+    "a block arrives (regtest: mined at once)": 1.54,
+    "readback b3 again": 0.34,
+    "attach-txid b4": 0.46,
+    "attach-txid b3": 0.45,
+    "runner status: ready": 0.45
+   },
+   "history": {
+    "store_journal": {
+     "entries": 42,
+     "bytes": 35886
+    },
+    "runner_journal": {
+     "entries": 41,
+     "bytes": 19892
+    },
+    "orders": 7,
+    "refund_groups": 1,
+    "alerts": 1
+   }
+  },
+  "anchor_read_retries": 0
+ },
+ "verdict": "fail",
+ "steps": [
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "the world and the host",
+   "regtest": {
+    "network_node": "127.0.0.1:18953, the preset chain",
+    "host_node": "empty data directory, synced from the network node as its one peer",
+    "spaces": [
+     "@test10000",
+     "@test9999",
+     "@test9998",
+     "@test9997"
+    ],
+    "subs_capabilities": {
+     "attach_txid": true
+    },
+    "recovery_set": [
+     "operator-wallet.json",
+     "store-wallet.bak"
+    ]
+   },
+   "model": null,
+   "match": null,
+   "note": "the backups are written at onboarding, mode 0600, and never kept in the repository",
+   "kind": "informational",
+   "t": 1794252350.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "one@test10000: request, quote, payment",
+   "regtest": {
+    "oid": "o1",
+    "address": "bcrt1pj3hpattnahme6a5ru6846ryl3jz2plzhu647gceze8am67frksgqnvhr6h",
+    "payment": "56d8fe18931c750f2d95c8952dc0c081639e50896e32a1ebe850d01ed7d628eb"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252350.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "runner prepare @test10000",
+   "regtest": {
+    "exit": 0,
+    "seconds": 2.02,
+    "output": {
+     "bid": "b1",
+     "state": "checkpointed",
+     "members": [
+      "o1"
+     ],
+     "root": "e42212f3e6fab51e70ac1d8af0c213d110911a4be151c187da4f188d88a4bfbb",
+     "staged": {
+      "one": "5120803807238cf5ea3dfea8eb9c2cdb0aac99e45bee344ea8aaa0309b6458359a8d"
+     },
+     "members_on_root": 1,
+     "proving": "skipped",
+     "snapshot": "regtest/.run/probe-recovery-20261109T192504Z-dc4d1f/offhost/snapshots/001-b1"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "checkpointed",
+     "members": [
+      "o1"
+     ]
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252353.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "runner issue b1 confirmed",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.77,
+    "output": {
+     "bid": "b1",
+     "state": "broadcast",
+     "txid": "fba4652e9e62fdc2e5e4604fd3ef7a492abc88860d513f9377bb4619553eb660",
+     "rebuilt_from": null
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "broadcast"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252354.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "mined to d >= 150 and the anchor at 3636: b1",
+   "regtest": {
+    "b1": {
+     "state": "final",
+     "depth": 170,
+     "certificate_status": "verified"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "b1": {
+      "state": "final",
+      "certificate_status": "verified"
+     }
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252376.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "runner certify b1",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.64,
+    "output": {
+     "bid": "b1",
+     "members": {
+      "o1": {
+       "handle": "one@test10000",
+       "verified": true,
+       "checks": {
+        "verified": true,
+        "handle": true,
+        "script_pubkey": true,
+        "root": true,
+        "root_height": true,
+        "sovereign": true
+       },
+       "delivered": true
+      }
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "every member verified and delivered": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252377.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "runner publish b1: delivery confirmed by a verified lookup through the relay",
+   "regtest": {
+    "exit": 0,
+    "seconds": 1.01,
+    "output": {
+     "bid": "b1",
+     "enrolled": [
+      "o1"
+     ],
+     "publish_calls": 1,
+     "delivery": {
+      "o1": {
+       "confirmed": true
+      }
+     },
+     "outstanding": []
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "outstanding": [],
+     "every member confirmed": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252378.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "o1 after delivery",
+   "regtest": {
+    "status": "fulfilled"
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "status": "fulfilled"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252378.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "two@test10000: request, quote, payment",
+   "regtest": {
+    "oid": "o2",
+    "address": "bcrt1p4pnyfayvs8nlfkx5vu0hlllqwyynzdut9y880ggw84vzlcnny9psemhw9t",
+    "payment": "eb06ab5b0447c49bd250881682e9496784792f25112f64165b149ab91fb5dc74"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252379.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "three@test9999: request, quote, payment",
+   "regtest": {
+    "oid": "o3",
+    "address": "bcrt1plvj5nguurpa9smspwc9jw0xw9yu0cyh87ex0ql7fy3cav8z34hlsp5xae3",
+    "payment": "c72e289a97b7c3284881afd7d2a5af616d97bdc1ed6c62108be7a5a516fbfee4"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252380.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "four@test9998: request, quote, payment",
+   "regtest": {
+    "oid": "o4",
+    "address": "bcrt1p6krz83tj7jf03ue5mkdqmu9clam8w6xneg7qcc8h28xx06azajgqex5zvl",
+    "payment": "dd1a330ecab6b107c8dc6d595bd94cabe533d7d7e4f7125785587c7d34804406"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252381.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "five@test10000: request, quote, payment",
+   "regtest": {
+    "oid": "o5",
+    "address": "bcrt1p9a224lwugd4u06r0fd457jggkvaq2h560vjfsz5eke3jpggvqwdsv4aam4",
+    "payment": "83c1ca453a7ed5dd0b2a7aa23c8fcdc111b29de45e89202fe44d3a2c1e16defe"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252381.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "six@test9997: request, quote, payment",
+   "regtest": {
+    "oid": "o6",
+    "address": "bcrt1prplwc98sgwdq9yvn9ep3xah39h067ptghmp9nnuxhxckthanjklqlxw4ld",
+    "payment": "53041d50d19811951fba6ded6b17584500f19e9144781cc447ce5d05ddaf3f34"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252382.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "runner cancel o2",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.29,
+    "output": {
+     "status": "cancelled",
+     "cancellation": "final",
+     "acknowledged": true,
+     "oid": "o2"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "cancellation": "final"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252383.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "runner prepare @test9999",
+   "regtest": {
+    "exit": 0,
+    "seconds": 1.34,
+    "output": {
+     "bid": "b2",
+     "state": "checkpointed",
+     "members": [
+      "o3"
+     ],
+     "root": "a91d0314bbe08b551f15721ae493e718a78ecd141915073f1c736c168b8997bd",
+     "staged": {
+      "three": "51205081818dcf4eb659545ca83e78f87ac876385e47906c04388be15a657d036b74"
+     },
+     "members_on_root": 1,
+     "proving": "skipped",
+     "snapshot": "regtest/.run/probe-recovery-20261109T192504Z-dc4d1f/offhost/snapshots/001-b2"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "checkpointed",
+     "members": [
+      "o3"
+     ]
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252386.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "runner prepare @test9998",
+   "regtest": {
+    "exit": 0,
+    "seconds": 1.37,
+    "output": {
+     "bid": "b3",
+     "state": "checkpointed",
+     "members": [
+      "o4"
+     ],
+     "root": "7af0ce1b4084fdc2a0067b88f22863d4966ac0f5f58cc1d7c93206ff8cc330c6",
+     "staged": {
+      "four": "5120de701e28aa08dca21f0b14a795a15faed3e482454b5c67c377274c2f9e861749"
+     },
+     "members_on_root": 1,
+     "proving": "skipped",
+     "snapshot": "regtest/.run/probe-recovery-20261109T192504Z-dc4d1f/offhost/snapshots/001-b3"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "checkpointed",
+     "members": [
+      "o4"
+     ]
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252387.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "runner prepare @test10000",
+   "regtest": {
+    "exit": 0,
+    "seconds": 36.36,
+    "output": {
+     "bid": "b4",
+     "state": "checkpointed",
+     "members": [
+      "o5"
+     ],
+     "root": "476ce370418a5b1debf4df5b8942d976558e4e56af3bd06294c16996a3f7807c",
+     "staged": {
+      "five": "5120219aefa2459c7694f97f96c8a0c63ee496004ceab08c27c401d1af2e9a27eea5"
+     },
+     "members_on_root": 1,
+     "proving": "complete",
+     "snapshot": "regtest/.run/probe-recovery-20261109T192504Z-dc4d1f/offhost/snapshots/001-b4"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "checkpointed",
+     "members": [
+      "o5"
+     ]
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252423.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "b5 on @test9997 stopped at committed_local after the latest snapshot",
+   "regtest": {
+    "state": "committed_local",
+    "root": "ee6a7b0c05de220c3818ec2f1430ba6772478d637597d043b3fd74471eb59754",
+    "members": [
+     "o6"
+    ],
+    "latest_snapshot": "001-b4"
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "state": "committed_local",
+     "members": [
+      "o6"
+     ]
+    }
+   },
+   "match": true,
+   "note": "through controller.host.build from the runner's configuration: no runner command stops at committed_local",
+   "kind": "required",
+   "t": 1794252423.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": "N2",
+   "step": "runner refund o2 once settled",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.3,
+    "output": {
+     "gid": "g1",
+     "txid": "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b",
+     "to_buyer": 9700,
+     "fee": 300,
+     "charged": 10000,
+     "oid": "o2"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "to_buyer": 9700
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252424.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "b3 on @test9998: broadcast sent, its answer withheld from the runner",
+   "regtest": {
+    "upstream": {
+     "status": 200,
+     "txid": "59c5d6c532df53571d1db9f303dfeb43eb577ed3e2907f33a5580a9bbc43da35"
+    },
+    "runner_waiting": true,
+    "journaled": {
+     "state": "issuing",
+     "intent": 1,
+     "txid": null
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "runner_waiting": true,
+     "journaled": {
+      "state": "issuing",
+      "intent": 1,
+      "txid": null
+     }
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252424.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "runner issue b4 confirmed: sent after the latest snapshot",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.49,
+    "output": {
+     "bid": "b4",
+     "state": "broadcast",
+     "txid": "bf476166542d0fd3d13d14c4336f065d49e604eedd6ec71b8c48817838c95f07",
+     "rebuilt_from": null
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "broadcast"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252425.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": "A5",
+   "step": "runner broadcast-refund g1 confirmed",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.28,
+    "output": {
+     "gid": "g1",
+     "txid": "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b",
+     "acknowledged": true
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "acknowledged": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252425.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "seven@test9999: request, quote",
+   "regtest": {
+    "oid": "o7",
+    "address": "bcrt1py3rqcefkdhl58thl92yrjnxl9anzjeae0esrksp827kymtkg9fmqanrkc0",
+    "payment": null
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252425.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "the world has every pending transaction when the host is lost",
+   "regtest": {
+    "in_network_mempool": {
+     "C": true,
+     "A": true,
+     "refund": true
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "in_network_mempool": {
+      "C": true,
+      "A": true,
+      "refund": true
+     }
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252426.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "11a. in-flight states before the host is lost",
+   "case": null,
+   "step": "batches before the loss",
+   "regtest": {
+    "b1": [
+     "@test10000",
+     "final",
+     "fba4652e9e62fdc2e5e4604fd3ef7a492abc88860d513f9377bb4619553eb660"
+    ],
+    "b2": [
+     "@test9999",
+     "checkpointed",
+     null
+    ],
+    "b3": [
+     "@test9998",
+     "issuing",
+     null
+    ],
+    "b4": [
+     "@test10000",
+     "broadcast",
+     "bf476166542d0fd3d13d14c4336f065d49e604eedd6ec71b8c48817838c95f07"
+    ],
+    "b5": [
+     "@test9997",
+     "committed_local",
+     null
+    ]
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "b1": "final",
+     "b4": "broadcast",
+     "b2": "checkpointed",
+     "b3": "issuing",
+     "b5": "committed_local"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252426.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": null,
+   "step": "host lost: every host process killed, every host path deleted",
+   "regtest": {
+    "killed": {
+     "runner-held": true,
+     "registry": true,
+     "subs": true,
+     "subs_proxy": true,
+     "prover": true,
+     "spaced_proxy": true,
+     "spaced": true,
+     "bitcoind": true
+    },
+    "deleted": [
+     "bitcoind",
+     "spaced",
+     "subs",
+     "host",
+     "runner",
+     "service",
+     "registry-token",
+     "spaced-bitcoin-rpc.json",
+     "runner.json",
+     "spaced_proxy.ctl",
+     "subs_proxy.ctl"
+    ],
+    "remaining_offhost": [
+     "recovery/operator-wallet.json",
+     "recovery/store-wallet.bak",
+     "runner.jsonl",
+     "store-service/store.jsonl"
+    ],
+    "snapshots": [
+     "001-b1",
+     "001-b2",
+     "001-b3",
+     "001-b4"
+    ],
+    "world": [
+     "network bitcoind",
+     "world spaced",
+     "certrelay"
+    ]
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "no host path left": true
+    }
+   },
+   "match": true,
+   "note": "nothing is mined while the host is down",
+   "kind": "required",
+   "t": 1794252427.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": null,
+   "step": "host node, spaced and both wallets on the fresh host",
+   "regtest": {
+    "tip": 3642,
+    "network_tip": 3642,
+    "host_mempool": [],
+    "operator_wallet_owns": [
+     "@test10000",
+     "@test9997",
+     "@test9998",
+     "@test9999"
+    ],
+    "store_wallet_loaded": true
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "tip": "the network's",
+     "operator_wallet_owns": [
+      "@test10000",
+      "@test9997",
+      "@test9998",
+      "@test9999"
+     ],
+     "store_wallet_loaded": true
+    }
+   },
+   "match": true,
+   "note": "a fresh node learns no earlier mempool from its peer",
+   "kind": "required",
+   "t": 1794252449.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": null,
+   "step": "python3 -m service restore: the store from its journal alone",
+   "regtest": {
+    "exit": 0,
+    "output": "restored regtest/.run/probe-recovery-20261109T192504Z-dc4d1f/host/store.db from the off-host journal: {\"name\": 7, \"order\": 7, \"group\": 1, \"alert\": 0, \"authorization\": 1}",
+    "seconds": 0.16
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252449.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "H6",
+   "step": "the store's start: refund attempts reconciled before serving",
+   "regtest": {
+    "rebroadcast": [
+     "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b"
+    ],
+    "refund_in_host_mempool": true
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "rebroadcast": [
+      "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b"
+     ],
+     "refund_in_host_mempool": true
+    }
+   },
+   "match": true,
+   "note": "the fresh node doesn't know the refund, so the store sends the same signed bytes again; the world already has them",
+   "kind": "required",
+   "t": 1794252450.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A13",
+   "step": "runner restore",
+   "regtest": {
+    "exit": 0,
+    "output": {
+     "snapshot": "001-b4",
+     "subs_files_checked": 13,
+     "controller_journal_entries": 43,
+     "batches": 5,
+     "log": [
+      [
+       "b3",
+       "journaled intent without an answer: broadcast_uncertain"
+      ],
+      [
+       "b5",
+       "rebuilt: the restored subs doesn't hold its local commitment (the snapshot predates it); its members stay paid"
+      ],
+      [
+       "b3",
+       "readback: False"
+      ]
+     ],
+     "recovery": {
+      "ready": false,
+      "waiting": [
+       "b3: uncertain: no transaction carrying its root found yet; read back again (finding nothing proves nothing)",
+       "b4: its transaction is on neither this node's chain nor its mempool: rebroadcast the journaled bytes",
+       "@test10000: attach b4's txid once it is mined"
+      ],
+      "paused": [],
+      "batches": {
+       "b1": {
+        "space": "@test10000",
+        "state": "final",
+        "verdict": "closed",
+        "why": "final"
+       },
+       "b2": {
+        "space": "@test9999",
+        "state": "checkpointed",
+        "verdict": "reconciled",
+        "why": "subs holds its local commitment; never sent"
+       },
+       "b3": {
+        "space": "@test9998",
+        "state": "broadcast_uncertain",
+        "verdict": "waiting",
+        "why": "uncertain: no transaction carrying its root found yet; read back again (finding nothing proves nothing)"
+       },
+       "b4": {
+        "space": "@test10000",
+        "state": "broadcast",
+        "verdict": "waiting",
+        "why": "its transaction is on neither this node's chain nor its mempool: rebroadcast the journaled bytes"
+       },
+       "b5": {
+        "space": "@test9997",
+        "state": "rebuilt",
+        "verdict": "closed",
+        "why": "rebuilt"
+       }
+      },
+      "spaces": {
+       "@test10000": {
+        "subs_root": "476ce370418a5b1debf4df5b8942d976558e4e56af3bd06294c16996a3f7807c",
+        "subs_txid": null,
+        "chain_root": "e42212f3e6fab51e70ac1d8af0c213d110911a4be151c187da4f188d88a4bfbb",
+        "batch": "b4",
+        "root": "one local commitment ahead of the chain (b4, broadcast)",
+        "attach": "needed once b4's commitment is mined"
+       },
+       "@test9997": {
+        "subs_root": null,
+        "subs_txid": null,
+        "chain_root": null,
+        "batch": null,
+        "root": "matches the chain"
+       },
+       "@test9998": {
+        "subs_root": "7af0ce1b4084fdc2a0067b88f22863d4966ac0f5f58cc1d7c93206ff8cc330c6",
+        "subs_txid": null,
+        "chain_root": null,
+        "batch": "b3",
+        "root": "one local commitment ahead of the chain (b3, broadcast_uncertain)"
+       },
+       "@test9999": {
+        "subs_root": "a91d0314bbe08b551f15721ae493e718a78ecd141915073f1c736c168b8997bd",
+        "subs_txid": null,
+        "chain_root": null,
+        "batch": "b2",
+        "root": "one local commitment ahead of the chain (b2, checkpointed)"
+       }
+      },
+      "refunds": {
+       "reconciled_at_store_start": true,
+       "rebroadcast_at_store_start": [
+        "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b"
+       ]
+      }
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "snapshot": "001-b4",
+     "verdicts": {
+      "b1": "closed",
+      "b4": "waiting",
+      "b2": "reconciled",
+      "b3": "waiting",
+      "b5": "closed"
+     },
+     "ready": false
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252451.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A13",
+   "step": "reconciled states",
+   "regtest": {
+    "states": {
+     "b1": "final",
+     "b2": "checkpointed",
+     "b3": "broadcast_uncertain",
+     "b4": "broadcast",
+     "b5": "rebuilt"
+    },
+    "waiting": [
+     "b3: uncertain: no transaction carrying its root found yet; read back again (finding nothing proves nothing)",
+     "b4: its transaction is on neither this node's chain nor its mempool: rebroadcast the journaled bytes",
+     "@test10000: attach b4's txid once it is mined"
+    ],
+    "spaces": {
+     "@test10000": {
+      "subs_root": "476ce370418a5b1debf4df5b8942d976558e4e56af3bd06294c16996a3f7807c",
+      "subs_txid": null,
+      "chain_root": "e42212f3e6fab51e70ac1d8af0c213d110911a4be151c187da4f188d88a4bfbb",
+      "batch": "b4",
+      "root": "one local commitment ahead of the chain (b4, broadcast)",
+      "attach": "needed once b4's commitment is mined"
+     },
+     "@test9997": {
+      "subs_root": null,
+      "subs_txid": null,
+      "chain_root": null,
+      "batch": null,
+      "root": "matches the chain"
+     },
+     "@test9998": {
+      "subs_root": "7af0ce1b4084fdc2a0067b88f22863d4966ac0f5f58cc1d7c93206ff8cc330c6",
+      "subs_txid": null,
+      "chain_root": null,
+      "batch": "b3",
+      "root": "one local commitment ahead of the chain (b3, broadcast_uncertain)"
+     },
+     "@test9999": {
+      "subs_root": "a91d0314bbe08b551f15721ae493e718a78ecd141915073f1c736c168b8997bd",
+      "subs_txid": null,
+      "chain_root": null,
+      "batch": "b2",
+      "root": "one local commitment ahead of the chain (b2, checkpointed)"
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "b5": "rebuilt",
+     "b3": "broadcast_uncertain",
+     "b4": "broadcast",
+     "b2": "checkpointed",
+     "b1": "final"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252451.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": null,
+   "step": "subs given the new host's registry token",
+   "regtest": {
+    "configured": true
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252451.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A14",
+   "step": "runner issue b2 while the restore waits",
+   "regtest": {
+    "exit": 3,
+    "seconds": 0.29,
+    "output": {
+     "refused": "a restore isn't reconciled yet, nothing was sent: b3: uncertain: no transaction carrying its root found yet; read back again (finding nothing proves nothing); b4: its transaction is on neither this node's chain nor its mempool: rebroadcast the journaled bytes; @test10000: attach b4's txid once it is mined"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 3,
+     "refused": "a restore isn't reconciled yet, nothing was sent"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252451.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A11",
+   "step": "runner rebroadcast b4 without its confirmation",
+   "regtest": {
+    "exit": 3,
+    "seconds": 0.32,
+    "output": {
+     "refused": "not confirmed: the batch id b4 must be typed or given as --confirm; nothing was sent"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 3,
+     "refused": "nothing was sent"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252452.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A11",
+   "step": "runner rebroadcast b4 confirmed: the journaled bytes",
+   "regtest": {
+    "exit": 1,
+    "seconds": 0.31,
+    "output": {
+     "error": "RpcError: sendrawtransaction: {'code': -25, 'message': 'bad-txns-inputs-missingorspent'}"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "txid": "bf476166542d0fd3d13d14c4336f065d49e604eedd6ec71b8c48817838c95f07",
+     "in_mempool": true
+    }
+   },
+   "match": false,
+   "note": "",
+   "kind": "required",
+   "t": 1794252452.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A13",
+   "step": "runner readback b3 before a block arrives",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.34,
+    "output": {
+     "bid": "b3",
+     "adopted": false,
+     "txid": null,
+     "reason": null,
+     "state": "broadcast_uncertain",
+     "evidence": {
+      "getcommitment": null,
+      "mempool": null,
+      "wallet": []
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "adopted": false,
+     "state": "broadcast_uncertain"
+    }
+   },
+   "match": true,
+   "note": "the commitment is in the world's mempool only; finding nothing proves nothing",
+   "kind": "required",
+   "t": 1794252452.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A13",
+   "step": "runner readback b3 once the block carries it",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.34,
+    "output": {
+     "bid": "b3",
+     "adopted": true,
+     "txid": "59c5d6c532df53571d1db9f303dfeb43eb577ed3e2907f33a5580a9bbc43da35",
+     "reason": null,
+     "state": "broadcast",
+     "evidence": {
+      "getcommitment": {
+       "state_root": "7af0ce1b4084fdc2a0067b88f22863d4966ac0f5f58cc1d7c93206ff8cc330c6",
+       "prev_root": null,
+       "rolling_hash": "7af0ce1b4084fdc2a0067b88f22863d4966ac0f5f58cc1d7c93206ff8cc330c6",
+       "block_height": 3643
+      },
+      "mempool": null,
+      "wallet": [
+       {
+        "txid": "59c5d6c532df53571d1db9f303dfeb43eb577ed3e2907f33a5580a9bbc43da35",
+        "block_height": 3643,
+        "root_seen": true,
+        "events": []
+       }
+      ]
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "adopted": true,
+     "txid": "59c5d6c532df53571d1db9f303dfeb43eb577ed3e2907f33a5580a9bbc43da35",
+     "state": "broadcast"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252454.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A9",
+   "step": "runner attach-txid b4: subs told the adopted txid",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.46,
+    "output": {
+     "bid": "b4",
+     "txid": "bf476166542d0fd3d13d14c4336f065d49e604eedd6ec71b8c48817838c95f07",
+     "answer": {
+      "txid": "bf476166542d0fd3d13d14c4336f065d49e604eedd6ec71b8c48817838c95f07"
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "attached": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252455.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A9",
+   "step": "runner attach-txid b3: subs told the adopted txid",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.45,
+    "output": {
+     "bid": "b3",
+     "txid": "59c5d6c532df53571d1db9f303dfeb43eb577ed3e2907f33a5580a9bbc43da35",
+     "answer": {
+      "txid": "59c5d6c532df53571d1db9f303dfeb43eb577ed3e2907f33a5580a9bbc43da35"
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "attached": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252455.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": "A14",
+   "step": "runner status after the readback and the attaches",
+   "regtest": {
+    "ready": true,
+    "waiting": [],
+    "spaces": {
+     "@test10000": {
+      "root": "matches the chain",
+      "attach": null
+     },
+     "@test9997": {
+      "root": "matches the chain",
+      "attach": null
+     },
+     "@test9998": {
+      "root": "matches the chain",
+      "attach": null
+     },
+     "@test9999": {
+      "root": "one local commitment ahead of the chain (b2, checkpointed)",
+      "attach": null
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "ready": true,
+     "waiting": []
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252456.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11b. host loss and a fresh host from the recovery set",
+   "case": null,
+   "step": "times, with the history they were measured on",
+   "regtest": {
+    "store_replay_seconds": 0.16,
+    "complete_recovery_seconds": 29.52,
+    "steps": {
+     "host node synced from the network node": 14.32,
+     "spaced synced": 4.42,
+     "operator wallet restored from its onboarding backup and synced": 3.08,
+     "store wallet restored from its onboarding backup": 0.5,
+     "store replay from its journal (python3 -m service restore)": 0.16,
+     "store started (refund attempts reconciled before serving)": 0.3,
+     "runner restore: subs from the snapshot, the controller from its journal, reconciled": 0.61,
+     "rebroadcast b4": 0.31,
+     "readback b3": 0.34,
+     "a block arrives (regtest: mined at once)": 1.54,
+     "readback b3 again": 0.34,
+     "attach-txid b4": 0.46,
+     "attach-txid b3": 0.45,
+     "runner status: ready": 0.45
+    },
+    "history": {
+     "store_journal": {
+      "entries": 42,
+      "bytes": 35886
+     },
+     "runner_journal": {
+      "entries": 41,
+      "bytes": 19892
+     },
+     "orders": 7,
+     "refund_groups": 1,
+     "alerts": 1
+    }
+   },
+   "model": null,
+   "match": null,
+   "note": "regtest: blocks arrive at once and the chain is short; the targets are open points for the workspace_owner",
+   "kind": "informational",
+   "t": 1794252456.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11c. the restored state against the state before the loss",
+   "case": null,
+   "step": "every order's status as before",
+   "regtest": {
+    "changed": {}
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "changed": {}
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252456.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11c. the restored state against the state before the loss",
+   "case": null,
+   "step": "no reservation disappears: every order's reservation, sums and refund groups as before",
+   "regtest": {
+    "differences": {}
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "differences": {}
+    }
+   },
+   "match": true,
+   "note": "sums are recomputed from the chain",
+   "kind": "required",
+   "t": 1794252456.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11c. the restored state against the state before the loss",
+   "case": null,
+   "step": "every name's fulfillment reservation as before",
+   "regtest": {
+    "changed": {},
+    "holds": {
+     "one@test10000": [
+      null,
+      null
+     ],
+     "two@test10000": [
+      null,
+      null
+     ],
+     "three@test9999": [
+      null,
+      null
+     ],
+     "four@test9998": [
+      null,
+      null
+     ],
+     "five@test10000": [
+      null,
+      null
+     ],
+     "six@test9997": [
+      null,
+      null
+     ],
+     "seven@test9999": [
+      "o7",
+      "o7"
+     ]
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "changed": {}
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252456.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11c. the restored state against the state before the loss",
+   "case": null,
+   "step": "no name issued twice: each handle committed once in subs, each order in one live or closed batch",
+   "regtest": {
+    "committed": {
+     "five@test10000": [
+      "476ce370418a5b1debf4df5b8942d976558e4e56af3bd06294c16996a3f7807c"
+     ],
+     "one@test10000": [
+      "e42212f3e6fab51e70ac1d8af0c213d110911a4be151c187da4f188d88a4bfbb"
+     ],
+     "three@test9999": [
+      "a91d0314bbe08b551f15721ae493e718a78ecd141915073f1c736c168b8997bd"
+     ],
+     "four@test9998": [
+      "7af0ce1b4084fdc2a0067b88f22863d4966ac0f5f58cc1d7c93206ff8cc330c6"
+     ]
+    },
+    "orders_in_two_batches": {}
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "committed_twice": {},
+     "orders_in_two_batches": {}
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252457.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "11c. the restored state against the state before the loss",
+   "case": null,
+   "step": "the restored tree root of each space against the chain",
+   "regtest": {
+    "@test10000": {
+     "subs_root": "476ce370418a5b1debf4df5b8942d976558e4e56af3bd06294c16996a3f7807c",
+     "subs_txid": "bf476166542d0fd3d13d14c4336f065d49e604eedd6ec71b8c48817838c95f07",
+     "chain_root": "476ce370418a5b1debf4df5b8942d976558e4e56af3bd06294c16996a3f7807c"
+    },
+    "@test9999": {
+     "subs_root": "a91d0314bbe08b551f15721ae493e718a78ecd141915073f1c736c168b8997bd",
+     "subs_txid": null,
+     "chain_root": null
+    },
+    "@test9998": {
+     "subs_root": "7af0ce1b4084fdc2a0067b88f22863d4966ac0f5f58cc1d7c93206ff8cc330c6",
+     "subs_txid": "59c5d6c532df53571d1db9f303dfeb43eb577ed3e2907f33a5580a9bbc43da35",
+     "chain_root": "7af0ce1b4084fdc2a0067b88f22863d4966ac0f5f58cc1d7c93206ff8cc330c6"
+    },
+    "@test9997": {
+     "subs_root": null,
+     "subs_txid": null,
+     "chain_root": null
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "@test10000": "subs root = chain root, with the txid",
+     "@test9998": "subs root = chain root, with the txid",
+     "@test9999": "subs one local commitment ahead (b checkpointed, never sent)",
+     "@test9997": "no commitment on either side"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252457.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "11c. the restored state against the state before the loss",
+   "case": null,
+   "step": "no refund pays twice",
+   "regtest": {
+    "groups": [
+     {
+      "gid": "g1",
+      "attempts": [
+       "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b"
+      ]
+     }
+    ],
+    "transactions_paying_the_refund_address": {
+     "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b": 9700
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "groups": [
+      {
+       "gid": "g1",
+       "attempts": [
+        "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b"
+       ]
+      }
+     ],
+     "transactions_paying_the_refund_address": {
+      "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b": 9700
+     }
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252457.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": "A4",
+   "step": "runner issue b2 confirmed: the binding check again, then sent",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.49,
+    "output": {
+     "bid": "b2",
+     "state": "broadcast",
+     "txid": "63e591fb03b7529ecebbbcd8a11f7f30157ff0e1ed4a268d72afab26150d598d",
+     "rebuilt_from": null
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "broadcast"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252457.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner prepare @test9997: the rebuilt batch redone from staging",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.86,
+    "output": {
+     "bid": "b6",
+     "state": "checkpointed",
+     "members": [
+      "o6"
+     ],
+     "root": "ee6a7b0c05de220c3818ec2f1430ba6772478d637597d043b3fd74471eb59754",
+     "staged": {
+      "six": "5120f59446b8ce6855d45df179bff3ebedd2ce3c352ee21156d974cde9a30a734e2d"
+     },
+     "members_on_root": 1,
+     "proving": "skipped",
+     "snapshot": "regtest/.run/probe-recovery-20261109T192504Z-dc4d1f/offhost/snapshots/001-b6"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "checkpointed",
+     "members": [
+      "o6"
+     ]
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252458.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner issue b6 confirmed",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.49,
+    "output": {
+     "bid": "b6",
+     "state": "broadcast",
+     "txid": "b6d4a46d044362f4847d60da4c7be0d7fcd0868f1b01b59ca3782863e5529062",
+     "rebuilt_from": null
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "broadcast"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252459.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "mined to d >= 150 and the anchor at 3816: b4, b3, b2, b6",
+   "regtest": {
+    "b4": {
+     "state": "final",
+     "depth": 173,
+     "certificate_status": "verified"
+    },
+    "b3": {
+     "state": "final",
+     "depth": 173,
+     "certificate_status": "verified"
+    },
+    "b2": {
+     "state": "final",
+     "depth": 172,
+     "certificate_status": "verified"
+    },
+    "b6": {
+     "state": "final",
+     "depth": 172,
+     "certificate_status": "verified"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "b4": {
+      "state": "final",
+      "certificate_status": "verified"
+     },
+     "b3": {
+      "state": "final",
+      "certificate_status": "verified"
+     },
+     "b2": {
+      "state": "final",
+      "certificate_status": "verified"
+     },
+     "b6": {
+      "state": "final",
+      "certificate_status": "verified"
+     }
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252468.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner certify b4",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.77,
+    "output": {
+     "bid": "b4",
+     "members": {
+      "o5": {
+       "handle": "five@test10000",
+       "verified": true,
+       "checks": {
+        "verified": true,
+        "handle": true,
+        "script_pubkey": true,
+        "root": true,
+        "root_height": true,
+        "sovereign": true
+       },
+       "delivered": true
+      }
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "every member verified and delivered": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252469.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner publish b4: delivery confirmed by a verified lookup through the relay",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.98,
+    "output": {
+     "bid": "b4",
+     "enrolled": [
+      "o5"
+     ],
+     "publish_calls": 1,
+     "delivery": {
+      "o5": {
+       "confirmed": true
+      }
+     },
+     "outstanding": []
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "outstanding": [],
+     "every member confirmed": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252470.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner certify b3",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.49,
+    "output": {
+     "bid": "b3",
+     "members": {
+      "o4": {
+       "handle": "four@test9998",
+       "verified": true,
+       "checks": {
+        "verified": true,
+        "handle": true,
+        "script_pubkey": true,
+        "root": true,
+        "root_height": true,
+        "sovereign": true
+       },
+       "delivered": true
+      }
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "every member verified and delivered": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252470.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner publish b3: delivery confirmed by a verified lookup through the relay",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.87,
+    "output": {
+     "bid": "b3",
+     "enrolled": [
+      "o4"
+     ],
+     "publish_calls": 1,
+     "delivery": {
+      "o4": {
+       "confirmed": true
+      }
+     },
+     "outstanding": []
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "outstanding": [],
+     "every member confirmed": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252471.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner certify b2",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.47,
+    "output": {
+     "bid": "b2",
+     "members": {
+      "o3": {
+       "handle": "three@test9999",
+       "verified": true,
+       "checks": {
+        "verified": true,
+        "handle": true,
+        "script_pubkey": true,
+        "root": true,
+        "root_height": true,
+        "sovereign": true
+       },
+       "delivered": true
+      }
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "every member verified and delivered": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252472.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner publish b2: delivery confirmed by a verified lookup through the relay",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.88,
+    "output": {
+     "bid": "b2",
+     "enrolled": [
+      "o3"
+     ],
+     "publish_calls": 1,
+     "delivery": {
+      "o3": {
+       "confirmed": true
+      }
+     },
+     "outstanding": []
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "outstanding": [],
+     "every member confirmed": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252472.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner certify b6",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.47,
+    "output": {
+     "bid": "b6",
+     "members": {
+      "o6": {
+       "handle": "six@test9997",
+       "verified": true,
+       "checks": {
+        "verified": true,
+        "handle": true,
+        "script_pubkey": true,
+        "root": true,
+        "root_height": true,
+        "sovereign": true
+       },
+       "delivered": true
+      }
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "every member verified and delivered": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252473.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner publish b6: delivery confirmed by a verified lookup through the relay",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.89,
+    "output": {
+     "bid": "b6",
+     "enrolled": [
+      "o6"
+     ],
+     "publish_calls": 1,
+     "delivery": {
+      "o6": {
+       "confirmed": true
+      }
+     },
+     "outstanding": []
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "outstanding": [],
+     "every member confirmed": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252474.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "the in-flight orders after delivery",
+   "regtest": {
+    "o3": "fulfilled",
+    "o4": "fulfilled",
+    "o5": "fulfilled",
+    "o6": "fulfilled"
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "o3": "fulfilled",
+     "o4": "fulfilled",
+     "o5": "fulfilled",
+     "o6": "fulfilled"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252474.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "eight@test10000: request, quote, payment",
+   "regtest": {
+    "oid": "o8",
+    "address": "bcrt1pj75gj8vs69wtq9az5kfv3umh2wva4zzd2lwlpj8uwkfmpywcgpzqul9a2l",
+    "payment": "aaf67c52522e0c88308151e8b180d0260b76a8a09cef6bc03bc90574527e8a83"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252474.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": "H11",
+   "step": "the first quote after the restore: the restored wallet's next address is the unpaid quote's, and the store skips it",
+   "regtest": {
+    "eight_address_differs": true,
+    "alerts": [
+     [
+      "o8",
+      {
+       "skipped": 1
+      }
+     ]
+    ]
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "eight_address_differs": true,
+     "alerts": [
+      [
+       "o8",
+       {
+        "skipped": 1
+       }
+      ]
+     ]
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252474.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner prepare @test10000: the next batch after the recovery",
+   "regtest": {
+    "exit": 0,
+    "seconds": 101.38,
+    "output": {
+     "bid": "b7",
+     "state": "checkpointed",
+     "members": [
+      "o8"
+     ],
+     "root": "f1e468d0b938b799605b5cc27318e4e141b3fe9c18cc33989eac14a855624227",
+     "staged": {
+      "eight": "5120d0f9352269d075eea287a0a4b1661b5316153a0767f8bfe8df718a6fde604896"
+     },
+     "members_on_root": 1,
+     "proving": "complete",
+     "snapshot": "regtest/.run/probe-recovery-20261109T192504Z-dc4d1f/offhost/snapshots/001-b7"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "checkpointed",
+     "members": [
+      "o8"
+     ]
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252576.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner issue b7 confirmed",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.5,
+    "output": {
+     "bid": "b7",
+     "state": "broadcast",
+     "txid": "1a57d536ac2c716edfdf3930734b1f8679cd3ffff23b7d74eac671ece1041c91",
+     "rebuilt_from": null
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "state": "broadcast"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252577.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "mined to d >= 150 and the anchor at 3996: b7",
+   "regtest": {
+    "b7": {
+     "state": "final",
+     "depth": 176,
+     "certificate_status": "verified"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "b7": {
+      "state": "final",
+      "certificate_status": "verified"
+     }
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252589.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner certify b7",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.63,
+    "output": {
+     "bid": "b7",
+     "members": {
+      "o8": {
+       "handle": "eight@test10000",
+       "verified": true,
+       "checks": {
+        "verified": true,
+        "handle": true,
+        "script_pubkey": true,
+        "root": true,
+        "root_height": true,
+        "sovereign": true
+       },
+       "delivered": true
+      }
+     }
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "every member verified and delivered": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252589.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner publish b7: delivery confirmed by a verified lookup through the relay",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.82,
+    "output": {
+     "bid": "b7",
+     "enrolled": [
+      "o8"
+     ],
+     "publish_calls": 1,
+     "delivery": {
+      "o8": {
+       "confirmed": true
+      }
+     },
+     "outstanding": []
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "outstanding": [],
+     "every member confirmed": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252590.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "o8 after delivery",
+   "regtest": {
+    "status": "fulfilled"
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "status": "fulfilled"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252590.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "nine@test9999: request, quote, payment",
+   "regtest": {
+    "oid": "o9",
+    "address": "bcrt1pyuvgydyqyj32eff8dqv7fce04rlzgvf605g5c6mefuy08xc7mwxsksqjmd",
+    "payment": "d1638a1a4e308c66873e43062ebf4bb1490a584c5d8068349d2dd7869562c093"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252591.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner cancel o9",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.31,
+    "output": {
+     "status": "cancelled",
+     "cancellation": "final",
+     "acknowledged": true,
+     "oid": "o9"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "cancellation": "final"
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252592.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "runner refund o9",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.32,
+    "output": {
+     "gid": "g2",
+     "txid": "8147e469c551b3559930fb3c15c280a7fd1bcb411ce929a1e45a66e21731e44d",
+     "to_buyer": 9700,
+     "fee": 300,
+     "charged": 10000,
+     "oid": "o9"
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "to_buyer": 9700
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252593.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": "A5",
+   "step": "runner broadcast-refund g2 confirmed",
+   "regtest": {
+    "exit": 0,
+    "seconds": 0.29,
+    "output": {
+     "gid": "g2",
+     "txid": "8147e469c551b3559930fb3c15c280a7fd1bcb411ce929a1e45a66e21731e44d",
+     "acknowledged": true
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "exit": 0,
+     "acknowledged": true
+    }
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794252593.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "both refunds settled, each paid once",
+   "regtest": {
+    "o2": {
+     "paid": {
+      "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b": 9700
+     },
+     "closed": true,
+     "refunded_total": 10000,
+     "reserved": 0
+    },
+    "o9": {
+     "paid": {
+      "8147e469c551b3559930fb3c15c280a7fd1bcb411ce929a1e45a66e21731e44d": 9700
+     },
+     "closed": false,
+     "refunded_total": 0
+    }
+   },
+   "model": {
+    "expected (recovery rules of CONTROLLER-DESIGN.md and PAYMENT-SPEC.md, not the model)": {
+     "o2": {
+      "paid": {
+       "1e49b764f7c6c7bc2fc5cfb7c48a6345b825d722f43898485fdd8dbed40af99b": 9700
+      },
+      "closed": true,
+      "refunded_total": 10000,
+      "reserved": 0
+     },
+     "o9": {
+      "paid": {
+       "8147e469c551b3559930fb3c15c280a7fd1bcb411ce929a1e45a66e21731e44d": 9700
+      },
+      "closed": true,
+      "refunded_total": 10000
+     }
+    }
+   },
+   "match": false,
+   "note": "",
+   "kind": "required",
+   "t": 1794252594.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "11d. issuance and refunds resume",
+   "case": null,
+   "step": "the store's and the controller's alerts after the recovery",
+   "regtest": {
+    "store": [
+     [
+      "o8",
+      "destination_held"
+     ]
+    ],
+    "controller": []
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794252595.2
+  }
+ ],
+ "findings": []
+}
