@@ -63,8 +63,8 @@ def subs_bin():
 def subs_capabilities():
     """What the subs build this run uses can do beyond the pinned commit
     (`controller.core.Capabilities`). The U1(b) route is in the builds of
-    `build-u1b.sh` and `build-combined.sh` only."""
-    return {"attach_txid": subs_bin().name in ("subs-u1b", "subs-combined")}
+    `build-u1b.sh`, `build-combined.sh` and `build-private.sh`."""
+    return {"attach_txid": subs_bin().name in ("subs-u1b", "subs-combined", "subs-private")}
 
 
 class Stack:

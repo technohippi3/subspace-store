@@ -50,3 +50,12 @@ Five of the requirements are not obvious from the files:
 
 The test operator's machine and its network confinement are described in
 `docs/BUYER-GATE.md`, not here.
+
+The pinned `subs` API binds to every IPv4 interface (R7), regardless of
+the loopback URLs in the runner configuration. For the private purchase,
+`regtest/build-private.sh` builds a separate `subs-private` with the
+loopback patch, U1(b) and explicit relay seeds. Selecting that reviewed
+binary, configuring the host firewall and running the listener preflight
+are deployment preparation; these examples do none of them. See
+`docs/PRIVATE-PURCHASE.md`. The binding patch adds no authentication for
+other processes on the same host.

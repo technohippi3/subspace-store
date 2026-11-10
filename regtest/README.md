@@ -68,6 +68,13 @@ wallets are made fresh for each run inside `.run/`.
   upstream patches (`.cache/bin/subs-combined`), and scenarios 1 to 6 in
   one run: recovery after a restore, continued issuance, publication and
   verified delivery.
+- `build-private.sh`: the same pin with U1(b), explicit relay seeds and
+  `upstream/subs-loopback.patch`, built as `.cache/bin/subs-private` in
+  its own worktree. This build binds its API only to `127.0.0.1` (R7).
+  The pinned and earlier patched binaries stay unchanged. The harness
+  still runs in the isolated namespace, even with this build. It needs
+  the dependencies fetched by `fetch.sh`; regtest publication also needs
+  `certrelay` from `build-relay.sh`. See `upstream/LOOPBACK.md` for checks.
 - `run-service.sh [prefix]`: the store service (`service/`) as its own
   process in place of the harness registry, killed and restarted along the
   way: a purchase through its API to verified delivery (scenario 7) and a

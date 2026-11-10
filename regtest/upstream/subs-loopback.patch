@@ -1,0 +1,12 @@
+diff --git a/subs/src/main.rs b/subs/src/main.rs
+--- a/subs/src/main.rs
++++ b/subs/src/main.rs
+@@ -297,7 +297,7 @@ async fn run_server_inner(state: AppState, port: u16) -> Result<()> {
+         .with_state(state);
+ 
+     // Start server
+-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
++    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+     tracing::info!("Starting server on http://{}", addr);
+ 
+     let listener = tokio::net::TcpListener::bind(addr).await?;

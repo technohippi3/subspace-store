@@ -1,7 +1,9 @@
 # Private purchase on mainnet (plan, draft 2026-11-10)
 
-Status: a plan. Nothing in it has run. It changes no rule and opens no
-sales. Every step that moves funds or changes on-chain state needs the
+Status: mainnet has not run. The local implementation is committed and
+checked on regtest; the machine, confinement and authorized transaction
+budget are still preparation work. This plan opens no sales. Every step
+that moves funds or changes on-chain state needs the
 workspace_owner's authorization of the filled-in transaction plan below,
 and the workspace_owner performs every wallet action personally. No seed
 phrase or private key is ever shown to an agent session or written into
@@ -38,8 +40,9 @@ shared.
 
 ## What runs, and where
 
-All of it on one machine the workspace_owner controls, with every
-listener on loopback, as the service and the runner already require. The
+All of it on one machine the workspace_owner controls. The service binds
+to loopback and the runner requires loopback URLs for the local services.
+Those URLs do not prove how another process binds its listener. The
 buyer gate's preparation recommends a clean VM or separate machine that
 shares no host wallet folder; this plan follows that.
 
@@ -73,10 +76,11 @@ it has no business with.
   buyer gate's `spaced` syncs through a remote Bitcoin RPC, and a hosted
   RPC may give neither wallet calls nor an index. A node of its own means
   a full sync with the index, several hundred gigabytes and a day or more.
-- `spaced` v0.5.0 and `subs` at the pinned commit, as the buyer gate's
-  test operator runs them (`buyer-gate/operator.sh`), confined, with the
-  `operator-2` wallet. One purchase on a space with no restore needs no
-  U1(b).
+- `spaced` v0.5.0 and the loopback-binding build of the pinned `subs`
+  (`regtest/build-private.sh`), confined, with the `operator-2` wallet.
+  The build also includes U1(b) and explicit relay seeds. One purchase on
+  a space with no restore needs no U1(b), but recovery does. The buyer
+  gate's launcher is separate; it does not select this build automatically.
 - The Python store service and the attended runner, with the reviewed
   controller. The TypeScript store isn't complete, and this test needs
   only one purchase.
@@ -87,84 +91,163 @@ it has no business with.
 - The public relay the buyer gate's M6 lookup used, for publication and
   the verified delivery lookup.
 
-## Code changes before anything runs
+## Local implementation and remaining preparation
 
-Each is local work, tested before use, and none opens anything to the
-public.
+The implementation is committed as `bfa95e9`: the private mainnet switch,
+explicit rate limits, durable one-order allowance and controller process
+lock. Cases Y1 to Y8 and A23 cover them. The implementation tree passed
+253 Python tests, the coverage gate with all 178 fixed-price cases tested,
+and the type check and 36 TypeScript tests. The private-mode checkout and
+refund, and the recovery rehearsal, passed on regtest. These checks do not
+establish mainnet or Nacho acceptance.
 
-1. Mainnet, behind an explicit switch. The service refuses every network
-   but regtest (`service/__main__.py`), and so does the runner
-   (`runner/cli.py`, `NETWORKS` and `NAMES`). Both accept mainnet only
-   with a configuration key that names it a private attended test, and
-   still listen on loopback only. The runner's network check maps
-   mainnet's names: `main` for Bitcoin Core, and the names `spaced`,
-   `subs` and the store report.
-2. Fee rates the operator sets. `issue` defaults to 1 sat/vB today. On
-   mainnet the fee rate must be given, and the runner refuses one above a
-   configured ceiling. The same goes for refunds, whose fee is a fixed
-   300 sats today. Estimating fees with `estimatesmartfee` is the pilot
-   decision, but this test can use explicit fees.
-3. A durable allowance for exactly one order. An exposure limit can't do
-   this: a reviewer reproduced, with the real ledger, a 1,000-sat quote
-   under a 1,100-sat limit expiring, exposure falling to zero, and a
-   second quote accepted, with both payment addresses given out. So the
-   test configuration names the one order it allows, by handle and
-   recipient script. The store quotes that order once. Asking again
-   returns its existing invoice, and the order stays payable, late
-   payment included, under the usual rules. Nothing else is ever quoted,
-   and the allowance is recorded and journaled when it is used, so
-   neither the hold's expiry, a cancellation, a restart nor a restore
-   frees it for another order. The hot-wallet cap is set to the test
-   price.
-4. One boundary for all four: the clean VM or separate machine, with the
-   store and the runner installed in it beside `spaced` and `subs`, and
-   with no host wallet directory shared into it. The confinement checks
-   are repeated there.
-5. Validation. Tests that the service and the runner refuse mainnet
-   without the switch, and refuse a listener off loopback with it. Then
-   the regtest service, checkout and recovery scenarios again with the
-   changed code, since they are the evidence that nothing else moved.
+The service and runner require matching `private_attended_test`
+configuration: network, canonical handle, recipient script, a price of
+1,000 sats, a maximum fee rate and an explicit refund rate. The allowance
+is consumed with the invoice in one SQLite transaction and acknowledged
+in the same journal entry. Expiry, cancellation and restore cannot free
+it for another order. The configured name cannot be repriced. A repeated
+quote for that order returns the same invoice under the existing payment
+rules. Private startup reports pending refund rebroadcasts for attended
+action. Each runner command holds the controller lock, so a second one,
+even `status`, refuses while the first waits on an RPC.
+
+The clean VM, shared connectivity inside it, recovery storage and network
+confinement are still to prepare. In particular, pinned `subs` binds
+`0.0.0.0` without a bind-address option (finding R7). A clean VM alone
+does not make that listener private. `regtest/upstream/subs-loopback.patch`
+changes its bind to `127.0.0.1`. `regtest/build-private.sh` applies that
+patch with U1(b) and the relay-seed patch and produces a separate
+`.cache/bin/subs-private` under `regtest/`; it leaves existing builds alone.
+Review and select that binary explicitly for the VM, keep clients on IPv4
+loopback, and use the host firewall as another layer. No firewall or host
+is configured by the build. This patch adds no API authentication.
+
+The existing buyer-gate launcher contains only spaced and subs. The strict
+listener preflight below still fails on a wildcard bind, including inside
+a namespace. Choosing namespace confinement instead of the binding patch
+would require a separate reviewed check, not ignoring that failure.
+
+## Read-only preflight
+
+Run this inside the intended VM and network namespace after preparing and
+starting the stack, before funding or issuing:
+
+```sh
+python3 tools/private_preflight.py STORE_CONFIG RUNNER_CONFIG
+```
+
+It reads the two configurations, node sync and transaction-index status,
+the loaded store signing wallet, Core's registered wallet directory,
+spaced's operator-wallet sync, the store's private configuration, chain
+agreement through both subs endpoints, local TCP listeners, mount types
+and filesystem device numbers. It requires only the configured store
+wallet in that Core node's loaded and registered wallets. It never loads,
+creates or unlocks a wallet, constructs a ledger or controller, opens their
+databases, signs, broadcasts or starts an application process. Its output withholds
+paths, URLs, wallet names, credentials and RPC response bodies.
+
+For a directory not yet created, such as the first snapshot's directory,
+it resolves existing symlinks and checks the nearest existing parent.
+It creates nothing. Permission errors and paths that are files still
+fail. A missing recovery mount on the database filesystem fails too;
+the check uses today's mounts, not where a future mount is promised.
+
+Exit 0 and `automated_checks: PASS` mean only those automated checks passed.
+Exit 1 means at least one failed or could not be checked. The check covers
+configured application ports; an administrative SSH listener is outside
+that scope. A wildcard subs listener fails even when clients use a
+loopback URL.
+
+The report always retains manual checks. The VM's hypervisor shares,
+bind mounts, other wallet files outside Core's registered directory and
+physical storage independence cannot be proved by this script. Known
+shared-folder filesystem types are flagged, but their absence is not
+proof of wallet isolation. Recheck the machine's sharing configuration,
+external reachability and the throwaway space separately. This report
+never authorizes spending.
+
+The tool has fake-RPC tests and a real regtest read check. The original
+regtest fixture fails because it has extra test wallets, wildcard subs
+listeners and no separate recovery filesystem. With the private build,
+the listener check must pass; the extra wallets and shared recovery
+filesystem must still fail. The harness also requires the missing first
+snapshot directory to produce a filesystem mismatch, not an error while
+looking up the directory. These are detection checks, not a VM preflight
+passed.
+
+The patched build and private checkout passed together in regtest run
+`private-loopback-20261110T180007Z-37a159`; the order ended fulfilled with
+a verified certificate. The old-build control and exact checks are
+recorded in `regtest/upstream/LOOPBACK.md`.
 
 ## Transaction budget
 
-Two sizes are measured, from the signed bytes the regtest runs
-journaled. On mainnet the same transactions have the same shape, as long
-as the operator wallet funds a commitment from a single input:
-- a commitment: 256 vbytes, the same in all 138 measured (2 inputs: the
-  delegate output and the funding; 3 outputs: the delegate output, the
-  root, the change);
-- a refund: 111 vbytes, the same in all 21 measured (1 input, 1 output).
+The earlier signed-byte measurements found 256-vbyte commitments in
+138 samples and 111-vbyte refunds in 21 samples. A fresh isolated run,
+`private-budget-20261110T171215Z-f74330`, measured the remaining operations
+with the pinned builders (`regtest/harness/private_budget.py`):
 
-Not measured, and each still to estimate before the transaction plan is
-authorized:
-- the buyer's payment, which depends on the buyer wallet (a one-input,
-  two-output Taproot payment is about 154 vbytes);
-- funding the operator wallet, about the same;
-- the Spaces transactions that operate the space and delegate it to the
-  test operator (the buyer gate's M1), which `space-cli` builds;
-- returning what is left in the operator wallet afterwards.
+| Transaction | Measured vbytes | Inputs / outputs | Scope |
+| --- | ---: | ---: | --- |
+| Operate | 341 | 2 / 5 | Two spaces in the fixture |
+| Delegate | 212 | 2 / 2 | Fresh recipient address in the same fixture wallet; size evidence only |
+| Fund operator with 10,000 sats | 154 | 1 / 2 | Core selected the input and change |
+| Pay the 1,000-sat invoice | 154 | 1 / 2 | Core selected the input and change |
+| Commitment | 256 | 2 / 3 | Delegate output and one funding input |
+| Partial operator return | 154 | 1 / 2 | A 5,000-sat return with change, not a complete sweep |
+| Cancellation refund | 111 | 1 / 1 | The earlier private run paid 222 sats at 2 sat/vB |
 
-What the fee comes to, at a few fee rates the workspace_owner might
-choose on the day:
+These are signed regtest shapes. The delegation measurement does not
+prove a handover between separate wallets. The final return's actual
+input selection and sweep amount remain unmeasured. Additional inputs,
+different change or a different buyer wallet change the sizes. The actual
+wallet previews remain part of the transaction plan.
 
-| Fee rate (sat/vB) | Commitment | Payment (estimate) | A refund, if one is tried |
-| ---: | ---: | ---: | ---: |
-| 2 | 512 | 308 | 222 |
-| 5 | 1,280 | 770 | 555 |
-| 10 | 2,560 | 1,540 | 1,110 |
-| 20 | 5,120 | 3,080 | 2,220 |
+The following figures are `vbytes × rate`, in sats. They are estimates,
+not fee ceilings or measured mainnet costs. The builders include small
+rounding allowances: the operate transactions paid 342 sats, delegation
+213 and the partial return 155 at a requested 1 sat/vB. Core paid 1,550
+sats for each 154-vbyte funding/payment transaction at its regtest fallback
+rate. Check the actual wallet fee before authorizing each transaction.
 
-So the purchase itself costs the price, 1,000 sats, which comes back to
-the workspace_owner, plus the commitment's and the payment's fees:
-roughly 800 to 8,200 sats across those rates. That isn't the whole
-budget: the space's operate and delegate transactions, the funding and
-the return come on top, and are estimated before authorization. A
-suggested limit, for the workspace_owner to set: fund the operator wallet
-with 10,000 sats, which covers one commitment of the measured shape at up
-to 20 sat/vB with room to spare and nothing more, and set the fee-rate
-ceiling at the rate the mempool asks for on the day. Funds left
-afterwards return to the workspace_owner by a transaction they authorize
-then.
+| Transaction | 2 sat/vB | 5 sat/vB | 10 sat/vB | 20 sat/vB |
+| --- | ---: | ---: | ---: | ---: |
+| Operate | 682 | 1,705 | 3,410 | 6,820 |
+| Delegate | 424 | 1,060 | 2,120 | 4,240 |
+| Fund operator | 308 | 770 | 1,540 | 3,080 |
+| Buyer payment | 308 | 770 | 1,540 | 3,080 |
+| Commitment | 512 | 1,280 | 2,560 | 5,120 |
+| Partial return with change | 308 | 770 | 1,540 | 3,080 |
+| Total for these six shapes | 2,542 | 6,355 | 12,710 | 25,420 |
+
+The invoice's 1,000 sats and the operator funding are transfers between
+wallets the workspace_owner controls. The table totals the network fees
+for this route; it excludes an optional refund and any extra transaction
+needed by the chosen wallets. The eventual complete return must be
+previewed separately. Its fee comes out of the operator wallet's remaining
+spendable coins. The suggested 10,000-sat funding remains a proposal:
+choose it against both issuance and return fees, with a margin, rather
+than treating all of it as a cost or as approval to spend it.
+
+A refund also has to meet the store's 546-sat minimum output. At the
+measured 111 vbytes and 2 sat/vB, 778 sats return to the buyer. At 5 sat/vB,
+a 555-sat fee would leave only 445 sats, and the current builder refuses.
+The fee rate and spending limits still need the workspace_owner's choice.
+
+Before authorization, complete this table from the actual wallet previews.
+A maximum total fee in sats is separate from the requested rate. The
+runner limits the requested commitment rate; the funding, buyer-payment
+and return wallets have their own fee controls.
+
+| Step | Amount or action | Requested sat/vB | Maximum total fee, sats |
+| --- | --- | --- | --- |
+| Operate | Chosen throwaway space; preview any new outputs | ____ | ____ |
+| Delegate | Confirm the test operator's recipient | ____ | ____ |
+| Fund operator | ____ sats | ____ | ____ |
+| Buyer payment | 1,000 sats to the store invoice | ____ | ____ |
+| Commitment | Exactly the configured order | ____ | ____ |
+| Return | Remaining spendable coins, previewed after the test | ____ | ____ |
 
 There is more at stake than fees: the test operator holds funds and
 authority delegated over a space. The throwaway space and the separately
@@ -181,7 +264,8 @@ first commitment. Either works; proving has worked on regtest.
 
 ## Sequence
 
-1. The code changes and their tests, then the regtest scenarios again.
+1. Use the reviewed implementation and its recorded tests. The local
+   implementation checks have passed; deploying it is still separate work.
 2. The buyer gate's remaining preparation: the clean VM or machine, the
    confinement checks repeated there, and the chain check of the space
    immediately before the first transaction.
@@ -241,7 +325,7 @@ Stop, and change nothing on-chain, when any of these happens:
 - The fee-rate ceiling and the operator wallet's funding.
 - The authorization of the filled-in transaction plan.
 
-None of these is decided, and none needs to be before the local work: the
-mainnet switch, the fee-rate ceiling and the one-order allowance, with
-their tests. That work doesn't depend on the pilot decisions recorded in
-`docs/spec/PAYMENT-SPEC.md` either.
+These choices remain open. The local implementation is complete for the
+Python private-test path; the preflight and budget preparation do not
+choose a machine, set a spending limit or authorize a transaction. The
+TypeScript/Effect runtime for the public pilot is still separate work.
