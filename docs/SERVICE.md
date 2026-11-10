@@ -136,9 +136,11 @@ These are this milestone's choices, recorded so that they can be changed.
   can give out again an address a restored, unpaid quote holds. A quote
   never takes an address an order holds, for its payment or as its refund
   address: the store asks the wallet again and alerts the owner once
-  (`destination_held`, with the number skipped). Scenario 11 showed it on
-  regtest (H11). A refund address is refused if any order holds it as its
-  payment address (T1 to T3).
+  (`destination_held`, with the number skipped). Scenario 11 showed the
+  skip of an address held for payment on regtest (H11). A refund address
+  is refused if any order holds it as its payment address, and a quote
+  skips an address held as a refund address; both are service API tests
+  over a simulated chain (T1 to T3), not regtest evidence.
 - Start-up reconciles every refund attempt against the chain before
   serving anything, and rebroadcasts an attempted one that the node doesn't
   know as the same signed transaction.
