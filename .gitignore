@@ -5,3 +5,4 @@ regtest/.cache/
 regtest/.run/
 regtest/verifier/target/
 regtest/.keep-run.*/
+ts/node_modules/

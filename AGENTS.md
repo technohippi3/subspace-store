@@ -34,6 +34,12 @@ Before every commit, from the repository root:
     python3 -m unittest discover -s tests -t .
     python3 tools/case_coverage.py --check
 
+and, for the TypeScript port in `ts/`, from that directory:
+
+    npm ci --ignore-scripts
+    npm run check
+    npm test
+
 CI runs both on every push and pull request (`.github/workflows/model.yml`).
 
 Run tooling from this repository, never from the operator's staging

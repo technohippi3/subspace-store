@@ -775,6 +775,19 @@ safely superseded (X10).
 A refund goes to an address the buyer supplies through the order link, never
 to an input address.
 
+Never to one of the store's payment addresses either: not the order's own
+and not another order's, whatever that order's status. Every output paying
+an order's address counts as a payment to that order, so a refund sent
+there would move funds from one order to another, could make a cancelled
+order refundable again, and could cycle between orders, losing a fee each
+time. The exclusion holds both ways across the store. The refund address
+is refused if any order holds it as its payment address, and a quote never
+takes a payment address that any order holds as its refund address; the
+store asks its wallet again, as for an address another order holds (T1 to
+T3). The refund address is fixed once a refund for the order is built
+(T4). The reference model has no refund addresses; these are rules of the
+service.
+
 Kinds. A cancellation refund returns the order's settled funds net of fee,
 after the cancellation is committed. An excess refund returns only funds above
 `price_reserve` and is allowed in any state, including `issuing`, broadcast and
@@ -904,10 +917,11 @@ A restored payment wallet can be behind the journal. The store's payment
 and refund wallet is backed up at onboarding, and a wallet restored from
 that backup has seen only the addresses that were paid since. It can give
 out again an address that a restored, unpaid quote still holds. A quote
-never takes an address an order holds: the store asks its wallet again,
-which advances it, and alerts the owner once for the quote, saying how
-many it skipped. If the wallet gives out only held addresses, more times
-than orders hold one, the quote is refused and nothing is taken (H11).
+never takes an address an order holds, for its payment or as its refund
+address: the store asks its wallet again, which advances it, and alerts the
+owner once for the quote, saying how many it skipped. If the wallet gives
+out only held addresses, more times than orders hold one, the quote is
+refused and nothing is taken (H11, T3).
 
 No empty start over a history. A start that finds no database, or one with
 no names and no orders, while the journal has entries refuses to serve and
@@ -1363,6 +1377,17 @@ Refund reconciliation:
 | R11 | payment settled, excess group reserved | payment falls to 5 conf after a reorg | reservation kept; `reconciling` (refunds); no new authorization; issuance continues while 3 conf hold |
 | R15 | R11 | the payment returns to 6 conf | the refunds reason clears; the reservation is unchanged; authorization resumes with the same `available` as before the reorg |
 | R16 | refund attempt settled at 6 conf, group closed | it falls to 5, then returns to 6 | group reopens, then closes again; `refunded_total` counts it once; `reserved` returns to its earlier value; no new attempt in between |
+
+Refund destinations ("Refunds"). The model has no refund addresses; these
+are service API tests over a simulated chain, not model results. The price
+is 10,000.
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| T1 | `one` quoted with payment address D; `two` requested | D given as `two`'s refund address, and as `one`'s | both refused "a refund never goes to one of the store's payment addresses"; neither order has a refund address |
+| T2 | `one`'s hold ended unpaid, with payment address D1; `two` quoted and cancelled, with D2; `three` requested | D1, then D2, given as `three`'s refund address | both refused as in T1: a payment address stays the store's whatever its order's status |
+| T3 | `one` requested, with refund address R given before its quote; `two` requested | `one` quoted while the wallet's next address is R; then `two` quoted while it is R again | each quote skips R and takes the next address, and the owner is alerted once for each, one skipped; neither order's payment address is R |
+| T4 | `one` paid 13,000 and settled, with a refund address, and an excess refund built | another refund address given | refused "a refund has been built; its destination is fixed"; the refund address unchanged |
 
 Recipient requests. The model has no recipient requests: its orders start
 at the quote. These cases are rules of the service's boundary, and their

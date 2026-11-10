@@ -23,3 +23,23 @@ jobs:
         run: python3 -m unittest discover -s tests -t .
       - name: Every fixed-price MVP case has a model test
         run: python3 tools/case_coverage.py --check
+
+  typescript:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the compiler pinned in package-lock.json
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Type check the port, tests included
+        run: npm run check
+      - name: Order machine tests, and the Python ledger's vectors replayed
+        run: npm test

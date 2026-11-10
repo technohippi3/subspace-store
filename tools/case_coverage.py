@@ -3,10 +3,11 @@
 Reads the case tables in docs/spec/PAYMENT-SPEC.md and the test names in
 tests/, and prints implemented and missing case identifiers. Most cases are
 tested against the reference model. The recipient-request cases (V), the
-service restore cases (H), the checkout cases (C) and the attended-runner
-cases (A) are the service's and the runner's own. Their tests are service
-API tests, runner tests or, for H7, a model-twin test, and they are
-reported separately, never as model results.
+service restore cases (H), the checkout cases (C), the attended-runner
+cases (A), the sales-pause cases (S) and the refund-destination cases (T)
+are the service's and the runner's own. Their tests are service API tests,
+runner tests or, for H7, a model-twin test, and they are reported
+separately, never as model results.
 
 With --check it is also a gate: it exits non-zero when a fixed-price MVP
 case has no test, or a test names a case the specification doesn't
@@ -34,7 +35,7 @@ def tested_cases():
 
 
 DEFERRED_AFTER_MVP = lambda c: c[0] in "DE" or c == "N6"
-SERVICE_CASES = lambda c: c[0] in "VHCA"
+SERVICE_CASES = lambda c: c[0] in "VHCAST"
 
 
 def main(argv=None):

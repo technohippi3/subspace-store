@@ -1,0 +1,16 @@
+{
+  "name": "subspace-store",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript port of the subspace store, in progress. Not used by anything yet.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "tsc -p .",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

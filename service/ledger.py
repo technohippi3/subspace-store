@@ -576,18 +576,22 @@ class Ledger:
         return self._quote(oid)
 
     def _fresh_destination(self, oid):
-        """A destination no order holds. A payment wallet restored from an
-        earlier backup has seen only the addresses that were paid, so it can
-        give out again an address a restored, unpaid quote still holds. Each
-        request advances the wallet, so it is asked again, at most once more
-        than the number of addresses orders hold. Returns the address, its
-        script and how many held ones were skipped."""
-        held = self.db.execute("select count(*) from orders where dest_script is not null"
-                               ).fetchone()[0]
+        """A destination no order holds, for its payment or as its refund
+        address (PAYMENT-SPEC.md, "Refunds"). A payment wallet restored from
+        an earlier backup has seen only the addresses that were paid, so it
+        can give out again an address a restored, unpaid quote still holds;
+        and a buyer can give a refund address before the quote that the
+        wallet then gives out. Each request advances the wallet, so it is
+        asked again, at most once more than the number of addresses orders
+        hold. Returns the address, its script and how many held ones were
+        skipped."""
+        held = self.db.execute(
+            "select (select count(*) from orders where dest_script is not null)"
+            " + (select count(*) from orders where refund_spk is not null)").fetchone()[0]
         for skipped in range(held + 1):
             address, script = self.chain.new_destination(oid)
-            if not self.db.execute("select 1 from orders where dest_script = ?",
-                                   (script,)).fetchone():
+            if not self.db.execute("select 1 from orders where dest_script = ? "
+                                   "or refund_spk = ?", (script, script)).fetchone():
                 return address, script, skipped
         raise Refused("the payment wallet gave out only addresses that orders hold; no quote "
                       "was made")
@@ -607,11 +611,15 @@ class Ledger:
                 "acknowledged": given}
 
     def set_refund_address(self, oid, address, script):
-        """The buyer's refund destination, given through the order link."""
+        """The buyer's refund destination, given through the order link.
+        Never a payment address of any order, whatever its status: a refund
+        paying it would count as that order's payment (PAYMENT-SPEC.md,
+        "Refunds")."""
         with self.tx():
-            o = self._order(oid)
-            if o["dest_script"] and script == o["dest_script"]:
-                raise Refused("a refund never goes to the order's own address")
+            self._order(oid)
+            if self.db.execute("select 1 from orders where dest_script = ?",
+                               (script,)).fetchone():
+                raise Refused("a refund never goes to one of the store's payment addresses")
             if self.db.execute("select 1 from attempts a join groups g on a.gid = g.gid "
                                "where g.oid = ?", (oid,)).fetchone():
                 raise Refused("a refund has been built; its destination is fixed")
