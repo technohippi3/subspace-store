@@ -827,7 +827,9 @@ class Controller:
     def verify_certificates(self, bid):
         """Fetch each member's certificate message from subs, read the root
         anchors from spaced directly, verify with libveritas, and compare
-        handle, script_pubkey and root with the batch record."""
+        handle, script_pubkey and root with the batch record. The root is
+        the batch's own, or a later commitment of the same space that is on
+        the active chain, final and covered (A19)."""
         self.require_restored()
         b = self.batch(bid)
         if b["state"] != "final":
@@ -863,24 +865,71 @@ class Controller:
             # The handle's zone proves inclusion; the committed root and its
             # height are on the space's zone in the same verified message.
             space_zone = next((z for z in zones if z["handle"] == b["space"]), None)
+            root = space_zone and space_zone.get("commitment_root")
+            height = space_zone and space_zone.get("commitment_height")
+            own = root == b["root"] and height == b["mined_height"]
+            gate = None
+            if space_zone and not own and root != b["root"] and height is not None \
+                    and height > b["mined_height"]:
+                # subs builds a certificate on the space's latest commitment
+                # when it is fetched, so after a later batch it proves
+                # inclusion in that later root (R23, R24). It counts once
+                # that root is a commitment of the space on the active chain
+                # at the height the certificate states, final and covered,
+                # with the batch's own root still on chain.
+                gate = self.root_gate(b["space"], root, height)
+                gate["own_root_on_chain"] = self._on_chain_at(b["space"], b["root"],
+                                                              b["mined_height"])
+            later_ok = bool(gate and gate["ok"] and gate["own_root_on_chain"])
             checks = {
                 "verified": out.get("verified", False),
                 "handle": zone is not None,
                 "script_pubkey": bool(zone and zone["script_pubkey"] == o["recipient_spk"]),
-                "root": bool(space_zone and space_zone["commitment_root"] == b["root"]),
-                "root_height": bool(space_zone and space_zone["commitment_height"] == b["mined_height"]),
+                "root": own or later_ok,
+                "root_height": own or later_ok,
                 "sovereign": bool(zone and zone["sovereignty"] == "sovereign"),
             }
             ok = all(checks.values())
+            # A later root on chain that isn't final or covered yet is
+            # waiting, not a failure: nothing is alerted, and the
+            # certificate is checked again later (L9). Only a sovereign or
+            # pending zone waits; libveritas's dependent state is a failure
+            # whatever the root's depth, and is alerted.
+            waiting = bool(not ok and gate and gate["on_chain"] and gate["own_root_on_chain"]
+                           and not gate["ok"] and checks["verified"] and checks["handle"]
+                           and checks["script_pubkey"]
+                           and zone["sovereignty"] in ("sovereign", "pending"))
             results[m] = {"handle": handle, "ok": ok, "checks": checks, "zone": zone,
                           "artifacts": str(out_dir),
                           "space_zone": space_zone,
+                          "root_basis": "batch" if own else ("later" if gate else None),
+                          "root_gate": gate, "waiting": waiting,
                           "error": out.get("error"), "message_bytes": len(msg)}
             if ok and o["status"] == "issuing":
                 self.registry.mark_ready(m)
-            if not ok:
+            if not ok and not waiting:
                 self.alert("certificate_failed", bid, handle)
         return results
+
+    def _on_chain_at(self, space, root, height):
+        try:
+            c = self.onchain_commitment(space, root) if root else None
+        except Exception:  # noqa: BLE001 - spaced has no such commitment
+            c = None
+        return bool(c and c.get("state_root") == root and c.get("block_height") == height)
+
+    def root_gate(self, space, root, height):
+        """A root a certificate or a relay's answer carries: a commitment of
+        the space on the active chain at `height`, at d >= 150, with an
+        anchor that covers it (L9, A19)."""
+        tip = self.tip()
+        newest = self.root_anchors()[0]["block"]["height"]
+        out = {"on_chain": self._on_chain_at(space, root, height), "height": height,
+               "depth": tip - height if height is not None else None, "newest_anchor": newest}
+        out["final"] = out["on_chain"] and out["depth"] >= FINAL_D
+        out["covered"] = out["on_chain"] and newest - height >= ANCHOR_FINALITY
+        out["ok"] = out["final"] and out["covered"]
+        return out
 
     # Restore and reconciliation (CONTROLLER-DESIGN.md, "Restore and
     # reconciliation"), from the restored snapshot plus the journal.

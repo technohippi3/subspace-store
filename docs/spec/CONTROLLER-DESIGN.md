@@ -28,7 +28,9 @@ hold, and no new commitment is sent until a restore is reconciled (cases
 A11 to A15 in `PAYMENT-SPEC.md`). After a review: a database that lacks
 journaled batches needs a restore, recorded before anything writes; the
 replay is one transaction and an interrupted restore resumes; an older
-database is migrated (A16 to A18).
+database is migrated (A16 to A18). Certificate verification accepts a
+later root of the same space as its own text already said, which the
+code hadn't done (A19).
 
 ## Pinned upstream versions
 
@@ -501,6 +503,15 @@ For each member of a batch at `d >= 150`, fetch the certificate from `subs`
   certificate built after a later commitment proves inclusion in that
   later root instead, and then that root must be a commitment of the space
   on the active chain, final and covered like the batch's own (R23, R24).
+  Precisely: its height, read from the space's zone, is greater than the
+  batch's; `getcommitment(space, root)` shows it at that height; it is at
+  `d >= 150` with an anchor 144 past it; and the batch's own root is still
+  on the chain at its mined height. A later root on the chain that isn't
+  final or covered yet is waiting, as for the batch's own anchor coverage:
+  nothing is alerted and the check runs again. Delivery uses the same root
+  gate (L9). Verification and delivery to the store's order page run this
+  way for a member already ready or fulfilled too, which is how a restored
+  host offers a certificate again (case A19 in `PAYMENT-SPEC.md`).
 
 A member's certificate must also verify as sovereign. libveritas judges
 that from the newest root anchor it is given, and `spaced` computes one every

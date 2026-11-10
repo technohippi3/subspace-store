@@ -762,11 +762,11 @@ What the rehearsal doesn't cover:
   alone, as the rehearsal asks; restoring from a snapshot plus the journal
   since it isn't built;
 - the certificate of b1's order on its order page. Certificates aren't
-  journaled, and `runner certify` verifies a member's certificate only on
-  its own batch's root, while `subs` now builds it on b4's later root. So
-  the order page for b1's order offers no certificate after the restore;
-  the buyer's copy and the relay's are unaffected. Re-delivering it needs
-  the later-root rule of "Certificate verification" in `certify`;
+  journaled, and `runner certify` then verified a member's certificate
+  only on its own batch's root, while `subs` builds it on b4's later root,
+  so in this run the order page for b1's order offered no certificate
+  after the restore. The buyer's copy and the relay's were unaffected.
+  Closed since: "Certificate re-delivery after the restore", below;
 - the publisher's outstanding sets, which were lost with the host and
   started empty; batches published after the restore were enrolled again
   from their ready members;
@@ -840,7 +840,45 @@ and no alert. Both runs are kept. The interruptions themselves weren't
 run on regtest.
 
 The missing certificate download on b1's order page after the restore
-stays open; this review didn't change it.
+stayed open after this review; the next section closes it.
+
+## Certificate re-delivery after the restore (2026-11-10)
+
+`runner certify` now accepts a certificate built on a later root of the
+same space, as "Certificate verification" in `CONTROLLER-DESIGN.md`
+already said it should (case A19 in `PAYMENT-SPEC.md`). The root must be
+at a greater height than the batch's, shown by `spaced` as a commitment
+of the space at the height the certificate states, at `d >= 150` and
+covered by a root anchor, with the batch's own root still on the chain.
+The certificate must still verify with libveritas for the order's handle
+and recipient, as sovereign. A later root that is on the chain but not
+yet final or covered is waiting, not a failure. Delivery's root check
+(L9) and this one are now the same code. `tests/test_certificates.py`
+covers the same-root and later-root paths, the waiting, and the refusals
+against stand-ins; it isn't regtest evidence.
+
+Run `recovery-20261110T050046Z-f7c0fa`, scenario 11 extended: verdict
+pass, exit 0, all 70 required steps agreeing and 13 informational.
+Against `recovery-20261110T043551Z-402374`, the earlier step showing b1's
+order page with no certificate after the restore is now required (404,
+as expected: certificates aren't journaled), and two required steps are
+new. After b4 was final and covered, `runner certify b1` verified the
+certificate of b1's order, which `subs` built on b4's root, and delivered
+it to the store. The order page, still `fulfilled`, offered it again, and
+the buyer's download verified with libveritas against root anchors read
+from `spaced`: the handle, the buyer's own script, sovereign, under b4's
+root rather than b1's. That download is kept in the run's evidence, under
+`buyer-after-restore/`. Every other step matched the earlier run.
+
+This run's complete recovery took 36.4 s and the store's replay 0.15 s,
+on the same history (the store's journal had 42 entries, 35,885 bytes;
+it has had 41 or 42 across these runs). Every step of the
+recovery was slower than in the earlier runs in about the same
+proportion, the host node's sync from the network node (16.1 s against
+13.7 s) and `spaced`'s (6.2 s against 4.4 s) included, which this change
+doesn't touch; the machine's five-minute load average was about 7 just
+after the run. The times are recorded as measured and aren't a
+measurement of the change.
 
 ## The tightened harness
 
@@ -920,8 +958,9 @@ are the relay's `/query` answers from scenario 6: two from before
 publication and two from the delivery lookups. The six combined runs, the
 service runs and `records-20261108T161951Z-0c9721` are kept as well, and so
 are the five passing checkout runs, whose runner verifications are under
-`runner/`, and the three recovery runs of scenario 11, whose lost host's
-runner verifications are under `lost-host-runner/`: 256 messages in all.
+`runner/`, and the four recovery runs of scenario 11, whose lost host's
+runner verifications are under `lost-host-runner/`, and the last one's
+buyer download under `buyer-after-restore/`: 270 messages in all.
 Each message is kept with its root anchors and libveritas output.
 `verify-evidence.sh` verifies them all offline, and `evidence/README.md`
 says how. fp4's certificate isn't kept in the repository, because its

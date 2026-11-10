@@ -16,6 +16,7 @@ import sqlite3
 import tempfile
 import unittest
 
+from controller.core import Controller
 from regtest.harness import compare
 from regtest.harness.publication import SCHEMA, Publisher
 
@@ -98,6 +99,10 @@ class FakeController:
 
     def alert(self, *a):
         self.alerts.append(a)
+
+    # The controller's own root gate, over this fake chain.
+    root_gate = Controller.root_gate
+    _on_chain_at = Controller._on_chain_at
 
 
 class FakeRegistry:

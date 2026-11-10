@@ -71,7 +71,9 @@ address an order holds (H11). Both came from the operator gate's recovery
 rehearsal on regtest (scenario 11, `regtest/REPORT.md`). A review of that
 work (2026-11-10) added a persisted "restore required" state, an atomic
 and resumable replay, and the migration of an older controller database
-(A16 to A18).
+(A16 to A18). Re-delivering a certificate built on a later root of the
+same space, which a restored host needs for an order fulfilled before the
+loss, is A19.
 
 ## Terms, depth arithmetic and thresholds
 
@@ -985,7 +987,21 @@ refusals.
   doesn't verify certificates itself, and a buyer should
   verify a downloaded one before relying on it. Delivered certificates
   aren't journaled: after a restore the runner delivers them again from
-  `subs`.
+  `subs`, with `certify`, for a ready or fulfilled order as for one being
+  issued. `subs` builds a certificate on the space's latest commitment
+  when it is fetched, so after a later batch of the same space it proves
+  inclusion in that later root, not the batch's. `certify` accepts either:
+  the batch's own root at its mined height, or a root at a greater height
+  that `spaced` shows as a commitment of the space at the height the
+  certificate states, on the active chain, at `d >= 150` and covered by a
+  root anchor, while the batch's own root is still on the chain. Either
+  way the certificate must verify with libveritas, name the order's handle
+  and `script_pubkey`, and be sovereign. A later root on the chain that
+  isn't final or covered yet means waiting, if the certificate is
+  otherwise sound and libveritas reports it sovereign or pending: nothing
+  is delivered or alerted, and `certify` runs again later. A dependent
+  certificate is a failure, not waiting, whatever the root's depth. Any
+  other failure delivers nothing and alerts the owner (A19).
 - Every page is sent with `Cache-Control: no-store`,
   `Referrer-Policy: no-referrer` and a content security policy that
   allows no scripts and no framing. All text is HTML-escaped.
@@ -1396,7 +1412,7 @@ None is regtest evidence.
 Checkout and the attended runner ("Checkout and the attended runner").
 These are the service's and the runner's own rules. C1 to C11 are service
 API tests over a simulated chain. A1 to A5 are runner tests against a
-recording stand-in for the store and the controller, and A6 to A15 run
+recording stand-in for the store and the controller, and A6 to A19 run
 the runner and the controller against stand-ins for `subs`, `spaced`,
 `bitcoind` and the store. None is a model result or regtest evidence; the
 regtest demonstrations are scenario 10 (`regtest/run-checkout.sh`) and,
@@ -1434,6 +1450,7 @@ for the recovery commands, scenario 11 (`regtest/run-recovery.sh`).
 | A16 | a journal holding five batches, one an uncertain broadcast; a fresh, empty controller database beside it, and separately one holding only the first | the controller is opened, closed and opened again; then a freeze, an issue, a resume, a watch, a rebroadcast, an attach, a certificate check, a checkpoint and a local rollback; and every runner command but `status` and `restore` | "restore required" recorded once and kept across the restart, naming the missing batches; each refused, no batch created, nothing sent or written to `subs`; the runner exits 3 for every command; the readiness report not ready; after `restore` every journaled batch is present |
 | A17 | the A16 journal and a snapshot | the replay killed after its second insert; `restore` stopped after its first insert, after `subs`' files were moved in; stopped again during reconciliation; then run again; and separately a `subs` directory already holding exactly the snapshot's files | after each stop, on reopening: no batch, then no batch, then all five; "required", "required", then "incomplete"; never ready, `issue` refused and every command refused; `subs` not copied again and the journal not replayed again; the last run reconciles, and the batches are as A13 has them; the exact directory taken as copied |
 | A18 | a controller database with the schema of commit `5226810` holding a broadcast batch and an alert, and the batch's journal entry from before `ancestors` | opened, its bytes captured as after a broadcast, opened again and replayed | `ancestors` and the recovery columns added, the rows unchanged, no restore required; the bytes and their ancestor journaled; nothing changed by the second opening; the older entry replayed into the migrated table |
+| A19 | a final batch whose root is at height 1,000, a fulfilled member, and the space's commitments at 900, 1,000 and 1,200 on the chain | `certify`, with the certificate built on the batch's own root; on the root at 1,200, final and covered; on it at `d = 149`, and with the newest anchor 132 past it; failing libveritas, naming another handle or recipient, not sovereign, dependent on the batch's root or on the later root whether final and covered, at `d = 149` or uncovered; on a root not on the chain, at another height, on the earlier root, or on the batch's root at another height; and on the later root after the batch's own root left the chain | delivered on its own root and on the later final, covered root, the fulfilled order kept fulfilled and an issuing one made ready; waiting, with nothing delivered or alerted, until the later root is final and covered, then delivered, unless the certificate is dependent; every other case refused, nothing delivered, the owner alerted once each |
 
 Evidence:
 

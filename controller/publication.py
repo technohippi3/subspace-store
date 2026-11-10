@@ -171,24 +171,9 @@ class Publisher:
         it must be a commitment of the space on the active chain, at
         d >= 150, with an anchor that covers it (L9). `subs` builds a
         certificate against the space's latest commitment when it publishes
-        the handle, so this root can be later than the batch's (R23, R24)."""
-        try:
-            on_chain = self.c.onchain_commitment(space, root) if root else None
-        except Exception:  # noqa: BLE001 - spaced has no such commitment
-            on_chain = None
-        tip = self.c.tip()
-        newest = self.c.root_anchors()[0]["block"]["height"]
-        out = {
-            "on_chain": bool(on_chain and on_chain.get("state_root") == root
-                             and on_chain.get("block_height") == height),
-            "height": height,
-            "depth": tip - height if height is not None else None,
-            "newest_anchor": newest,
-        }
-        out["final"] = out["on_chain"] and out["depth"] >= FINAL_D
-        out["covered"] = out["on_chain"] and newest - height >= ANCHOR_FINALITY
-        out["ok"] = out["final"] and out["covered"]
-        return out
+        the handle, so this root can be later than the batch's (R23, R24).
+        The controller's own gate, which certificate verification uses too."""
+        return self.c.root_gate(space, root, height)
 
     def lookup(self, bid, oid):
         """A verified lookup of one handle through the local relay. The relay

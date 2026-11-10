@@ -30,7 +30,10 @@ The `recovery` runs (scenario 11) add the spaces `@test9998` and
 `@test9997`. The lost host's runner verifications are under
 `lost-host-runner/`, moved out of the host before it was deleted, and the
 fresh host's under `runner/`, numbered from 001 again, because its
-runner started with an empty directory.
+runner started with an empty directory. In
+`recovery-20261110T050046Z-f7c0fa`, `buyer-after-restore/` holds the
+certificate the buyer downloaded from the restored host's order page,
+built on a later root than its batch's.
 
 To check them again offline, build the verifier once (`cargo build
 --release` in `../verifier`) and run, from the repository root:

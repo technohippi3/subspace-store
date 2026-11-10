@@ -29,10 +29,11 @@ pass.
   two must then agree as before. This is a model-twin result.
 - `tests/test_checkout.py` exercises the checkout pages over a simulated
   chain (cases C1 to C12), and `tests/test_runner.py` the attended runner
-  against recording stand-ins (cases A1 to A5). `tests/test_controller_host.py`
-  and `tests/test_runner_recovery.py` run the runner and the controller
-  against stand-ins for `subs`, `spaced`, `bitcoind` and the store (cases
-  A6 to A15, the recovery commands among them). They are service and runner
+  against recording stand-ins (cases A1 to A5). `tests/test_controller_host.py`,
+  `tests/test_runner_recovery.py` and `tests/test_certificates.py` run the
+  runner and the controller against stand-ins for `subs`, `spaced`,
+  `bitcoind` and the store (cases A6 to A19, among them the recovery
+  commands and certificate re-delivery). They are service and runner
   results, not model results.
 - `regtest/run-recovery.sh` runs scenario 11, the operator gate's recovery
   rehearsal: the host lost whole with batches in flight on four spaces and
@@ -169,7 +170,9 @@ These are this milestone's choices, recorded so that they can be changed.
   batch's certificate carries a proof (about 226,500 bytes on regtest).
   Every other body keeps the 65,536-byte bound. The store
   doesn't verify them; the runner does before delivering. They aren't
-  journaled, so after a restore the runner delivers them again.
+  journaled, so after a restore the runner delivers them again with
+  `certify`, which accepts a certificate built on a later root of the
+  same space once that root is final and covered (A19).
 - The attended runner (`runner/`, `python3 -m runner <config> <command>`)
   is the operator's tool: one command per step, JSON out. It sends a
   commitment or a refund only with the batch id or refund group id

@@ -31,7 +31,10 @@ After the restore: reconcile through the runner, check that no name is
 issued twice, no refund pays twice, no reservation disappears and each
 space's restored tree root agrees with the chain, then issue the waiting
 batches and another batch on A after the recovery, to fulfilled, and build
-and pay a new refund. The store's replay and the complete recovery are
+and pay a new refund. b1's order, fulfilled before the loss, gets its
+certificate again: `subs` builds it on b4's later root, `certify` accepts
+that root once it is final and covered (A19), and the buyer's download
+from the order page verifies. The store's replay and the complete recovery are
 timed. An owner-signed PSBT refund family isn't exercised: the API can't
 export one.
 
@@ -664,7 +667,7 @@ def recovery_rehearsal(run):
                   {"exit": 0, "state": "checkpointed", "members": [o1]},
                   lambda c, o: c == 0 and o.get("state") == "checkpointed"
                   and o.get("members") == [o1])
-    b1 = prep["bid"]
+    b1, b1_root = prep["bid"], prep["root"]
     _rstep(run, scen, None, f"runner issue {b1} confirmed", runner("issue", b1, "--confirm", b1),
            {"exit": 0, "state": "broadcast"},
            lambda c, o: c == 0 and o.get("state") == "broadcast")
@@ -1016,15 +1019,11 @@ def recovery_rehearsal(run):
     r.step(scen, "H1", "every buyer's order link opens its own order, as before",
            views, {EXPECT: {oid: o["status"] for oid, o in before["orders"].items()}},
            match=views == {oid: o["status"] for oid, o in before["orders"].items()})
-    import http.client
-    conn = http.client.HTTPConnection("127.0.0.1", PORTS["registry"], timeout=30)
-    conn.request("GET", f"/o/{reg.links[o1]}/certificate")
-    cert_status = conn.getresponse().status
-    conn.close()
+    cert_status, _ = _download(reg, o1)
     r.step(scen, None, f"{o1}'s certificate on its order page after the restore",
-           {"download_status": cert_status}, required=False,
-           note="certificates aren't journaled, and certify checks only the batch's own root "
-                "while subs builds this one on b4's later root; not re-delivered")
+           {"download_status": cert_status}, {EXPECT: {"download_status": 404}},
+           match=cert_status == 404,
+           note="certificates aren't journaled; the runner delivers them again (11d)")
     names = {n: (before["names"][n]["fulfillment_order"],
                  after["names"].get(n, {}).get("fulfillment_order"))
              for n in before["names"]
@@ -1101,6 +1100,43 @@ def recovery_rehearsal(run):
            {EXPECT: {oid: "fulfilled" for oid in (o3, o4, o5, o6)}},
            match=all(v == "fulfilled" for v in statuses.values()))
 
+    # b1's order was fulfilled before the loss, and its certificate wasn't
+    # journaled. subs now builds it on b4's root, later than b1's: once that
+    # root is final and covered, certify accepts it and delivers it again.
+    a_root = s.spaced().call("getcommitment", A, None)["state_root"]
+    out = _rstep(run, scen, "A19", f"runner certify {b1}: {o1}'s certificate again, on "
+                 f"{bids[A]}'s later root", runner("certify", b1),
+                 {"exit": 0, "verified": True, "delivered": True},
+                 lambda c, o: c == 0 and o.get("members", {}).get(o1, {}).get("verified")
+                 and o["members"][o1]["delivered"])
+    status, body = _download(reg, o1)
+    vdir = s.dir / "certs" / "buyer-after-restore"
+    vdir.mkdir(parents=True, exist_ok=True)
+    handle = "one" + A
+    (vdir / f"{handle}.message.bin").write_bytes(body)
+    (vdir / "anchors.json").write_text(json.dumps(run.chain.root_anchors()))
+    proc = subprocess.run([str(VERIFIER), str(vdir / f"{handle}.message.bin"),
+                           str(vdir / "anchors.json")], capture_output=True, text=True)
+    (vdir / f"{handle}.libveritas.json").write_text(proc.stdout + proc.stderr)
+    res = json.loads(proc.stdout) if proc.stdout.strip().startswith("{") else {}
+    zones = res.get("zones", [])
+    zone = next((z for z in zones if z["handle"] == handle), None)
+    space_zone = next((z for z in zones if z["handle"] == A), None)
+    got = {"page_status": reg.buyer_view(o1)["status"], "download_status": status,
+           "verified": res.get("verified", False), "handle": zone is not None,
+           "script_pubkey_is_the_buyer's": bool(
+               zone and zone["script_pubkey"] == before["orders"][o1]["recipient_spk"]),
+           "sovereign": bool(zone and zone["sovereignty"] == "sovereign"),
+           "root": "b4's, later than b1's" if space_zone
+           and space_zone["commitment_root"] == a_root != b1_root else
+           (space_zone or {}).get("commitment_root")}
+    exp = {"page_status": "fulfilled", "download_status": 200, "verified": True,
+           "handle": True, "script_pubkey_is_the_buyer's": True, "sovereign": True,
+           "root": "b4's, later than b1's"}
+    r.step(scen, "A19", f"{o1}'s order page offers its certificate again; the buyer's download "
+           "verified with libveritas against anchors read from spaced", got, {EXPECT: exp},
+           match=got == exp)
+
     # Another batch on A after the recovery, which needs U1(b).
     o8 = _buy(run, scen, "eight", A)
     seven_address = reg.order(o7)["dest_address"]
@@ -1163,6 +1199,17 @@ def recovery_rehearsal(run):
            {"store": [(a["oid"], a["kind"]) for a in reg.op("GET", "/operator/alerts")["alerts"]],
             "controller": runner("status")[1].get("controller_alerts")}, required=False)
     run.report.meta["recovery_times"] = run.times
+
+
+def _download(reg, oid):
+    """The buyer's certificate download from the order page."""
+    import http.client
+    conn = http.client.HTTPConnection("127.0.0.1", PORTS["registry"], timeout=30)
+    conn.request("GET", f"/o/{reg.links[oid]}/certificate")
+    resp = conn.getresponse()
+    out = (resp.status, resp.read())
+    conn.close()
+    return out
 
 
 def _subs_handles(stack, space):
