@@ -26,13 +26,21 @@ checkout() { # repo dir rev
   echo "checked out $dir at $got"
 }
 
-# Bitcoin Core, verified against the pinned SHA-256.
-if [ ! -x "$BIN/bitcoind" ]; then
+# Bitcoin Core, verified against the pinned SHA-256. The cached binary is
+# replaced whenever its version isn't the pinned one, so changing the pin
+# alone is enough to move every checkout to it.
+bitcoind_is_pinned() {
+  local got
+  got="$("$BIN/bitcoind" -version 2>/dev/null | head -1 | grep -oE 'v[0-9]+(\.[0-9]+)+')" || return 1
+  [ "$got" = "v$BITCOIN_VERSION" ] || [ "$got" = "v$BITCOIN_VERSION.0" ]
+}
+if [ ! -x "$BIN/bitcoind" ] || [ ! -x "$BIN/bitcoin-cli" ] || ! bitcoind_is_pinned; then
   tarball="$CACHE/dl/$BITCOIN_TARBALL"
   [ -f "$tarball" ] || curl -fsSL "$BITCOIN_URL" -o "$tarball"
   echo "$BITCOIN_SHA256  $tarball" | sha256sum -c -
   tar -xzf "$tarball" -C "$CACHE/dl"
   cp "$CACHE/dl/bitcoin-$BITCOIN_VERSION/bin/bitcoind" "$CACHE/dl/bitcoin-$BITCOIN_VERSION/bin/bitcoin-cli" "$BIN/"
+  bitcoind_is_pinned || { echo "installed bitcoind is not v$BITCOIN_VERSION" >&2; exit 1; }
 fi
 
 # spaced and space-cli at the pinned tag.

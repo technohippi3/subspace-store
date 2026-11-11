@@ -19,7 +19,8 @@ from . import compare
 from .controller import Controller, Refused as CRefused
 from .journal import Journal
 from .oracle import Mirror
-from .procs import CACHE, HERE, OPERATOR_WALLET, PORTS, PRESET, Stack, subs_bin
+from .procs import CACHE, HERE, OPERATOR_WALLET, PORTS, PRESET, Stack, bitcoind_bin, \
+    bitcoind_version, subs_bin
 from .registry import Refused as RRefused, Registry
 from .report import Report
 
@@ -391,8 +392,9 @@ def first_purchase(run):
            {"in_mempool": in_pool, "testmempoolaccept": btc.call(
                "testmempoolaccept", [btc.call("getrawtransaction", b["txid"])])[0]["allowed"]},
            required=False,
-           note="Bitcoin Core 26.0 did not return the disconnected commitment to its mempool "
-                "after invalidateblock (R10)")
+           note=f"{bitcoind_version() or 'Bitcoin Core'} "
+                f"{'returned' if in_pool else 'did not return'} the disconnected commitment "
+                "to its mempool after invalidateblock (R10)")
     mtx = f"commit-{run.bids[bid][1]}"
     if not in_pool and m.sim.chain.in_mempool(mtx):
         m.drop(mtx)  # the model's node loses it too, as the regtest node did
@@ -736,6 +738,8 @@ def main(argv):
         "scenarios": names,
         "isolation": "unprivileged user and network namespace (unshare -rn), loopback only",
         "subs_binary": str(subs_bin().relative_to(HERE)) if subs_bin().is_relative_to(HERE) else str(subs_bin()),
+        "bitcoind_binary": str(bitcoind_bin().relative_to(HERE)) if bitcoind_bin().is_relative_to(HERE) else str(bitcoind_bin()),
+        "bitcoind_version": bitcoind_version(),
         "pins": {l.split("=")[0]: l.split("=", 1)[1]
                  for l in (HERE / "pins.env").read_text().splitlines()
                  if "=" in l and not l.startswith("#")},

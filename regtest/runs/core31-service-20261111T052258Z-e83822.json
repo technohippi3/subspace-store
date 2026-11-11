@@ -1,0 +1,1157 @@
+{
+ "meta": {
+  "label": "regtest",
+  "run": "core31-service-20261111T052258Z-e83822",
+  "scenarios": [
+   "service_purchase",
+   "service_refund"
+  ],
+  "isolation": "unprivileged user and network namespace (unshare -rn), loopback only",
+  "subs_binary": ".cache/bin/subs-relay",
+  "bitcoind_binary": ".cache/bin-core-31.2/bitcoind",
+  "bitcoind_version": "Bitcoin Core daemon version v31.2.0 bitcoind",
+  "pins": {
+   "SUBS_REPO": "https://github.com/spacesprotocol/subs",
+   "SUBS_COMMIT": "4dcc9237af3a807497d4b1532729842ee5dcdb68",
+   "SPACES_REPO": "https://github.com/spacesprotocol/spaces",
+   "SPACES_TAG": "spaces_client-v0.5.0",
+   "SPACES_COMMIT": "77653f01889ddc86337e4b27d7d3ae4fc334a117",
+   "BITCOIN_VERSION": "26.0",
+   "BITCOIN_TARBALL": "bitcoin-26.0-x86_64-linux-gnu.tar.gz",
+   "BITCOIN_URL": "https://bitcoincore.org/bin/bitcoin-core-26.0/bitcoin-26.0-x86_64-linux-gnu.tar.gz",
+   "BITCOIN_SHA256": "23e5ab226d9e01ffaadef5ffabe8868d0db23db952b90b0593652993680bb8ab",
+   "CERTRELAY_REPO": "https://github.com/spacesprotocol/certrelay",
+   "CERTRELAY_COMMIT": "fb446487af4f9702109999f96d2ec11d3dd0b0ef"
+  },
+  "completed": [
+   "service_purchase",
+   "service_refund"
+  ],
+  "anchor_read_retries": 0
+ },
+ "verdict": "pass",
+ "steps": [
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "recipient request for one@test10000",
+   "regtest": {
+    "oid": "o1",
+    "script_pubkey": "51208e5935297a4d58c4add0cdc0a98a2ce446d8daa142b0c1d5f42255a4aad2156e"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794374597.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "fixed-price quote for o1",
+   "regtest": {
+    "quoted": true,
+    "status": "quoted",
+    "price_sats": 10000,
+    "address": "bcrt1p4t4yn6v3dwj0t90tedgea0rs5xctutf5r5j7jr6427zt5cyvflxq0rde0z"
+   },
+   "model": {
+    "quoted": true,
+    "status": "quoted",
+    "price": 10000
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374598.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": "Q1",
+   "step": "second quote for the held name",
+   "regtest": {
+    "quoted": false,
+    "why": "taken for now"
+   },
+   "model": {
+    "quoted": false,
+    "why": "taken for now"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374598.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "payment at 1 conf",
+   "regtest": {
+    "o1": "quoted"
+   },
+   "model": {
+    "o1": "quoted"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374598.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "service restart (SIGKILL) with the payment at 1 conf, before conversion",
+   "regtest": {
+    "killed_pid": 573776,
+    "new_pid": 573807,
+    "startup": {
+     "rebroadcast": [],
+     "pending_rebroadcast": [],
+     "at": 1794374599.0525677
+    },
+    "journal_backlog": 0
+   },
+   "model": null,
+   "match": null,
+   "note": "the service's own durable state is all it restarts from",
+   "kind": "informational",
+   "t": 1794374599.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "after the restart: still quoted, the hold kept",
+   "regtest": {
+    "o1": "quoted"
+   },
+   "model": {
+    "o1": "quoted"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374599.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": "P1",
+   "step": "payment at 3 conf converts the hold",
+   "regtest": {
+    "o1": "converted"
+   },
+   "model": {
+    "o1": "converted"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374601.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "the order link shows the conversion",
+   "regtest": {
+    "status": "converted",
+    "price_sats": 10000,
+    "batchable_sats": 10000,
+    "settled_sats": 0,
+    "handle": "one@test10000"
+   },
+   "model": {
+    "status": "converted",
+    "price_sats": 10000,
+    "batchable_sats": 10000,
+    "settled_sats": 0,
+    "handle": "one@test10000"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374601.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "freeze b1",
+   "regtest": {
+    "members": [
+     "o1"
+    ],
+    "state": "frozen"
+   },
+   "model": {
+    "ok": true,
+    "members": [
+     "o1"
+    ],
+    "state": "frozen",
+    "refusal": null
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374601.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "stage b1 with readback",
+   "regtest": {
+    "staged": {
+     "one": "51208e5935297a4d58c4add0cdc0a98a2ce446d8daa142b0c1d5f42255a4aad2156e"
+    },
+    "parked": [],
+    "sync": {
+     "success": true,
+     "pulled": 1,
+     "staged": 1,
+     "errors": []
+    }
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794374601.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "local commit b1 with readback",
+   "regtest": {
+    "state": "committed_local",
+    "root": "f34f7dadd61bd50ae28796fe5954a708cc6be421d0aea9ba4ab73453256ba3fc",
+    "prev_root": null,
+    "is_initial": true,
+    "handles": 1,
+    "members_on_root": 1
+   },
+   "model": {
+    "state": "committed_local",
+    "members": [
+     "o1"
+    ]
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374601.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "prove b1",
+   "regtest": {
+    "seconds": 0.0,
+    "proving": "skipped",
+    "proof_total": null,
+    "pushes": []
+   },
+   "model": {
+    "state": "proved"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374601.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "checkpoint b1 (coordinated snapshot)",
+   "regtest": {
+    "dir": "regtest/.run/core31-service-20261111T052258Z-e83822/offhost/snapshots/001-b1",
+    "objects": 8,
+    "store_journal": 7,
+    "controller_journal": 5
+   },
+   "model": {
+    "state": "checkpointed"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374602.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": "B3",
+   "step": "binding check passes; members issuing",
+   "regtest": {
+    "o1": "issuing"
+   },
+   "model": {
+    "o1": "issuing"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374602.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": "B3",
+   "step": "b1 broadcast",
+   "regtest": {
+    "state": "broadcast",
+    "txid": "fe028fdd66bd41ae309b670ae653ea517ee906613fb38cd0b0d86f7392523f62"
+   },
+   "model": {
+    "state": "broadcast"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374602.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": "X3",
+   "step": "cancellation after issuing",
+   "regtest": {
+    "cancelled": false,
+    "why": "not cancellable once issuing"
+   },
+   "model": {
+    "cancelled": false,
+    "why": "not cancellable once issuing"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374602.9
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "service restart (SIGKILL) while the member is issuing",
+   "regtest": {
+    "killed_pid": 573807,
+    "new_pid": 573915,
+    "startup": {
+     "rebroadcast": [],
+     "pending_rebroadcast": [],
+     "at": 1794374603.0231323
+    },
+    "journal_backlog": 0
+   },
+   "model": null,
+   "match": null,
+   "note": "the service's own durable state is all it restarts from",
+   "kind": "informational",
+   "t": 1794374603.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "after the restart: still issuing",
+   "regtest": {
+    "o1": "issuing"
+   },
+   "model": {
+    "o1": "issuing"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374603.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "b1 mined at d = 0",
+   "regtest": {
+    "state": "mined",
+    "position": [
+     3454,
+     0
+    ]
+   },
+   "model": {
+    "state": "mined"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374604.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "b1 at d = 149",
+   "regtest": {
+    "state": "mined"
+   },
+   "model": {
+    "state": "mined"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374626.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "b1 at d = 150",
+   "regtest": {
+    "state": "final",
+    "subs_commit_status": {
+     "status": "finalized",
+     "txid": null,
+     "block_height": 3454,
+     "confirmations": null
+    }
+   },
+   "model": {
+    "state": "final"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374627.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": "L6",
+   "step": "certificate status for b1 at d = 150",
+   "regtest": {
+    "status": "verified",
+    "newest_anchor": 3600,
+    "mined_height": 3454
+   },
+   "model": {
+    "status": "verified"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374627.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "certificates for b1 verified with libveritas",
+   "regtest": {
+    "notify": true,
+    "results": {
+     "o1": {
+      "ok": true,
+      "checks": {
+       "verified": true,
+       "handle": true,
+       "script_pubkey": true,
+       "root": true,
+       "root_height": true,
+       "sovereign": true
+      },
+      "error": null,
+      "zone": {
+       "anchor": 3600,
+       "canonical": "one@test10000",
+       "commitment_height": null,
+       "commitment_root": null,
+       "handle": "one@test10000",
+       "script_pubkey": "51208e5935297a4d58c4add0cdc0a98a2ce446d8daa142b0c1d5f42255a4aad2156e",
+       "sovereignty": "sovereign"
+      },
+      "space_zone": {
+       "anchor": 3600,
+       "canonical": "@test10000",
+       "commitment_height": 3454,
+       "commitment_root": "f34f7dadd61bd50ae28796fe5954a708cc6be421d0aea9ba4ab73453256ba3fc",
+       "handle": "@test10000",
+       "script_pubkey": "51202be5aa110d865d5c936de847790e471535a4a719b57b736fabdd12dba6283f81",
+       "sovereignty": "sovereign"
+      }
+     }
+    }
+   },
+   "model": null,
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374627.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "b1 members after verification",
+   "regtest": {
+    "o1": "ready"
+   },
+   "model": {
+    "o1": "ready"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374627.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "service restart (SIGKILL) while the member is ready",
+   "regtest": {
+    "killed_pid": 573915,
+    "new_pid": 574428,
+    "startup": {
+     "rebroadcast": [],
+     "pending_rebroadcast": [],
+     "at": 1794374627.8605015
+    },
+    "journal_backlog": 0
+   },
+   "model": null,
+   "match": null,
+   "note": "the service's own durable state is all it restarts from",
+   "kind": "informational",
+   "t": 1794374628.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "after the restart: still ready",
+   "regtest": {
+    "o1": "ready"
+   },
+   "model": {
+    "o1": "ready"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374628.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "isolation: subs seeds its fabric client with the local relay only",
+   "regtest": {
+    "subs_fabric_seeds": "http://127.0.0.1:18950",
+    "relay": "http://127.0.0.1:18950"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794374628.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "outstanding set for b1 (journaled)",
+   "regtest": {
+    "outstanding": [
+     "o1"
+    ],
+    "added": [
+     "o1"
+    ],
+    "journaled": true
+   },
+   "model": {
+    "members": [
+     "o1"
+    ]
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374628.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": "L3",
+   "step": "delivery of o1 before its handle is published",
+   "regtest": {
+    "confirmed": false,
+    "why": "not published",
+    "status": "ready",
+    "relay_answer": "HTTP 200",
+    "checks": {
+     "verified": true,
+     "handle": false,
+     "script_pubkey": false,
+     "root_on_chain": false,
+     "root_not_before_batch": false,
+     "sovereign_or_pending": false
+    },
+    "error": null
+   },
+   "model": {
+    "confirmed": false,
+    "why": "not published"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374628.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": "L2",
+   "step": "publish a chunk of 1 for b1 after the live check",
+   "regtest": {
+    "called": true,
+    "live": {
+     "root_on_chain": true,
+     "commitment_height": 3454,
+     "depth": 150,
+     "newest_anchor": 3600,
+     "ok": true
+    },
+    "chunk": 1,
+    "response": {
+     "handles_published": 1,
+     "remaining": 0
+    },
+    "publish_status": {
+     "o1": "final"
+    },
+    "final": [
+     "o1"
+    ]
+   },
+   "model": {
+    "ok": true,
+    "count": 1,
+    "published": [
+     "o1"
+    ],
+    "why": ""
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374628.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": "L2",
+   "step": "delivery of o1 confirmed by a verified lookup through the relay",
+   "regtest": {
+    "confirmed": true,
+    "why": "",
+    "relay_answer": "HTTP 200",
+    "checks": {
+     "verified": true,
+     "handle": true,
+     "script_pubkey": true,
+     "root_on_chain": true,
+     "root_not_before_batch": true,
+     "sovereign_or_pending": true
+    },
+    "root_gate": {
+     "on_chain": true,
+     "height": 3454,
+     "depth": 150,
+     "newest_anchor": 3600,
+     "final": true,
+     "covered": true,
+     "ok": true
+    },
+    "root_is_the_batchs": true,
+    "root_is_live": true,
+    "zone": {
+     "anchor": 3600,
+     "canonical": "one@test10000",
+     "commitment_height": null,
+     "commitment_root": null,
+     "handle": "one@test10000",
+     "script_pubkey": "51208e5935297a4d58c4add0cdc0a98a2ce446d8daa142b0c1d5f42255a4aad2156e",
+     "sovereignty": "sovereign"
+    },
+    "space_zone": {
+     "anchor": 3600,
+     "canonical": "@test10000",
+     "commitment_height": 3454,
+     "commitment_root": "f34f7dadd61bd50ae28796fe5954a708cc6be421d0aea9ba4ab73453256ba3fc",
+     "handle": "@test10000",
+     "script_pubkey": "51202be5aa110d865d5c936de847790e471535a4a719b57b736fabdd12dba6283f81",
+     "sovereignty": "sovereign"
+    },
+    "error": null,
+    "live": {
+     "root_on_chain": true,
+     "commitment_height": 3454,
+     "depth": 150,
+     "newest_anchor": 3600,
+     "ok": true
+    },
+    "status": "fulfilled"
+   },
+   "model": {
+    "ok": true,
+    "status": "fulfilled",
+    "why": ""
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374628.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "b1 members after delivery",
+   "regtest": {
+    "o1": "fulfilled"
+   },
+   "model": {
+    "o1": "fulfilled"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374628.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "publication pass for b1 with nothing outstanding",
+   "regtest": {
+    "calls": 0,
+    "results": []
+   },
+   "model": {
+    "ok": true,
+    "count": 0
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374628.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "service restart (SIGKILL) after fulfilment",
+   "regtest": {
+    "killed_pid": 574428,
+    "new_pid": 574454,
+    "startup": {
+     "rebroadcast": [],
+     "pending_rebroadcast": [],
+     "at": 1794374628.9254801
+    },
+    "journal_backlog": 0
+   },
+   "model": null,
+   "match": null,
+   "note": "the service's own durable state is all it restarts from",
+   "kind": "informational",
+   "t": 1794374629.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "after the restart: still fulfilled",
+   "regtest": {
+    "o1": "fulfilled"
+   },
+   "model": {
+    "o1": "fulfilled"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374629.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "7. purchase through the store service",
+   "case": null,
+   "step": "the order link shows the fulfilment",
+   "regtest": {
+    "status": "fulfilled",
+    "price_sats": 10000,
+    "batchable_sats": 10000,
+    "settled_sats": 10000,
+    "handle": "one@test10000"
+   },
+   "model": {
+    "status": "fulfilled",
+    "price_sats": 10000,
+    "batchable_sats": 10000,
+    "settled_sats": 10000,
+    "handle": "one@test10000"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374629.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "recipient request for two@test10000",
+   "regtest": {
+    "oid": "o3",
+    "script_pubkey": "51207a6597ca1369ee49b63dede5c4d3ef9bbf04d5ab1f7bd4c788478fa3b2b44f12"
+   },
+   "model": null,
+   "match": null,
+   "note": "",
+   "kind": "informational",
+   "t": 1794374629.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "fixed-price quote for o3",
+   "regtest": {
+    "quoted": true,
+    "status": "quoted",
+    "price_sats": 10000,
+    "address": "bcrt1p3ajk9lgn2tk0w6pjnhcnpqpzxw04e5gcl948h472ftfjqun0urmsywx7gs"
+   },
+   "model": {
+    "quoted": true,
+    "status": "quoted",
+    "price": 10000
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374629.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": "P1",
+   "step": "payment at 3 conf converts the hold",
+   "regtest": {
+    "o3": "converted"
+   },
+   "model": {
+    "o3": "converted"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374630.3
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "the owner cancels before issuing",
+   "regtest": {
+    "cancelled": true,
+    "why": null
+   },
+   "model": {
+    "cancelled": true,
+    "why": true
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374630.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "cancelled; the name is free again",
+   "regtest": {
+    "o3": "cancelled"
+   },
+   "model": {
+    "o3": "cancelled"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374630.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": "N2",
+   "step": "cancellation refund at 3 conf",
+   "regtest": {
+    "built": false,
+    "why": "nothing refundable"
+   },
+   "model": {
+    "built": false,
+    "why": "not enough settled funds"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374630.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": "N2",
+   "step": "cancellation refund once settled: 9,700 to the buyer, 300 fee, 10,000 reserved",
+   "regtest": {
+    "built": true,
+    "to_buyer": 9700,
+    "charged": 10000,
+    "reserved": 10000,
+    "available": 0,
+    "fee": 300,
+    "txid": "ab0d91df4566de54e3c9eac5f61da378a1f64d080058b7713579d9a9d01b92d9"
+   },
+   "model": {
+    "built": true,
+    "to_buyer": 9700,
+    "charged": 10000,
+    "reserved": 10000,
+    "available": 0
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374631.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": "J5",
+   "step": "broadcast while the journal entry is unacknowledged",
+   "regtest": {
+    "sent": false,
+    "why": "journal entry not acknowledged off-host"
+   },
+   "model": {
+    "sent": false,
+    "why": "journal entry not acknowledged off-host"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374631.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "service restart (SIGKILL) with the refund built, reserved and unsent",
+   "regtest": {
+    "killed_pid": 574454,
+    "new_pid": 574540,
+    "startup": {
+     "rebroadcast": [],
+     "pending_rebroadcast": [],
+     "at": 1794374631.2756228
+    },
+    "journal_backlog": 2
+   },
+   "model": null,
+   "match": null,
+   "note": "the service's own durable state is all it restarts from",
+   "kind": "informational",
+   "t": 1794374631.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "nothing was sent before the journal acknowledged it",
+   "regtest": {
+    "in_mempool": false
+   },
+   "model": {
+    "in_mempool": false
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374631.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": "J5",
+   "step": "broadcast once the journal entry is acknowledged",
+   "regtest": {
+    "sent": true,
+    "answer": {
+     "gid": "g1",
+     "txid": "ab0d91df4566de54e3c9eac5f61da378a1f64d080058b7713579d9a9d01b92d9",
+     "acknowledged": true
+    }
+   },
+   "model": {
+    "sent": true,
+    "why": ""
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374631.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "service restart (SIGKILL) with the refund in the mempool",
+   "regtest": {
+    "killed_pid": 574540,
+    "new_pid": 574546,
+    "startup": {
+     "rebroadcast": [],
+     "pending_rebroadcast": [],
+     "at": 1794374631.8498268
+    },
+    "journal_backlog": 0
+   },
+   "model": null,
+   "match": null,
+   "note": "the service's own durable state is all it restarts from",
+   "kind": "informational",
+   "t": 1794374632.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "after the restart: the attempt is found in the mempool, not resent",
+   "regtest": {
+    "rebroadcast": [],
+    "in_mempool": true
+   },
+   "model": {
+    "rebroadcast": [],
+    "in_mempool": true
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374632.1
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "refund at 5 conf: the group stays open",
+   "regtest": {
+    "closed": false,
+    "reserved": 10000,
+    "refunded_total": 0
+   },
+   "model": {
+    "closed": false,
+    "reserved": 10000,
+    "refunded_total": 0
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374633.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "refund at 6 conf closes the group: 10,000 refunded",
+   "regtest": {
+    "closed": true,
+    "reserved": 0,
+    "refunded_total": 10000,
+    "available": 0
+   },
+   "model": {
+    "closed": true,
+    "reserved": 0,
+    "refunded_total": 10000,
+    "available": 0
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374634.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "the buyer's wallet received 9,700 at the address it gave",
+   "regtest": {
+    "received": 9700,
+    "confirmations": 6,
+    "pays_refund_script": true
+   },
+   "model": {
+    "received": 9700,
+    "confirmations": 6,
+    "pays_refund_script": true
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374634.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "8. cancellation refund through the store service",
+   "case": null,
+   "step": "the order link shows the closed refund",
+   "regtest": {
+    "status": "cancelled",
+    "price_sats": 10000,
+    "batchable_sats": 10000,
+    "settled_sats": 10000,
+    "handle": "two@test10000",
+    "refund_closed": true
+   },
+   "model": {
+    "status": "cancelled",
+    "price_sats": 10000,
+    "batchable_sats": 10000,
+    "settled_sats": 10000,
+    "handle": "two@test10000",
+    "refund_closed": true
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794374634.2
+  }
+ ],
+ "findings": []
+}

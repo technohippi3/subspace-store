@@ -1,7 +1,8 @@
 # Regtest report
 
-Label: regtest. Every result here comes from the pinned Bitcoin Core 26.0,
-`spaced` v0.5.0 and `subs` at `4dcc923` on a local regtest network, driven
+Label: regtest. Every result here comes from Bitcoin Core 26.0, the pin until
+2026-11-11, except the section "Bitcoin Core 31.2", which ran on 31.2, the
+pin since. All of them ran `spaced` v0.5.0 and `subs` at `4dcc923` on a local regtest network, driven
 by the harness in this directory. None of it is model, integration, mainnet
 or buyer-acceptance evidence. The harness's registry and controller are
 harness code, not the product. Findings are in `FINDINGS.md`, and the full
@@ -898,6 +899,36 @@ other step matched `recovery-20261110T050046Z-f7c0fa`, including A19's
 re-delivered certificate and the next batch on `@test10000` reaching
 `fulfilled`. The complete recovery took 29.7 s and the store's replay
 0.16 s.
+
+## Bitcoin Core 31.2 (2026-11-11)
+
+Bitcoin Core 26.0 reached end of life on 2025-04-14, and the store's own
+node runs 31.2. Before the pin moved, every scenario set ran again on 31.2,
+chosen with `SUBSPACE_BITCOIND_BIN`; each report records the binary and the
+version it ran (`bitcoind_version`). The tarball matched the release
+checksum, and eight builders' signatures on the checksum file verified.
+The preset chain's wallets are SQLite descriptor wallets, so 31.2 loads them
+despite version 30's removal of legacy wallets.
+
+| Scenario set | Run | Required checks matched |
+| --- | --- | ---: |
+| Service purchase and refund | `core31-service-20261111T052258Z-e83822` | 43 of 43 |
+| Checkout purchase and refund | `core31-checkout-20261111T052358Z-41305d` | 30 of 30 |
+| Recovery rehearsal | `core31-recovery-20261111T052444Z-de932f` | 75 of 75 |
+| First purchase, second commitment with a proof, restore, lost broadcast | `core31-all-20261111T052854Z-1dcace` | 98 of 98 |
+| Private preflight with the loopback `subs`, and the private checkout | `core31-private-loopback-20261111T053258Z-636873` | 22 of 22 |
+| Private refund | `core31-private-refund-20261111T053334Z-4f7174` | 2 of 2 |
+
+None failed. The private refund matched the 26.0 run exactly: 111 vbytes, a
+222-sat fee at 2 sat/vB and 778 sats to the buyer. After the 151-block
+`invalidateblock` reorg, 31.2 behaved as 26.0 did (R10): the disconnected
+commitment wasn't in the mempool, and `testmempoolaccept` still accepted
+its bytes. The kept report of that run still says "Bitcoin Core 26.0" in
+the note on that step: the note was fixed text then, and the run predates
+the change that makes it name the version a run used. Its version field,
+`bitcoind_version`, says 31.2, and the step's recorded observations are
+31.2's. The kept report is left as it was recorded. `regtest/fetch.sh` now replaces a cached `bitcoind` whose version
+isn't the pinned one, so the pin change alone moves a checkout to it.
 
 ## The tightened harness
 

@@ -60,7 +60,7 @@ from pathlib import Path
 from controller.rpc import Http, JsonRpc, RpcError
 
 from . import scenarios
-from .procs import BIN, OPERATOR_WALLET, PORTS, PRESET, Stack, relay_enabled, relay_url, \
+from .procs import BIN, OPERATOR_WALLET, bitcoind_bin, PORTS, PRESET, Stack, relay_enabled, relay_url, \
     subs_capabilities
 from .scenarios import PRICE, SPACED_FEE_RATE, VERIFIER
 from .service import ServiceRegistry, ServiceRun
@@ -160,7 +160,7 @@ class RecoveryStack(Stack):
             return
         auth = json.loads((self.world / "spaced-bitcoin-rpc.json").read_text())
         self._spawn("network", [
-            str(BIN / "bitcoind"), f"-datadir={self.net_dir}", "-regtest", "-txindex=1",
+            str(bitcoind_bin()), f"-datadir={self.net_dir}", "-regtest", "-txindex=1",
             "-listen=1", f"-bind=127.0.0.1:{PORTS['network_p2p']}", "-dnsseed=0",
             "-fixedseeds=0", "-discover=0", "-whitelist=noban,relay@127.0.0.1",
             "-rpcbind=127.0.0.1", "-rpcallowip=127.0.0.1", f"-rpcport={PORTS['network']}",
@@ -209,7 +209,7 @@ class RecoveryStack(Stack):
         if self.running("bitcoind"):
             return
         self._spawn("bitcoind", [
-            str(BIN / "bitcoind"), f"-datadir={self.btc_dir}", "-regtest", "-txindex=1",
+            str(bitcoind_bin()), f"-datadir={self.btc_dir}", "-regtest", "-txindex=1",
             "-listen=0", f"-connect=127.0.0.1:{PORTS['network_p2p']}", "-dnsseed=0",
             "-fixedseeds=0", "-rpcbind=127.0.0.1", "-rpcallowip=127.0.0.1",
             f"-rpcport={PORTS['bitcoind']}", "-fallbackfee=0.0001", "-rpcworkqueue=100",

@@ -241,7 +241,7 @@ Needs buyers:
 This is the second column of evidence, the upstream software, without funds
 or mainnet. It is built in `regtest/`, and its results are in
 `regtest/REPORT.md` and `regtest/FINDINGS.md`.
-- Components: Bitcoin Core 26.0 on regtest, `spaced` v0.5.0 against it, and
+- Components: Bitcoin Core on regtest (26.0, then 31.2 from 2026-11-11), `spaced` v0.5.0 against it, and
   `subs` at `4dcc923` built without its `test-rig` feature, with a local CPU
   prover. `/rpc/mine` exists only with `test-rig`, so the harness mines
   through Bitcoin Core (R1).

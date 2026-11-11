@@ -47,7 +47,8 @@ takes the journal's copy (A22).
 - `libveritas` 0.4.4, the version `subs` locks and verifies with. The
   earlier pin, `61281f1`, is the v0.4.5 release merge, which `subs` doesn't
   build (R2);
-- Bitcoin Core 26.0, for the regtest harness;
+- Bitcoin Core 31.2, for the regtest harness and the store's node, since
+  2026-11-11; 26.0 before (`regtest/pins.env`, `regtest/REPORT.md`);
 - the RISC Zero toolchain that `subs` pins in its `Cargo.lock` and
   `rust-toolchain.toml`;
 - `yuki`, at a version still to be chosen.
