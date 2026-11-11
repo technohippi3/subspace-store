@@ -32,7 +32,7 @@ async function until(work: () => Promise<void>): Promise<void> {
 test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool reload without invented timing", async (t) => {
   assert.equal(process.env.SUBSPACE_CORE_REGTEST_ISOLATED, "1", "run through npm run test:core");
   const binary = resolve(process.env.SUBSPACE_BITCOIND ?? join(repository, "regtest/.cache/bin/bitcoind"));
-  assert.match(execFileSync(binary, ["-version"], { encoding: "utf8" }).split("\n")[0]!, /v31\.2\.0/);
+  assert.match(execFileSync(binary, ["-conf=/dev/null", "-version"], { encoding: "utf8" }).split("\n")[0]!, /v31\.2\.0/);
   const name = `core-adapter-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
   const root = join(repository, "regtest/.run", name); mkdirSync(root, { recursive: true, mode: 0o700 });
   const data = join(root, "bitcoin"); mkdirSync(data);
@@ -45,7 +45,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
   async function start(persist = true) {
     const log = openSync(join(root, `core-${Date.now()}.log`), "a", 0o600);
     try {
-      child = spawn(binary, [`-datadir=${data}`, "-regtest", "-server", "-listen=0", "-connect=0", "-dnsseed=0",
+      child = spawn(binary, ["-conf=/dev/null", `-datadir=${data}`, "-regtest", "-server", "-listen=0", "-connect=0", "-dnsseed=0",
         "-discover=0", "-fallbackfee=0.0002", `-rpcport=${port}`, "-rpcbind=127.0.0.1", "-rpcallowip=127.0.0.1",
         `-persistmempool=${persist ? 1 : 0}`, `-walletbroadcast=${persist ? 1 : 0}`, `-mocktime=${mockTime}`],
         { stdio: ["ignore", log, log] });

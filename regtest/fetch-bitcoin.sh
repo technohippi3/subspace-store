@@ -11,7 +11,7 @@ mkdir -p "$BIN" "$CACHE/dl"
 
 is_pinned() {
   local version
-  version="$("$BIN/bitcoind" -version 2>/dev/null | head -1 | grep -oE 'v[0-9]+(\.[0-9]+)+')" || return 1
+  version="$("$BIN/bitcoind" -conf=/dev/null -version 2>/dev/null | head -1 | grep -oE 'v[0-9]+(\.[0-9]+)+')" || return 1
   [[ $version == "v$BITCOIN_VERSION" || $version == "v$BITCOIN_VERSION.0" ]]
 }
 if [[ -x $BIN/bitcoind && -x $BIN/bitcoin-cli ]] && is_pinned; then

@@ -69,7 +69,8 @@ the same qualification. `regtest/fetch-bitcoin.sh` fetches just the Core
 binary without building subs or spaced.
 Hosted CI uses `in-netns-ci.sh` to create the network namespace with sudo,
 then drops to the runner's original UID/GID with cleared supplementary
-groups and no-new-privileges before Node or Core starts. The normal local
+groups, a reset environment and no-new-privileges before Node or Core starts. Version
+probes and test nodes use an explicit empty configuration. The normal local
 command uses unprivileged user/network namespaces.
 
 The adapter is wired through the application's destination-aware snapshot

@@ -15,6 +15,6 @@ node_binary=$(command -v node)
 cd "$HERE/../ts"
 exec sudo -n -- unshare --net -- sh -eu -c '
   ip link set lo up
-  exec setpriv --reuid "$1" --regid "$2" --clear-groups --no-new-privs \
+  exec setpriv --reuid "$1" --regid "$2" --clear-groups --no-new-privs --reset-env \
     env SUBSPACE_CORE_REGTEST_ISOLATED=1 "$3" --test regtest/core.test.ts
 ' sh "$caller_uid" "$caller_gid" "$node_binary"

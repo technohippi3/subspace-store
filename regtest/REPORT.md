@@ -1019,7 +1019,7 @@ handle label was a personal name and is part of the signed message.
 
 ## TypeScript payment adapter, Core 31.2
 
-Local regtest run `core-adapter-2026-11-11T14-39-25-864Z-abb2449e` passed through
+Local regtest run `core-adapter-2026-11-11T14-56-15-058Z-41ab657c` passed through
 `cd ts && npm run test:core`. It used a fresh data directory, generated
 regtest-only wallets and a loopback-only network namespace. No existing
 node or wallet was used. The retained `qualification.json` binds the source
@@ -1063,6 +1063,10 @@ The first hosted-CI attempt failed before the test with
 `unshare: write failed /proc/self/uid_map: Operation not permitted`.
 Hosted CI therefore creates the network namespace with sudo, then drops
 back to the original unprivileged UID/GID before running Node and Core.
+The next attempt exposed an inherited root home directory in Core's
+version probe (`Permission denied [/root/.bitcoin/bitcoin.conf]`). The
+launcher now resets its environment when dropping privileges, and version
+probes/test nodes explicitly use an empty configuration.
 
 This run did not issue through subs/spaced, deliver a certificate, execute
 the store's refund protocol, restore the complete host or use a buyer's
@@ -1077,5 +1081,5 @@ Qualified SHA-256 source digests:
 7ef9b9f5072629566d2172383ff561e47ec5af9733b8cf7d00c3761a1b4c970f  ts/src/application/store.ts
 82a9f70dcd35f64892658e63006294e188ccc1b1a3e1866ad0e27f54e8986f0f  ts/src/application/sales.ts
 d7b29b627e0601e2747009e0f42eb5fa30a9118a191df1ca95d870ab284ecde3  ts/src/application/records.ts
-770091eae302dd6e4d5b24ae82879270ba1cf2bbf47964b8e6e75a5c3e998bbf  ts/regtest/core.test.ts
+86627ddab761bdc9e178e7878e95e9bc3e49b157117c4eef7c0e1230ec0a3390  ts/regtest/core.test.ts
 ```
