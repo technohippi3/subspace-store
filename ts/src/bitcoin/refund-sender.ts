@@ -1,10 +1,11 @@
 import { Effect } from "effect";
 import { ApplicationError, verified } from "../application/records.ts";
 import { prepared } from "../refunds/records.ts";
-import type { PreparedRefund, RefundFacts, RefundSnapshot } from "../refunds/types.ts";
+import type { PreparedRefund, RefundFacts, RefundSnapshot, Replacement } from "../refunds/types.ts";
 import { CoreAdapter, type CoreConfig } from "./core.ts";
 import { BitcoinRpc } from "./rpc.ts";
 import { amount, hex, integer, invalid, object } from "./validation.ts";
+import { verifyReplacement } from "./exclusivity.ts";
 
 interface Position { confirmations: number; mempool: boolean; blockHash: string | null; inputs: string[]; decoded: unknown }
 function decodedMatches(tx: PreparedRefund, raw: unknown): void {
@@ -20,7 +21,7 @@ function decodedMatches(tx: PreparedRefund, raw: unknown): void {
     if (v.n !== i || object(v.scriptPubKey).hex !== tx.outputs[i]!.script || amount(v.value) !== tx.outputs[i]!.sats) invalid("refund signed outputs differ");
   }
 }
-/** First-attempt observation and sending only. No independent replacement. */
+/** Observe every saved member and verify exclusivity before replacement sends. */
 export class CoreRefundSender {
   private readonly node: BitcoinRpc;
   private readonly wallet: BitcoinRpc;
@@ -87,13 +88,13 @@ export class CoreRefundSender {
       return { ...value, confirmations: 0, mempool: pool.ok, blockHash: null } satisfies Position;
     });
   }
-  private inputs(tx: PreparedRefund, tip: string) {
+  private inputs(tx: PreparedRefund, tip: string, includeMempool = true) {
     const self = this;
     return Effect.gen(function* () {
       let available = true;
       for (const input of tx.inputs) {
         const [id, index] = input.outpoint.split(":");
-        const raw = yield* self.rpc(self.node, "gettxout", id, Number(index), true);
+        const raw = yield* self.rpc(self.node, "gettxout", id, Number(index), includeMempool);
         if (raw === null) { available = false; continue; }
         yield* verified(() => {
           const v = object(raw);
@@ -117,12 +118,13 @@ export class CoreRefundSender {
       for (const tx of transactions) {
         const p = positions.get(tx.txid)!;
         if (p) yield* verified(() => decodedMatches(tx, p.decoded));
-        const inputsAvailable = yield* self.inputs(tx, start.hash), inputs = new Set(tx.inputs.map(i => i.outpoint));
+        const inputsAvailable = yield* self.inputs(tx, start.hash), chainInputsAvailable = yield* self.inputs(tx, start.hash, false);
+        const inputs = new Set(tx.inputs.map(i => i.outpoint));
         const conflicts = [...positions].filter(([id, p]) => id !== tx.txid && p && (p.confirmations > 0 || p.mempool) && p.inputs.some(i => inputs.has(i)))
           .map(([txid, p]) => ({ txid, confirmations: p!.confirmations, mempool: p!.mempool }));
         if (p && (p.confirmations > 0 || p.mempool) && conflicts.length) return null;
         facts.push({ txid: tx.txid, seen: p?.confirmations ? "mined" : p?.mempool ? "mempool" : "absent",
-          confirmations: p?.confirmations ?? 0, blockHash: p?.blockHash ?? null, inputsAvailable, conflicts });
+          confirmations: p?.confirmations ?? 0, blockHash: p?.blockHash ?? null, inputsAvailable, chainInputsAvailable, conflicts });
       }
       const again = yield* self.history();
       if (history.hash !== again.hash || JSON.stringify(history.ids) !== JSON.stringify(again.ids)) return null;
@@ -131,6 +133,7 @@ export class CoreRefundSender {
         if (JSON.stringify(previous) !== JSON.stringify(current)) return null;
       }
       for (const [i, tx] of transactions.entries()) if ((yield* self.inputs(tx, start.hash)) !== facts[i]!.inputsAvailable) return null;
+      for (const [i, tx] of transactions.entries()) if ((yield* self.inputs(tx, start.hash, false)) !== facts[i]!.chainInputsAvailable) return null;
       const end = yield* self.core.checkReady();
       return end.hash === start.hash && end.height === start.height ? { tip: start.height, tipHash: start.hash, transactions: facts } satisfies RefundSnapshot : null;
     });
@@ -146,13 +149,14 @@ export class CoreRefundSender {
       return yield* verified(() => invalid("Core changed during refund observation"));
     });
   }
-  broadcast(input: PreparedRefund, permission: Effect.Effect<boolean, ApplicationError>, expectedTip: Pick<RefundSnapshot, "tip" | "tipHash">) {
+  broadcast(input: PreparedRefund, permission: Effect.Effect<boolean, ApplicationError>, expectedTip: Pick<RefundSnapshot, "tip" | "tipHash">, replacement?: Replacement) {
     const self = this;
     return Effect.gen(function* () {
       const tx = yield* verified(() => { prepared(input); return structuredClone(input); });
       const expected = yield* verified(() => ({ hash: hex(expectedTip.tipHash), height: integer(expectedTip.tip) }));
       const start = yield* self.core.checkReady();
       if (start.hash !== expected.hash || start.height !== expected.height) return yield* verified(() => invalid("Core tip changed before refund send"));
+      if (replacement) yield* verifyReplacement(self.node, replacement);
       const decoded = yield* self.rpc(self.node, "decoderawtransaction", tx.raw);
       yield* verified(() => decodedMatches(tx, decoded));
       const end = yield* self.core.checkReady();

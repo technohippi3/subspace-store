@@ -87,7 +87,7 @@ test("Z33: changing relevant wallet history retries bounded full refund reads", 
   f.state.override = call => call.method === "listsinceblock" ? { result: { lastblock: hash, transactions: ++history % 2 ? [] : [{ txid: id }] } } : undefined;
   await assert.rejects(run(f.sender.observe([f.tx])), /changed during/); assert.equal(history, 6);
   let observations = 0; f.state.override = call => {
-    if (call.method === "gettxout") return { result: ++observations % 2 ? { bestblock: hash, confirmations: 10, value: 0.0001, scriptPubKey: { hex: script } } : null };
+    if (call.method === "gettxout" && call.params[2] === true) return { result: ++observations % 2 ? { bestblock: hash, confirmations: 10, value: 0.0001, scriptPubKey: { hex: script } } : null };
     return undefined;
   };
   await assert.rejects(run(f.sender.observe([f.tx])), /changed during/); assert.equal(observations, 6);

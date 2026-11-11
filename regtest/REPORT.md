@@ -1180,3 +1180,74 @@ b39841e6cbf4bd0ac9c249415d8d6c84377792efe1c1836bd791250677dd9e13  ts/src/bitcoin
 8564b8a289505aa5b7a50ce8284ba4766c1db45fcdd10498b9683b32317d6fe3  ts/src/refunds/observations.ts
 5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
 ```
+
+## TypeScript exclusive refund families, 2026-11-11
+
+Run `core-adapter-2026-11-11T16-55-17-598Z-ca99fe3a` passed on the checksum-pinned
+Core 31.2 binary with fresh isolated regtest wallets. The qualification
+JSON binds twenty runtime/test source digests and nineteen completed checks.
+All prior payment, uncertainty, restart and settlement observations passed.
+
+A pending excess refund was replaced by a higher-fee signed member that
+retained its inputs and buyer output. Core accepted the replacement and
+removed the old member from the mempool. Store restart preserved both
+signed attempts and their one maximum reservation. After settlement and a
+deep reorg, the test miner included the original member instead; the group
+was refunded once, and a later cancellation used the winning member's
+proven change. These are three application send calls for two obligations,
+with only the canonical winners charged to the ledger.
+
+A separate cancelled order had a one-input refund, using an explicit
+1,000-sat/kvB regtest fee-rate input. The test operator spent that input
+into an owned output, and the conflict reached six confirmations. The
+application built an exclusive replacement from that output, preserved the
+30,000-sat historical maximum and settled the chosen 28,000-sat charge.
+A deep reorg then removed the conflict and its descendant; mining the old
+refund instead settled the group at 30,000 once. The descendant could not
+remain valid without its ancestor. Amounts/rates are test inputs, not
+deployment choices.
+
+An early run refused a valid required input because identity comparison
+used JSON member order. Input identity now compares outpoint, script, sats
+and owner explicitly. The final source-bound run above supersedes that
+intermediate failure; its retained run directory was not removed.
+
+Separate production RPC tests cover surviving shared-input anchors,
+forged ancestor input metadata, missing funding, mixed ownership and loss
+of settled conflict evidence. SQLite/journal tests cover maximum charges,
+restarts, unacknowledged preparation, paused rebuild notices, and either
+older or newer family winners. A separate independent ledger/graph model
+checks fixed cases and 300 seeded history/replay steps; those are model
+results, not Core or full-host recovery evidence.
+
+The planner supports direct conflicting ancestors and proven order
+funding; more complex or ambiguous recovery remains paused. Refund
+deadlines, general alerts/losses, unconverted excess, merchant principal
+advances, PSBT export, full host recovery, registry/installer/seller setup
+and buyer acceptance remain. No deployed service, existing wallet,
+credential or mainnet state changed. Paid sales remain closed.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+f64968a714d684b3c119d7287589b224fa107fc8218364aa088a7ef54f10c0f1  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+cd36b03ef35fef3f93a0df1cf866e58ac121fc9b501c183803f6f73294022682  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+57aeb4073da934a327a17f53d9680519d40685feddb9010eda3493b9c90cb12d  ts/src/refunds/types.ts
+3a5af8f22082157a172d21dcba7b3e8bf8bad15681c1147f370979dbe18fb7ad  ts/src/refunds/book.ts
+9acc2297b63b3020a19707e94d54f2bf92fe4fb3c4cec9ff4c60e201385a2212  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+0964a83c3c3706d69b017df1476e25cff0f217775afbef562bebff673b62feea  ts/src/application/records.ts
+5afe7ce06f24c35f5ee16f3ef48ddd189e267240e43ae7a3370bc3daae50fe35  ts/regtest/core.test.ts
+ec737eb6ab075c5e38e0572bb00f820d9e9bd0bb95512d70a47fbfc1206674fe  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+```

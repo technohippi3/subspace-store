@@ -19,11 +19,28 @@ export interface BuildRequest {
   group: RefundGroup; destination: Destination;
   orderCoins: readonly FundingClaim[]; merchantScripts: readonly string[];
   forbiddenInputs: readonly string[]; forbiddenScripts: readonly string[];
+  replacement?: Replacement;
+  expectedTip?: { tip: number; tipHash: string };
 }
+export interface ExclusiveProof { earlier: string; input: string;
+  via: { txid: string; raw: string; inputs: string[] } | null }
+export interface Replacement { requiredInputs: Coin[]; members: PreparedRefund[]; proofs: ExclusiveProof[]; minimumFee: number }
+export interface RefundAttempt {
+  id: string; group: string; ordinal: number; parent: string; mode: "bump" | "rebuild";
+  charged: number; createdAt: number; rate: number; policy: RefundPolicy;
+  phase: "reserved" | "built" | "void"; transaction: PreparedRefund | null; replacement: Replacement;
+}
+export interface RebuildRequest {
+  members: PreparedRefund[]; orderCoins: FundingClaim[]; forbiddenInputs: string[];
+  conflicts: string[]; tip: number; tipHash: string;
+}
+export interface RebuildFunding { requiredInputs: Coin[]; proofs: ExclusiveProof[] }
+export interface RefundPause { group: string; firstAt: number; lastAt: number; active: boolean }
 export interface RefundAdapters {
   readonly resolveAddress: (address: string) => Effect.Effect<Destination, ApplicationError>;
   readonly estimateRate: (target: number) => Effect.Effect<number | null, ApplicationError>;
   readonly build: (request: BuildRequest) => Effect.Effect<PreparedRefund, ApplicationError>;
+  readonly rebuildFunding?: (request: RebuildRequest) => Effect.Effect<RebuildFunding, ApplicationError>;
   readonly sender?: RefundSender;
 }
 export interface RefundSend {
@@ -33,6 +50,7 @@ export interface RefundSend {
 export interface RefundFacts {
   txid: string; seen: "absent" | "mempool" | "mined"; confirmations: number;
   blockHash: string | null; inputsAvailable: boolean;
+  chainInputsAvailable?: boolean;
   conflicts: { txid: string; confirmations: number; mempool: boolean }[];
 }
 export interface RefundObservation extends RefundFacts {
@@ -43,5 +61,5 @@ export interface RefundSender {
   readonly observe: (transactions: readonly PreparedRefund[]) => Effect.Effect<RefundSnapshot, ApplicationError>;
   /** Evaluate permission after preflight, immediately before the send RPC. */
   readonly broadcast: (transaction: PreparedRefund, permission: Effect.Effect<boolean, ApplicationError>,
-    expectedTip: Pick<RefundSnapshot, "tip" | "tipHash">) => Effect.Effect<void, ApplicationError>;
+    expectedTip: Pick<RefundSnapshot, "tip" | "tipHash">, replacement?: Replacement) => Effect.Effect<void, ApplicationError>;
 }

@@ -2,10 +2,13 @@ import { Effect } from "effect";
 import { ApplicationError, destination, verified } from "../application/records.ts";
 import { fee, split, excessRefundable } from "../refunds/policy.ts";
 import { group, prepared } from "../refunds/records.ts";
-import type { BuildRequest, Coin, PreparedRefund, RefundOutput } from "../refunds/types.ts";
+import type { BuildRequest, Coin, PreparedRefund, RebuildRequest, RefundOutput } from "../refunds/types.ts";
 import { CoreAdapter, type CoreConfig } from "./core.ts";
 import { BitcoinRpc } from "./rpc.ts";
 import { amount, hex, integer, invalid, object } from "./validation.ts";
+import { replacement } from "../refunds/families.ts";
+import { verifyReplacement } from "./exclusivity.ts";
+import { rebuildFunding } from "./rebuild-funding.ts";
 
 const decimal = (sats: number) => `${Math.floor(sats / 100_000_000)}.${(sats % 100_000_000).toString().padStart(8, "0")}`;
 function outpoint(value: string): { txid: string; vout: number } {
@@ -59,6 +62,7 @@ export class CoreRefundWallet {
       });
     });
   }
+  rebuildFunding(request: RebuildRequest) { return rebuildFunding(request, this.core, this.node, this.wallet); }
   private change(forbidden: Set<string>) {
     const self = this;
     return Effect.gen(function* () {
@@ -87,9 +91,16 @@ export class CoreRefundWallet {
           destination({ address: "merchant", script }); if (scripts.has(script)) invalid("ambiguous funding ownership");
         }
         if (scripts.has(r.destination.script) || r.merchantScripts.includes(r.destination.script)) invalid("refund destination is funding");
+        if (r.replacement) {
+          replacement(r.replacement);
+          for (const c of r.replacement.requiredInputs) if (r.forbiddenInputs.includes(c.outpoint)) invalid("replacement input belongs to another obligation");
+        }
         return r;
       });
       const start = yield* self.core.checkReady(), resolved = yield* self.resolveAddress(request.destination.address);
+      if (request.expectedTip && (request.expectedTip.tip !== start.height || request.expectedTip.tipHash !== start.hash))
+        return yield* verified(() => invalid("Core tip changed before refund replacement build"));
+      if (request.replacement) yield* verifyReplacement(self.node, request.replacement);
       yield* verified(() => { if (resolved.script !== request.destination.script) invalid("refund address changed script"); });
       const unspent = yield* self.rpc(self.wallet, "listunspent", 6, 9_999_999, [], false);
       const coins = yield* verified(() => {
@@ -109,9 +120,23 @@ export class CoreRefundWallet {
         }
         return result.sort((a, b) => a.outpoint < b.outpoint ? -1 : a.outpoint > b.outpoint ? 1 : 0);
       });
+      for (const c of request.replacement?.requiredInputs ?? []) {
+        const { txid, vout } = outpoint(c.outpoint), reply = yield* self.rpc(self.node, "gettxout", txid, vout, false);
+        yield* verified(() => {
+          const v = object(reply);
+          if (v.bestblock !== start.hash || integer(v.confirmations) < 6 || amount(v.value) !== c.sats || object(v.scriptPubKey).hex !== c.script)
+            invalid("required replacement input is not settled and unspent on-chain");
+          const claim = request.orderCoins.find(i => i.outpoint === c.outpoint);
+          if (c.owner === "order" ? !claim || claim.script !== c.script || claim.sats !== c.sats : !request.merchantScripts.includes(c.script))
+            invalid("required input changed funding owner");
+          const existing = coins.find(i => i.outpoint === c.outpoint);
+          if (existing) { if (existing.owner !== c.owner || existing.script !== c.script || existing.sats !== c.sats) invalid("replacement funding differs"); }
+          else coins.push({ ...c });
+        });
+      }
       const forbidden = new Set([...request.forbiddenScripts, request.destination.script, ...coins.map(c => c.script)]);
       const ownChange = yield* self.change(forbidden), merchantChange = yield* self.change(forbidden);
-      const selected: Coin[] = [];
+      const selected: Coin[] = coins.filter(c => request.replacement?.requiredInputs.some(i => i.outpoint === c.outpoint));
       function select(owner: Coin["owner"], required: number): number {
         let total = selected.filter(c => c.owner === owner).reduce((sum, c) => sum + c.sats, 0);
         for (const c of coins.filter(c => c.owner === owner && !selected.includes(c))) {
@@ -121,7 +146,7 @@ export class CoreRefundWallet {
         if (total < required || (total > required && total - required < 546)) invalid("insufficient settled funding without dust change");
         return total;
       }
-      let networkFee = 0;
+      let networkFee = request.replacement?.minimumFee ? request.replacement.minimumFee + 1 : 0;
       for (let attempt = 0; attempt < 8; attempt++) {
         const plan = yield* verified(() => {
           const p = split(request.group.charged, Math.max(networkFee, 1), request.group.policy.buyerFeeCeiling,
@@ -165,6 +190,7 @@ export class CoreRefundWallet {
         });
         const required = yield* verified(() => fee(candidate.vbytes, request.group.rate));
         if (candidate.fee !== required) { networkFee = required; continue; }
+        if (request.replacement && candidate.fee <= request.replacement.minimumFee) return yield* verified(() => invalid("selected replacement fee does not exceed earlier fees"));
         yield* verified(() => group({ ...request.group, phase: "built", transaction: candidate }));
         const acceptance = yield* self.rpc(self.node, "testmempoolaccept", [candidate.raw]);
         yield* verified(() => {
@@ -173,7 +199,8 @@ export class CoreRefundWallet {
         });
         // Detect spends/reorgs that occurred while constructing and signing.
         for (const c of selected) {
-          const { txid, vout } = outpoint(c.outpoint), reply = yield* self.rpc(self.node, "gettxout", txid, vout, true);
+          const required = request.replacement?.requiredInputs.some(i => i.outpoint === c.outpoint);
+          const { txid, vout } = outpoint(c.outpoint), reply = yield* self.rpc(self.node, "gettxout", txid, vout, !required);
           yield* verified(() => {
             const value = object(reply);
             if (integer(value.confirmations) < 6 || amount(value.value) !== c.sats || object(value.scriptPubKey).hex !== c.script)

@@ -1,10 +1,10 @@
 # TypeScript first-attempt refund sending
 
 This extends `REFUND-PREPARATION.md` with the existing broadcast and
-reconciliation rules in `PAYMENT-SPEC.md`. Each group still has one signed
-attempt. Fee bumps, exclusive replacement families, the refund deadline
-lifecycle, operator alerts/loss recording and full host-loss recovery
-remain unfinished. This component does not open paid sales.
+reconciliation rules in `PAYMENT-SPEC.md`. `REFUND-FAMILIES.md` now extends
+it to all saved members, fee bumps and exclusive rebuilds. The refund
+deadline lifecycle, general alerts/loss recording and full host-loss
+recovery remain unfinished. This component does not open paid sales.
 
 ## Intent and sending
 
@@ -62,7 +62,7 @@ name. Durable owner alerts and merchant-loss handling remain release work.
 
 Full application restore still refuses pending controller/chain recovery.
 Unconverted excess remains unsupported, and this increment does not claim
-multi-family reconciliation, safe rebuilds, automatic maintenance, deadline
+complete recovery or automatic maintenance, deadline
 enforcement or complete pilot acceptance. No deployment defaults or migration
 framework were introduced.
 

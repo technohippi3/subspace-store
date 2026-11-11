@@ -3,8 +3,9 @@ import { canonicalHandle, validP2tr } from "../recipient.ts";
 import type { Json } from "../storage/codec.ts";
 import { policy, type RefundPolicy } from "../refunds/policy.ts";
 import { account, group } from "../refunds/records.ts";
-import type { RefundAccount, RefundGroup, RefundObservation, RefundSend } from "../refunds/types.ts";
+import type { RefundAccount, RefundAttempt, RefundGroup, RefundObservation, RefundPause, RefundSend } from "../refunds/types.ts";
 import { observation, sendRecord } from "../refunds/observations.ts";
+import { allMembers, attempt, evidenceKey, members } from "../refunds/families.ts";
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly code: "invalid" | "refused" | "unavailable" | "not_found";
@@ -46,7 +47,7 @@ export interface Settings { version: 1; riskBudget: number; paused: boolean; con
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
 export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[];
   refunds: RefundSettings; accounts: RefundAccount[]; groups: RefundGroup[];
-  refundObservations: RefundObservation[]; refundSends: RefundSend[] }
+  refundObservations: RefundObservation[]; refundSends: RefundSend[]; refundAttempts: RefundAttempt[]; refundPauses: RefundPause[] }
 export interface Record { kind: string; key: string; value: Json }
 export const claims = (order: Order): boolean => order.status === "converted" || order.status === "issuing";
 export function request(body: unknown): { handle: string; script: string } {
@@ -107,8 +108,10 @@ export function encode(state: State): Record[] {
     { kind: "refund_settings", key: "global", value: state.refunds as unknown as Json },
     ...state.accounts.map(value => ({ kind: "refund_account", key: value.order, value: value as unknown as Json })),
     ...state.groups.map(value => ({ kind: "refund_group", key: value.id, value: value as unknown as Json })),
-    ...state.refundObservations.map(value => ({ kind: "refund_observation", key: value.group, value: value as unknown as Json })),
-    ...state.refundSends.map(value => ({ kind: "refund_send", key: value.group, value: value as unknown as Json })),
+    ...state.refundAttempts.map(value => ({ kind: "refund_attempt", key: value.id, value: value as unknown as Json })),
+    ...state.refundPauses.map(value => ({ kind: "refund_pause", key: value.group, value: value as unknown as Json })),
+    ...state.refundObservations.map(value => ({ kind: "refund_observation", key: evidenceKey(state, value), value: value as unknown as Json })),
+    ...state.refundSends.map(value => ({ kind: "refund_send", key: evidenceKey(state, value), value: value as unknown as Json })),
     ...state.listings.map(value => ({ kind: "listing", key: value.handle, value: value as unknown as Json })),
     ...state.orders.map(value => ({ kind: "sales_order", key: value.id, value: value as unknown as Json })),
     ...state.payments.map(value => ({ kind: "payment", key: value.outpoint, value: value as unknown as Json })) ];
@@ -118,7 +121,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   for (const d of refunds.merchantDestinations) destination(d);
   const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
     lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [],
-    refunds: structuredClone(refunds), accounts: [], groups: [], refundObservations: [], refundSends: [] };
+    refunds: structuredClone(refunds), accounts: [], groups: [], refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
   for (const record of records) {
     // Commands mutate a working copy. The original records remain the
     // immutable comparison point for the atomic changed-record commit.
@@ -130,8 +133,13 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
         break;
       case "refund_account": account(v); if (v.order !== record.key) fail("refund account differs"); state.accounts.push(v); break;
       case "refund_group": group(v); if (v.id !== record.key) fail("refund group differs"); state.groups.push(v); break;
-      case "refund_observation": observation(v); if (v.group !== record.key) fail("refund observation differs"); state.refundObservations.push(v); break;
-      case "refund_send": sendRecord(v); if (v.group !== record.key) fail("refund send differs"); state.refundSends.push(v); break;
+      case "refund_attempt": attempt(v); if (v.id !== record.key) fail("refund attempt differs"); state.refundAttempts.push(v); break;
+      case "refund_pause":
+        object(v, "group,firstAt,lastAt,active"); whole(v.firstAt); whole(v.lastAt); bool(v.active);
+        if (v.group !== record.key || v.lastAt < v.firstAt) fail("invalid rebuild pause");
+        state.refundPauses.push(v as unknown as RefundPause); break;
+      case "refund_observation": observation(v); state.refundObservations.push(v); break;
+      case "refund_send": sendRecord(v); state.refundSends.push(v); break;
       case "sales_settings":
         object(v, "version,riskBudget,paused,conversions,lastTime,tip,nextOrder");
         if (record.key !== "global" || v.version !== 1 || v.riskBudget !== riskBudget) fail("unsupported application settings");
@@ -172,7 +180,8 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   if (state.payments.some(p => !destinations.has(p.script))) fail("payment has no invoice");
   if (state.payments.filter(p => p.active).reduce((sum, p) => sum + p.sats, 0) > MAX_MONEY)
     fail("stored payments exceed money supply");
-  const accountIds = new Set<string>(), groupIds = new Set<string>(), inputs = new Set<string>();
+  const accountIds = new Set<string>(), groupIds = new Set<string>();
+  const inputs = new Map<string, { group: string; script: string; sats: number; owner: string }>(), txids = new Set<string>();
   const merchant = new Set<string>();
   for (const d of state.refunds.merchantDestinations) {
     if (merchant.has(d.script) || destinations.has(d.script)) fail("ambiguous merchant funding destination");
@@ -189,24 +198,44 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     const a = state.accounts.find(a => a.order === g.order);
     if (!a?.destination || a.ceiling !== g.policy.buyerFeeCeiling || groupIds.has(g.id)) fail("invalid refund group relationship");
     groupIds.add(g.id);
-    if (!g.transaction) continue;
-    if (g.transaction.outputs.find(o => o.role === "buyer")?.script !== a.destination.script) fail("refund destination differs");
-    for (const c of g.transaction.inputs) {
-      if (inputs.has(c.outpoint)) fail("refund input used twice"); inputs.add(c.outpoint);
-    }
-    for (const o of g.transaction.outputs.filter(o => o.role !== "buyer")) {
+    for (const m of members(state, g)) {
+      if (!m.transaction) continue;
+      if (txids.has(m.transaction.txid)) fail("duplicate refund transaction"); txids.add(m.transaction.txid);
+      if (m.transaction.outputs.find(o => o.role === "buyer")?.script !== a.destination.script) fail("refund destination differs");
+      for (const c of m.transaction.inputs) {
+        const previous = inputs.get(c.outpoint);
+        if (previous && (previous.group !== g.id || previous.script !== c.script || previous.sats !== c.sats || previous.owner !== c.owner)) fail("refund input used by another obligation");
+        inputs.set(c.outpoint, { group: g.id, ...c });
+      }
+      for (const o of m.transaction.outputs.filter(o => o.role !== "buyer")) {
       if (destinations.has(o.script) || merchant.has(o.script) || state.accounts.some(a => a.destination?.script === o.script))
         fail("refund change destination reused");
+      }
     }
   }
+  const attemptIds = new Set<string>();
+  for (const a of state.refundAttempts) {
+    const g = state.groups.find(g => g.id === a.group);
+    if (!g?.transaction || attemptIds.has(a.id) || a.createdAt > state.settings.lastTime) fail("invalid attempt relationship"); attemptIds.add(a.id);
+    group({ ...g, charged: a.charged, rate: a.rate, policy: a.policy, phase: a.phase, transaction: a.transaction });
+    const earlier = members(state, g).filter(m => m.ordinal < a.ordinal && m.transaction).map(m => m.transaction!);
+    if (a.replacement.members.length !== earlier.length || earlier.some(t => !a.replacement.members.some(v => JSON.stringify(v) === JSON.stringify(t)))) fail("attempt omits earlier family history");
+    for (const key of Object.keys(g.policy) as (keyof RefundPolicy)[]) {
+      if (key === "buyerFeeCeiling" ? a.policy[key] > g.policy[key] : a.policy[key] !== g.policy[key]) fail("attempt changed operator limits");
+    }
+  }
+  const known = allMembers(state);
   for (const collection of [state.refundObservations, state.refundSends]) {
     const ids = new Set<string>();
     for (const value of collection) {
-      const g = state.groups.find(g => g.id === value.group);
-      if (ids.has(value.group) || !g?.transaction || g.transaction.txid !== value.txid) fail("invalid refund evidence relationship");
-      ids.add(value.group);
+      if (ids.has(value.txid) || !known.some(m => m.group === value.group && m.transaction?.txid === value.txid)) fail("invalid refund evidence relationship");
+      ids.add(value.txid);
     }
   }
+  for (const r of records.filter(r => r.kind === "refund_observation" || r.kind === "refund_send")) {
+    if (evidenceKey(state, r.value as unknown as { group: string; txid: string }) !== r.key) fail("refund evidence key differs");
+  }
   for (const s of state.refundSends) if (s.lastIntentAt > state.settings.lastTime) fail("refund intent is in the future");
+  for (const p of state.refundPauses) if (!state.groups.some(g => g.id === p.group && g.transaction) || p.lastAt > state.settings.lastTime) fail("invalid rebuild pause relationship");
   return state;
 }

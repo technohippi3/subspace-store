@@ -80,12 +80,13 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
   let now = 0;
   const journalDirectory = join(root, "journal"); mkdirSync(journalDirectory);
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-    let loseRefundReply = true, refundSends = 0;
+    let loseRefundReply = true, refundSends = 0, feeEstimateOverride: number | null = null;
     const open = () => SalesStore.open({ database: join(root, "store.db"), journalDirectory, riskBudgetSats: 100_000, refundPolicy, merchantDestinations: [feePool] },
       { clock: () => now, snapshot: destinations => core.snapshot(destinations), newDestination: core.newDestination(),
-        refunds: { resolveAddress: address => refunds.resolveAddress(address), estimateRate: target => refunds.estimateRate(target), build: request => refunds.build(request),
-          sender: { observe: transactions => sender.observe(transactions), broadcast: (tx, permission, expectedTip) => Effect.gen(function* () {
-            yield* sender.broadcast(tx, permission, expectedTip); refundSends++;
+        refunds: { resolveAddress: address => refunds.resolveAddress(address), estimateRate: target => feeEstimateOverride === null ? refunds.estimateRate(target) : Effect.succeed(feeEstimateOverride),
+          build: request => refunds.build(request), rebuildFunding: request => refunds.rebuildFunding(request),
+          sender: { observe: transactions => sender.observe(transactions), broadcast: (tx, permission, expectedTip, replacement) => Effect.gen(function* () {
+            yield* sender.broadcast(tx, permission, expectedTip, replacement); refundSends++;
             if (loseRefundReply) { loseRefundReply = false; return yield* Effect.fail(new ApplicationError({ code: "unavailable", message: "simulated lost send reply" })); }
           }) } } });
     const parentScope = yield* Effect.scope;
@@ -147,8 +148,16 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     assert.equal(excess.buyer_fee_sats, 200); assert(excess.merchant_fee_sats! > 0);
     const firstPool = yield* node.call("getrawmempool"); assert(Array.isArray(firstPool)); assert(!firstPool.includes(excess.txid));
     assert.equal((yield* store.broadcastRefund(excess.id)).status, "mempool");
+    const oldDb = new DatabaseSync(join(root, "store.db"), { readOnly: true });
+    const oldRow = oldDb.prepare("select value from records where kind='refund_group' and key=?").get(excess.id); oldDb.close(); assert(oldRow);
+    const originalRefund = JSON.parse(oldRow.value as string) as { transaction: { raw: string } };
+    const bumped = yield* store.bumpRefund(excess.id, 6000, undefined, true);
+    assert.notEqual(bumped.txid, excess.txid); assert.equal(bumped.to_buyer_sats, excess.to_buyer_sats);
+    assert.equal((yield* store.broadcastRefund(excess.id)).status, "mempool");
+    const bumpedPool = yield* node.call("getrawmempool"); assert(Array.isArray(bumpedPool));
+    assert(bumpedPool.includes(bumped.txid)); assert(!bumpedPool.includes(excess.txid));
     yield* Scope.close(lifetime, Exit.void); lifetime = yield* Scope.fork(parentScope); store = yield* Scope.provide(lifetime)(open());
-    assert.deepEqual(yield* store.reconcileRefunds(), []); assert.equal(refundSends, 1);
+    assert.deepEqual(yield* store.reconcileRefunds(), []); assert.equal(refundSends, 2);
     const settledBlocks = yield* node.call("generatetoaddress", 6, minerAddress); assert(Array.isArray(settledBlocks));
     assert.equal((yield* store.order(refundable.token)).refunded_sats, 3000);
     yield* node.call("invalidateblock", settledBlocks.at(-1));
@@ -159,9 +168,13 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     for (let i = 0; i < 7; i++) yield* node.call("generateblock", minerAddress, []);
     const reopened = yield* store.order(refundable.token);
     assert.equal(reopened.refunded_sats, 0); assert.equal(reopened.reserved_refund_sats, 3000);
-    yield* store.reconcileRefunds(); assert.equal(refundSends, 1);
-    yield* node.call("generatetoaddress", 6, minerAddress);
+    yield* store.reconcileRefunds(); assert.equal(refundSends, 2);
+    // Either signed member can win after a deep reorg. Mine the original,
+    // which conflicts with the higher-fee member currently in the mempool.
+    yield* node.call("generateblock", minerAddress, [originalRefund.transaction.raw]);
+    yield* node.call("generatetoaddress", 5, minerAddress);
     assert.equal((yield* store.order(refundable.token)).refunded_sats, 3000);
+    assert.equal((yield* store.order(refundable.token)).refund_groups[0]!.settled_txid, excess.txid);
     {
       yield* store.cancel(refundable.token);
       const cancellation = yield* store.prepareRefund("o2", "cancellation", "buyer");
@@ -174,8 +187,42 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       assert(decodedRefund.vin.some(v => object(v).txid === excess.txid), "later refund uses proven order change");
       yield* store.broadcastRefund(cancellation.id); yield* node.call("generatetoaddress", 6, minerAddress);
       const final = yield* store.order(refundable.token); assert.equal(final.refundable_sats, 0);
-      assert.equal(final.refunded_sats, 13_000); assert.equal(final.reserved_refund_sats, 0); assert.equal(refundSends, 2);
+      assert.equal(final.refunded_sats, 13_000); assert.equal(final.reserved_refund_sats, 0); assert.equal(refundSends, 3);
     }
+    // A new obligation is rebuilt through a settled conflicting ancestor.
+    yield* store.listName("rebuild@space", 1000);
+    const recoverable = yield* store.request({ handle: "rebuild@space", script_pubkey: "5120" + "4".padStart(64, "0") });
+    const recoverInvoice = yield* store.quote(recoverable.token); assert(recoverInvoice.address);
+    const recoverPayment = yield* buyer.call("sendtoaddress", recoverInvoice.address, "0.00030000");
+    yield* node.call("generatetoaddress", 6, minerAddress); yield* store.cancel(recoverable.token);
+    yield* store.setRefundDestination(recoverable.token, buyerAddress as string);
+    feeEstimateOverride = 1000; // Explicit regtest rate, giving a one-input refund.
+    const recovery = yield* store.prepareRefund("o3", "cancellation", "buyer");
+    const recoveryDb = new DatabaseSync(join(root, "store.db"), { readOnly: true });
+    const recoveryRow = recoveryDb.prepare("select value from records where kind='refund_group' and key=?").get(recovery.id); recoveryDb.close(); assert(recoveryRow);
+    const oldRecovery = JSON.parse(recoveryRow.value as string) as { transaction: { raw: string; inputs: { outpoint: string }[] } };
+    assert.equal(oldRecovery.transaction.inputs.length, 1);
+    const [sourceId, sourceIndex] = oldRecovery.transaction.inputs[0]!.outpoint.split(":"); assert.equal(sourceId, recoverPayment);
+    const returnAddress = yield* merchant.call("getrawchangeaddress", "bech32m");
+    const conflictRaw = yield* node.call("createrawtransaction", [{ txid: sourceId, vout: Number(sourceIndex) }], [{ [returnAddress as string]: "0.00029000" }]);
+    const conflictSigned = object(yield* merchant.call("signrawtransactionwithwallet", conflictRaw)); assert.equal(conflictSigned.complete, true);
+    const conflictId = yield* node.call("sendrawtransaction", conflictSigned.hex);
+    const conflictBlocks = yield* node.call("generatetoaddress", 6, minerAddress); assert(Array.isArray(conflictBlocks));
+    assert.equal((yield* store.order(recoverable.token)).refund_groups[0]!.status, "needs_rebuild");
+    const rebuilt = yield* store.rebuildRefund(recovery.id, 1000, 28_000); assert.notEqual(rebuilt.txid, recovery.txid);
+    assert.equal(rebuilt.charged_sats, 30_000); assert.equal(rebuilt.attempts[1]!.charged_sats, 28_000);
+    const rebuiltDb = new DatabaseSync(join(root, "store.db"), { readOnly: true });
+    const attemptRow = rebuiltDb.prepare("select value from records where kind='refund_attempt' and key=?").get(rebuilt.attempts[1]!.id); rebuiltDb.close(); assert(attemptRow);
+    const attemptData = JSON.parse(attemptRow.value as string) as { transaction: { inputs: { outpoint: string }[] } };
+    assert(attemptData.transaction.inputs.some(i => i.outpoint.startsWith(String(conflictId) + ":")));
+    yield* store.broadcastRefund(recovery.id); yield* node.call("generatetoaddress", 6, minerAddress);
+    assert.equal((yield* store.order(recoverable.token)).refunded_sats, 28_000);
+    yield* node.call("invalidateblock", conflictBlocks[0]);
+    yield* node.call("generateblock", minerAddress, [oldRecovery.transaction.raw]); yield* node.call("generatetoaddress", 5, minerAddress);
+    const recoveredRefund = yield* store.order(recoverable.token);
+    assert.equal(recoveredRefund.refunded_sats, 30_000); assert.equal(recoveredRefund.reserved_refund_sats, 0);
+    assert.equal(recoveredRefund.refund_groups[0]!.settled_txid, recovery.txid);
+    feeEstimateOverride = null;
     yield* store.listName("two@space", 1_000);
     const second = yield* store.request({ handle: "two@space", script_pubkey: "5120" + "2".padStart(64, "0") });
     const invoice = yield* store.quote(second.token); assert(invoice.address);
@@ -214,13 +261,16 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     const files = ["ts/src/bitcoin/rpc.ts", "ts/src/bitcoin/core.ts", "ts/src/bitcoin/validation.ts", "ts/src/bitcoin/refunds.ts",
       "ts/src/refunds/policy.ts", "ts/src/refunds/records.ts", "ts/src/refunds/types.ts", "ts/src/refunds/book.ts",
       "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts",
-      "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts"];
+      "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
+      "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts"];
     writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
       files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
       checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
         "replacement", "mempool-entry-time-preserved", "mempool-entry-height-reconstructed", "missing-mempool-without-rebroadcast",
         "refund-preparation-with-capped-buyer-fee", "refund-from-proven-order-change", "application-refund-send",
-        "lost-refund-reply-and-store-restart", "refund-settlement-6-5-6", "deep-refund-reorg-and-remining"] }, null, 2), { mode: 0o600 });
+        "lost-refund-reply-and-store-restart", "refund-settlement-6-5-6", "deep-refund-reorg-and-remining",
+        "refund-fee-bump-retains-inputs-and-buyer-output", "older-family-member-can-win-after-reorg", "rebuild-depends-on-settled-conflict",
+        "conflict-ancestor-loss-invalidates-rebuild"] }, null, 2), { mode: 0o600 });
     t.diagnostic(`Core 31.2 passed; retained artifacts: regtest/.run/${name}`);
   })));
   await stop();

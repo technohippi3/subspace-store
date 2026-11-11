@@ -52,7 +52,9 @@ independent model. The payment adapter now also has isolated Core 31.2
 regtest qualification (`CORE-SPEC.md`). Refund preparation now has durable
 reservations and signed Core regtest evidence (`REFUND-PREPARATION.md`).
 First-attempt sends and settlement/reorg reconciliation now have runtime
-and Core evidence (`REFUND-SENDING.md`). Multi-family refunds, registry callbacks and
+and Core evidence (`REFUND-SENDING.md`), followed by family maxima, fee
+bumps and exclusive rebuilds (`REFUND-FAMILIES.md`). Refund deadlines/general
+alerts, registry callbacks and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 

@@ -4,12 +4,13 @@ import { rate } from "./policy.ts";
 import { group as validateGroup } from "./records.ts";
 import type { BuildRequest, PreparedRefund, RefundGroup } from "./types.ts";
 import { balance } from "./observations.ts";
+import { allMembers } from "./families.ts";
 
 export function heldScripts(state: State): string[] {
   return [...state.orders.flatMap(o => o.destination ? [o.destination.script] : []),
     ...state.accounts.flatMap(a => a.destination ? [a.destination.script] : []),
     ...state.refunds.merchantDestinations.map(d => d.script),
-    ...state.groups.flatMap(g => g.transaction?.outputs.filter(o => o.role !== "buyer").map(o => o.script) ?? [])];
+    ...allMembers(state).flatMap(m => m.transaction?.outputs.filter(o => o.role !== "buyer").map(o => o.script) ?? [])];
 }
 export function configuration(settings: RefundSettings): RefundSettings {
   return { version: 1, policy: Object.fromEntries(Object.entries(settings.policy).sort(([a], [b]) => a.localeCompare(b))) as unknown as RefundSettings["policy"],
@@ -34,19 +35,24 @@ export function reserve(state: State, id: string, kind: RefundGroup["kind"], cau
     phase: "reserved", transaction: null };
   validateGroup(result); state.groups.push(result); return result;
 }
+export function fundingClaims(state: State, id: string) {
+  const order = state.orders.find(o => o.id === id)!;
+  const orderCoins = state.payments.filter(p => p.active && p.confirmations >= 6 && p.script === order.destination!.script)
+    .map(p => ({ outpoint: p.outpoint, script: p.script, sats: p.sats }));
+  const merchantScripts = state.refunds.merchantDestinations.map(d => d.script);
+  for (const prior of allMembers(state)) for (const [index, out] of (prior.transaction?.outputs ?? []).entries()) {
+    if (out.role === "merchant_change") merchantScripts.push(out.script);
+    if (state.groups.find(g => g.id === prior.group)!.order === id && out.role === "order_change") orderCoins.push({ outpoint: `${prior.transaction!.txid}:${index}`, script: out.script, sats: out.sats });
+  }
+  return { orderCoins, merchantScripts };
+}
 export function buildRequest(state: State, g: RefundGroup): BuildRequest {
   if (g.phase !== "reserved" || available(state, g.order, g.id) < g.charged) fail("refund credit is unavailable");
   const order = state.orders.find(o => o.id === g.order)!, account = state.accounts.find(a => a.order === g.order)!;
   if (!account.destination || (g.kind === "cancellation" && !["cancelled", "refund_due"].includes(order.status))) fail("refund is no longer eligible");
-  const orderCoins = state.payments.filter(p => p.active && p.confirmations >= 6 && p.script === order.destination!.script)
-    .map(p => ({ outpoint: p.outpoint, script: p.script, sats: p.sats }));
-  const merchantScripts = state.refunds.merchantDestinations.map(d => d.script);
-  for (const prior of state.groups) for (const [index, out] of (prior.transaction?.outputs ?? []).entries()) {
-    if (out.role === "merchant_change") merchantScripts.push(out.script);
-    if (prior.order === g.order && out.role === "order_change") orderCoins.push({ outpoint: `${prior.transaction!.txid}:${index}`, script: out.script, sats: out.sats });
-  }
+  const { orderCoins, merchantScripts } = fundingClaims(state, g.order);
   return { group: structuredClone(g), destination: { ...account.destination }, orderCoins, merchantScripts,
-    forbiddenInputs: state.groups.flatMap(prior => prior.transaction?.inputs.map(c => c.outpoint) ?? []), forbiddenScripts: heldScripts(state) };
+    forbiddenInputs: allMembers(state).flatMap(prior => prior.transaction?.inputs.map(c => c.outpoint) ?? []), forbiddenScripts: heldScripts(state) };
 }
 export function recordBuilt(g: RefundGroup, request: BuildRequest, transaction: PreparedRefund): void {
   validateGroup({ ...g, phase: "built", transaction });

@@ -6,7 +6,9 @@ has isolated Core 31.2 regtest qualification. Refund destinations,
 durable reservations and explicit-input signed refund preparation now run
 in tests (`../docs/spec/REFUND-PREPARATION.md`). First-attempt sends and
 settlement/reorg accounting are now qualified in `../docs/spec/REFUND-SENDING.md`.
-Multi-family refunds, registry callbacks and full application recovery are still to
+Family maxima, fee bumps and exclusive rebuilds now have separate coverage
+in `../docs/spec/REFUND-FAMILIES.md`. Refund deadlines/general alerts,
+registry callbacks and full application recovery are still to
 build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -82,8 +84,18 @@ reservation. Admission subtracts only settled refunds. Conflicting spends
 keep their reservations and a sticky rebuild guard, without an independent
 replacement. Group and intent acknowledgments are reported separately.
 
-Fee bumps, exclusive family replacements, deadline tracking, durable owner
-alerts/losses and full recovery remain. Unconverted excess refunds and the
+All attempts remain journaled. A group's reservation is its historical
+maximum, and settlement counts only the member that actually pays. Fee
+bumps retain the parent's inputs; fresh families require a currently settled
+conflict and exclusivity evidence against every older member. Core binds
+ancestor bytes to transaction IDs before signing and broadcasting. Unknown
+or mixed-ownership recovery funding pauses the obligation rather than
+authorizing an independent payment. Only the latest previously attempted
+member is retried per group. Views expose per-member positions, group
+maximum and settled charges, without raw transactions or proofs.
+
+The direct-ancestor funding planner is deliberately conservative. Deadlines,
+general durable alerts/losses and full recovery remain. Unconverted excess refunds and the
 T3 skipped-script operator alert remain unsupported. Core qualification now
 includes application sends, a lost reply and store restart, settlement
 changes and deep reorg/re-mining, as well as proven change funding. These
@@ -139,8 +151,8 @@ this storage schema's acknowledged position for coordinated snapshots.
 
 The storage component's records are generic JSON. The application now adds
 domain validation and quote/cancellation instruction gates. Real chain
-observation and first-attempt refund sends are qualified; multi-family
-refunds and controller HTTP/whole-host recovery remain.
+observation and exclusive family sends are qualified; refund deadlines and
+controller HTTP/whole-host recovery remain.
 Restored metadata requires reconciliation before the application can reopen
 admission. The backend is an existing filesystem directory that must live
 off-host for actual host-loss recovery; no object-store adapter is claimed.
@@ -172,11 +184,13 @@ the pinned binary from `../regtest/fetch-bitcoin.sh`, plus unshare and ip.
 Hosted CI uses `test:core:ci` for privileged namespace creation followed by
 an immediate drop to the original unprivileged UID/GID.
 The application passes every historical payment destination to the adapter.
-It now also qualifies first-attempt signing/sending, uncertain replies,
-store restart, settlement/reorg accounting and proven change funding.
+It also qualifies signing/sending, uncertain replies, store restart,
+settlement/reorg accounting, proven change funding, fee bumps and direct
+conflict-dependent families. Either an older or newer saved member may
+win after a reorg; the ledger counts the group once.
 Complete stack acceptance remains.
 
-Next add refund family/rebuild and deadline handling, registry operations, complete order
+Next add refund deadlines and general alerts/loss handling, registry operations, complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

@@ -77,7 +77,8 @@ cases remain required production work wherever full recovery is untested.
 fee policy and explicit-input signing. `REFUND-SENDING.md` adds a
 programmatic sender and first-attempt chain reconciliation. Admission now
 subtracts settled refunds, restoring that charge on a reorg. Multiple
-attempt/family handling remains unfinished. K5's complete refund/resume scenario, K8/K9/K20's full
+attempts and exclusive family rebuilds are now described in `REFUND-FAMILIES.md`.
+K5's complete refund/resume scenario, K8/K9/K20's full
 restore scenarios and K11/K12/K17's complete refund rules remain release requirements.
 The pilot release gate remains blocked.
 

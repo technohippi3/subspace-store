@@ -4,8 +4,8 @@ This is a partial implementation of the existing refund rules, not a new
 refund policy. `PAYMENT-SPEC.md` and K13–K17 in `PILOT-SPEC.md` govern amounts,
 fee allocation and funding. The independent model predates this component.
 This component prepares a group's first signed attempt. `REFUND-SENDING.md`
-now adds first-attempt sending and settlement/reorg reconciliation. Raw
-transaction export, fee bumps and safe conflict rebuilds remain unbuilt.
+now adds sending and settlement/reorg reconciliation. `REFUND-FAMILIES.md`
+adds fee bumps and exclusive rebuilds. Raw transaction export remains unbuilt.
 Paid sales remain closed.
 
 ## Policy and destinations
@@ -83,8 +83,9 @@ controller/chain reconciliation are implemented.
 
 `REFUND-SENDING.md` now adds journaled intent, live acknowledgment,
 uncertain-result recovery and settlement/reorg accounting for the first
-attempt. Multi-family observations, mutually exclusive fee bumps/rebuilds,
-operator alerts/losses and maintenance/full recovery tests remain. Deadlines K11/K12 need an
+attempt. `REFUND-FAMILIES.md` extends it to all saved members and conservative
+exclusive rebuilds. General operator alerts/losses and maintenance/full
+recovery tests remain. Deadlines K11/K12 need an
 obligation lifecycle that survives several excess and cancellation refunds;
 a timestamp on this preparation group is not deadline implementation.
 Admission now subtracts observed settled refunds and restores the charge

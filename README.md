@@ -45,7 +45,9 @@ The payment adapter now has isolated Bitcoin Core 31.2 regtest qualification
 (`docs/spec/CORE-SPEC.md`). Durable refund preparation now has signed Core
 regtest coverage (`docs/spec/REFUND-PREPARATION.md`). First-attempt sends,
 lost replies and settlement/reorg accounting are now qualified separately
-(`docs/spec/REFUND-SENDING.md`). Multi-family refunds, registry integration and full application
+(`docs/spec/REFUND-SENDING.md`). Family maxima, fee bumps and exclusive
+rebuilds now have separate coverage (`docs/spec/REFUND-FAMILIES.md`).
+Refund deadlines/general alerts, registry integration and full application
 recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 
