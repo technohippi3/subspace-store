@@ -7,8 +7,9 @@ import { SalesStore, type Adapters } from "../../src/application/store.ts";
 import { ApplicationError, type Output } from "../../src/application/records.ts";
 import { FileJournal } from "../../src/storage/journal.ts";
 import type { Entry } from "../../src/storage/codec.ts";
+import type { RefundPolicy } from "../../src/refunds/policy.ts";
 
-export const refundPolicy = { minimumRate: 1000, maximumRate: 100_000, fallbackRate: 2000,
+export const refundPolicy: RefundPolicy = { minimumRate: 1000, maximumRate: 100_000, fallbackRate: 2000,
   buyerFeeCeiling: 200, confirmationTarget: 6, maximumFee: 10_000, maximumRefund: 100_000 };
 export const script = "5120" + "1".padStart(64, "0");
 export class Journal extends FileJournal {

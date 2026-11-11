@@ -56,7 +56,8 @@ and Core evidence (`REFUND-SENDING.md`), followed by family maxima, fee
 bumps and exclusive rebuilds (`REFUND-FAMILIES.md`). Cancellation/refund-due
 clocks and durable deficit/loss reporting now have runtime coverage
 (`REFUND-OBLIGATIONS.md`). Unsigned Core size/fee measurement is separately
-qualified (`REFUND-ESTIMATES.md`). Application excess deadline assessment, registry callbacks and
+qualified (`REFUND-ESTIMATES.md`). Converted/issuing excess assessment and
+deadlines now connect them (`EXCESS-DEADLINES.md`). Unconverted accounting, registry callbacks and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 

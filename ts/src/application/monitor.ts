@@ -15,7 +15,7 @@ export interface OrderMonitor {
 }
 export interface BroadcastReceipt { group: string; txid: string; at: number }
 export interface OperatorAlert {
-  id: number; order: string; kind: Reason | "refund_deadline"; amount: number; at: number; deadline: number | null;
+  id: number; order: string; kind: Reason | "refund_deadline" | "refund_assessment"; amount: number; at: number; deadline: number | null;
 }
 export function monitor(state: State, order: string): OrderMonitor {
   let value = state.monitors.find(m => m.order === order);
@@ -30,7 +30,7 @@ export function deficits(state: State, order: Order): { [K in Reason]: number } 
   return { issuance: order.status === "converted" ? shortage : 0,
     post_issuance_deficit: order.status === "issuing" ? shortage : 0, refunds: balance(state, order).exposure };
 }
-function alert(state: State, order: string, kind: OperatorAlert["kind"], amount: number, deadline: number | null = null) {
+export function alert(state: State, order: string, kind: OperatorAlert["kind"], amount: number, deadline: number | null = null) {
   state.alerts.push({ id: (state.alerts.at(-1)?.id ?? 0) + 1, order, kind, amount, at: state.settings.lastTime, deadline });
 }
 export function advance(state: State, now: number) {
@@ -47,13 +47,19 @@ export function tick(state: State, now: number) {
     }
   }
 }
-export function noteBroadcast(state: State, group: string, txid: string) {
+export function noteBroadcast(state: State, group: string, txid: string, at = state.settings.lastTime) {
   if (!state.broadcastReceipts.some(r => r.txid === txid))
-    state.broadcastReceipts.push({ group, txid, at: state.settings.lastTime });
+    state.broadcastReceipts.push({ group, txid, at });
 }
 /** Called only with a fresh coherent chain observation, or after a mutation
  * using that observation. An uncertain intent never proves a broadcast. */
-export function reconcile(state: State) {
+export function unserved(state: State, order: Order) {
+  const m = state.monitors.find(m => m.order === order.id);
+  const pending = state.groups.filter(g => g.order === order.id && g.phase !== "void" && !settled(state, g))
+    .reduce((n, g) => n + Math.max(0, reservation(state, g) - (m?.serviced.find(s => s.group === g.id)?.charged ?? 0)), 0);
+  return Math.max(0, balance(state, order).available + pending);
+}
+export function reconcile(state: State, eligibleExcess: ReadonlySet<string> = new Set(), observedAt = state.settings.lastTime) {
   for (const facts of state.refundObservations) if (facts.seen !== "absent") noteBroadcast(state, facts.group, facts.txid);
   for (const order of state.orders) {
     const m = monitor(state, order.id), values = deficits(state, order);
@@ -63,31 +69,33 @@ export function reconcile(state: State) {
         if (!m.reasons.includes(reason)) m.reasons.push(reason);
       } else m.reasons = m.reasons.filter(r => r !== reason);
     }
-    // Cancellation/refund-due only. Excess clocks await read-only fee assessment.
-    const groups = state.groups.filter(g => g.order === order.id && g.phase !== "void");
-    const pending = groups.filter(g => !settled(state, g)).reduce((n, g) => n +
-      Math.max(0, reservation(state, g) - (m.serviced.find(s => s.group === g.id)?.charged ?? 0)), 0);
     const outstanding = m.deadlines.reduce((n, d) => n + d.remaining, 0);
-    const needed = Math.max(0, balance(state, order).available + pending) - outstanding;
-    if (needed > 0 && ["cancelled", "refund_due"].includes(order.status) && state.accounts.find(a => a.order === order.id)?.destination) {
+    const needed = unserved(state, order) - outstanding;
+    if (needed > 0 && (["cancelled", "refund_due"].includes(order.status) || (claims(order) && eligibleExcess.has(order.id))) && state.accounts.find(a => a.order === order.id)?.destination) {
+      const dueAt = claims(order) ? state.assessments.find(a => a.order === order.id)!.at : observedAt;
       m.deadlines.push({ id: (m.deadlines.at(-1)?.id ?? 0) + 1, principal: needed, remaining: needed,
-        dueAt: state.settings.lastTime, completedAt: null, incident: false });
+        dueAt, completedAt: null, incident: false });
     }
   }
-  // Mark late debt before applying a newly learned broadcast, including after downtime.
-  tick(state, state.settings.lastTime);
   for (const g of state.groups) {
     const m = monitor(state, g.order);
-    const amount = Math.max(0, ...members(state, g).filter(v => state.broadcastReceipts.some(r => r.txid === v.transaction?.txid)).map(v => v.charged));
-    const previous = m.serviced.find(s => s.group === g.id);
-    let credit = Math.max(0, amount - (previous?.charged ?? 0));
-    if (!credit) continue;
-    if (previous) previous.charged = amount; else m.serviced.push({ group: g.id, charged: amount });
-    for (const d of m.deadlines) {
-      const used = Math.min(d.remaining, credit); d.remaining -= used; credit -= used;
-      if (used && !d.remaining) d.completedAt = state.settings.lastTime;
+    for (const receipt of state.broadcastReceipts.filter(r => r.group === g.id).sort((a, b) => a.at - b.at)) {
+      const amount = members(state, g).find(v => v.transaction?.txid === receipt.txid)!.charged;
+      const previous = m.serviced.find(s => s.group === g.id);
+      let credit = Math.max(0, amount - (previous?.charged ?? 0));
+      if (!credit) continue;
+      if (previous) previous.charged = amount; else m.serviced.push({ group: g.id, charged: amount });
+      for (const d of m.deadlines) {
+        const used = Math.min(d.remaining, credit), at = Math.max(d.dueAt, receipt.at);
+        if (used && !d.incident && at - d.dueAt > 86400) {
+          d.incident = true; alert(state, m.order, "refund_deadline", d.remaining, d.id);
+        }
+        d.remaining -= used; credit -= used;
+        if (used && !d.remaining) d.completedAt = at;
+      }
     }
   }
+  tick(state, state.settings.lastTime);
 }
 export function recordLoss(state: State, id: string, reason: Reason) {
   const order = state.orders.find(o => o.id === id) ?? fail("no such order", "not_found");
@@ -125,7 +133,7 @@ export function decodeReceipt(value: unknown): asserts value is BroadcastReceipt
 }
 export function decodeAlert(value: unknown): asserts value is OperatorAlert {
   fields(value, "id,order,kind,amount,at,deadline"); whole(value.id, 1); sats(value.amount); whole(value.at);
-  if (typeof value.order !== "string" || ![...reasons, "refund_deadline"].includes(String(value.kind)) ||
+  if (typeof value.order !== "string" || ![...reasons, "refund_deadline", "refund_assessment"].includes(String(value.kind)) ||
       (value.kind === "refund_deadline") !== (value.deadline !== null)) fail("invalid operator alert");
   if (value.deadline !== null) whole(value.deadline, 1);
 }

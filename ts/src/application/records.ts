@@ -8,6 +8,7 @@ import { observation, sendRecord } from "../refunds/observations.ts";
 import { allMembers, attempt, evidenceKey, members } from "../refunds/families.ts";
 import { decodeAlert, decodeMonitor, decodeReceipt, validateMonitoring,
   type BroadcastReceipt, type OperatorAlert, type OrderMonitor } from "./monitor.ts";
+import { assessment, type ExcessAssessment } from "./assessments.ts";
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly code: "invalid" | "refused" | "unavailable" | "not_found";
@@ -50,6 +51,7 @@ export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDest
 export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[];
   refunds: RefundSettings; accounts: RefundAccount[]; groups: RefundGroup[];
   monitors: OrderMonitor[]; broadcastReceipts: BroadcastReceipt[]; alerts: OperatorAlert[];
+  assessments: ExcessAssessment[];
   refundObservations: RefundObservation[]; refundSends: RefundSend[]; refundAttempts: RefundAttempt[]; refundPauses: RefundPause[] }
 export interface Record { kind: string; key: string; value: Json }
 export const claims = (order: Order): boolean => order.status === "converted" || order.status === "issuing";
@@ -109,6 +111,7 @@ function payment(value: unknown): asserts value is Payment {
 export function encode(state: State): Record[] {
   return [ { kind: "sales_settings", key: "global", value: state.settings as unknown as Json },
     { kind: "refund_settings", key: "global", value: state.refunds as unknown as Json },
+    ...state.assessments.map(value => ({ kind: "excess_assessment", key: value.order, value: value as unknown as Json })),
     ...state.monitors.map(value => ({ kind: "order_monitor", key: value.order, value: value as unknown as Json })),
     ...state.broadcastReceipts.map(value => ({ kind: "refund_receipt", key: value.txid, value: value as unknown as Json })),
     ...state.alerts.map(value => ({ kind: "operator_alert", key: String(value.id), value: value as unknown as Json })),
@@ -127,13 +130,14 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   for (const d of refunds.merchantDestinations) destination(d);
   const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
     lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [],
-    refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [],
+    refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [], assessments: [],
     refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
   for (const record of records) {
     // Commands mutate a working copy. The original records remain the
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
+      case "excess_assessment": assessment(v); if (v.order !== record.key) fail("assessment key differs"); state.assessments.push(v); break;
       case "order_monitor": decodeMonitor(v); if (v.order !== record.key) fail("monitor key differs"); state.monitors.push(v); break;
       case "refund_receipt": decodeReceipt(v); if (v.txid !== record.key) fail("receipt key differs"); state.broadcastReceipts.push(v); break;
       case "operator_alert": decodeAlert(v); if (String(v.id) !== record.key) fail("alert key differs"); state.alerts.push(v); break;
@@ -249,5 +253,12 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   for (const s of state.refundSends) if (s.lastIntentAt > state.settings.lastTime) fail("refund intent is in the future");
   for (const p of state.refundPauses) if (!state.groups.some(g => g.id === p.group && g.transaction) || p.lastAt > state.settings.lastTime) fail("invalid rebuild pause relationship");
   validateMonitoring(state);
+  const assessed = new Set<string>();
+  for (const a of state.assessments) {
+    if (!state.orders.some(o => o.id === a.order) || assessed.has(a.order) || a.at > state.settings.lastTime ||
+        (a.rate !== null && a.rate < state.refunds.policy.minimumRate) ||
+        (a.rate !== null && a.rate > state.refunds.policy.maximumRate)) fail("invalid assessment relationship");
+    assessed.add(a.order);
+  }
   return state;
 }

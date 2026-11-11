@@ -2,10 +2,10 @@
 
 This implements the cancellation/refund-due portion of the pilot's
 24-hour broadcast target and the fixed-price deficit/loss rules. It does
-not complete K11/K12 production coverage: excess deadlines still require
-a read-only estimated fee and the excess minimum before eligibility can
-be established. The independent pilot model remains authoritative for
-that policy. No price, risk budget or deployment is selected here.
+not complete K11/K12 production coverage. Converted/issuing excess clocks
+now follow in `EXCESS-DEADLINES.md`; unconverted accounting and the full
+registry lifecycle remain. The independent pilot model remains authoritative
+for the policy. No price, risk budget or deployment is selected here.
 
 ## Amounts and time
 

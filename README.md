@@ -50,8 +50,9 @@ rebuilds now have separate coverage (`docs/spec/REFUND-FAMILIES.md`).
 Cancellation/refund-due deadlines and durable deficit/loss reporting now
 have separate runtime coverage (`docs/spec/REFUND-OBLIGATIONS.md`). A
 read-only Core PSBT size/fee primitive now has separate qualification
-(`docs/spec/REFUND-ESTIMATES.md`). Application excess deadline assessment,
-registry integration and full application recovery
+(`docs/spec/REFUND-ESTIMATES.md`). Converted/issuing excess assessment and
+deadlines now connect those components (`docs/spec/EXCESS-DEADLINES.md`).
+Unconverted outgoing-spend accounting, registry integration and full application recovery
 remain. The Python
 store has the H12 process-ownership safety amendment.
 

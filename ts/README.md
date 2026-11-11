@@ -10,7 +10,8 @@ Family maxima, fee bumps and exclusive rebuilds now have separate coverage
 in `../docs/spec/REFUND-FAMILIES.md`. Cancellation/refund-due clocks and
 durable deficit/loss reporting are specified in `../docs/spec/REFUND-OBLIGATIONS.md`.
 Read-only unsigned Core template measurement follows in `../docs/spec/REFUND-ESTIMATES.md`.
-Application excess deadline assessment, registry callbacks and full application recovery are still to
+Converted/issuing excess clocks now use that assessment in `../docs/spec/EXCESS-DEADLINES.md`.
+Unconverted outgoing-spend accounting, registry callbacks and full application recovery are still to
 build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -96,8 +97,8 @@ authorizing an independent payment. Only the latest previously attempted
 member is retried per group. Views expose per-member positions, group
 maximum and settled charges, without raw transactions or proofs.
 
-The direct-ancestor funding planner is deliberately conservative. Excess
-deadline assessment and full recovery remain. Unconverted excess refunds and the
+The direct-ancestor funding planner is deliberately conservative. Full
+recovery remains. Unconverted excess refunds and the
 T3 skipped-script operator alert remain unsupported. Core qualification now
 includes application sends, a lost reply and store restart, settlement
 changes and deep reorg/re-mining, as well as proven change funding. These
@@ -158,7 +159,10 @@ first-known broadcasts, permanent missed-target incidents, durable alerts
 and recorded losses now persist through restart. Existing clocks can be
 ticked during a Core outage through operator inspection, without signing
 or sending. A future runner must poll this; no background scheduler or
-operator HTTP endpoint ships yet. Excess clocks and controller HTTP/whole-host
+operator HTTP endpoint ships yet. Converted/issuing excess clocks now admit
+the inclusive estimated fee-plus-546 minimum and retain unknown-assessment
+notices, earlier observation times and existing deadlines through failures.
+Unconverted accounting and controller HTTP/whole-host
 recovery remain.
 Restored metadata requires reconciliation before the application can reopen
 admission. The backend is an existing filesystem directory that must live
@@ -203,7 +207,13 @@ measure spent wallet receipts but does not authorize spending them. Output
 values are placeholders; only shape is measured. Actual refund signing
 still measures and validates the final transaction.
 
-Next connect coin/change planning and excess fee/deadline assessment, registry operations, complete order
+The canonical excess estimate measures receipt metadata and P2TR change
+shapes and allows one potential merchant fee input. It does not depend on
+spendable fee coins or allocate addresses. Actual signing still enforces
+funding, fee caps and the measured minimum. Unknown assessments are durable
+operator notices rather than claims that excess is too small.
+
+Next add unconverted outgoing-spend accounting, registry operations, complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

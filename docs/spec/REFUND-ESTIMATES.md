@@ -3,7 +3,8 @@
 This adds the read-only Core measurement primitive needed before excess
 deadline assessment. It does not yet select the refund's coins/change,
 evaluate the excess minimum, start excess clocks or complete K11/K12.
-Those application rules remain release gaps. No deployment amounts are
+Converted/issuing application admission follows in `EXCESS-DEADLINES.md`;
+unconverted accounting remains a release gap. No deployment amounts are
 chosen here. The store continues to use Effect for its runtime operations;
 the estimator returns a typed Effect and has no new dependency.
 

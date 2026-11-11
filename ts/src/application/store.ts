@@ -11,7 +11,8 @@ import type { RefundAdapters, RefundGroup } from "../refunds/types.ts";
 import { applyObservations, balance, refundStatus, sendable, settled, winner } from "../refunds/observations.ts";
 import { allMembers, evidenceKey, members, preferred, reservation } from "../refunds/families.ts";
 import { attemptRequest, finishAttempt, rebuildRequest, reserveAttempt } from "../refunds/attempts.ts";
-import { advance, noteBroadcast, reconcile, recordLoss, tick, type Reason } from "./monitor.ts";
+import { advance, noteBroadcast, reconcile, recordLoss, tick, unserved, type Reason } from "./monitor.ts";
+import { assess } from "./assessments.ts";
 
 export interface Adapters {
   readonly clock: () => number;
@@ -82,9 +83,12 @@ export class SalesStore {
           yield* verified(() => applyObservations(current.state, observations));
         }
         yield* verified(() => refresh(current.state, self.adapters.clock(), snapshot));
-        yield* verified(() => reconcile(current.state));
+        const observedAt = current.state.settings.lastTime;
+        for (const fact of current.state.refundObservations) if (fact.seen !== "absent") noteBroadcast(current.state, fact.group, fact.txid, observedAt);
+        const eligibleExcess = yield* assess(current.state, self.adapters.refunds, snapshot.tipHash, self.adapters.clock);
+        yield* verified(() => reconcile(current.state, eligibleExcess, observedAt));
         yield* self.save(current.records, current.state);
-        return yield* self.load();
+        return { ...(yield* self.load()), tipHash: snapshot.tipHash };
       }
       return yield* checked(() => fail("payment and refund observations disagree on the chain tip", "unavailable"));
     });
@@ -129,6 +133,9 @@ export class SalesStore {
         refund_address: refund?.destination?.address ?? null,
         buyer_refund_fee_ceiling_sats: refund?.ceiling ?? null,
         excess_minimum: "Estimated refund fee plus 546 sats; smaller excess is not refunded.",
+        excess_assessment: claims(order) && unserved(state, order) > 0 ? state.assessments.filter(a => a.order === order.id).map(a => ({ status: a.status,
+          assessed_at: a.at, principal_sats: a.principal, estimated_fee_sats: a.fee,
+          minimum_sats: a.fee === null ? null : a.fee + 546 }))[0] ?? null : null,
         refundable_sats: available(state, order.id),
         refunded_sats: funds.refunded, reserved_refund_sats: funds.reserved, refund_exposure_sats: funds.exposure,
         refund_groups: yield* Effect.forEach(state.groups.filter(g => g.order === order.id), g => self.groupView(state, g)),
@@ -245,7 +252,7 @@ export class SalesStore {
       yield* verified(() => tick(state, self.adapters.clock()));
       yield* self.save(records, state); yield* self.storage.flush();
       const position = yield* self.storage.status();
-      return { orders: structuredClone(state.monitors), alerts: structuredClone(state.alerts),
+      return { orders: structuredClone(state.monitors), alerts: structuredClone(state.alerts), assessments: structuredClone(state.assessments),
         acknowledged: position.acknowledged === position.seq };
     }));
   }
@@ -288,7 +295,7 @@ export class SalesStore {
     const self = this;
     return self.queue.withPermit(Effect.gen(function* () {
       const initial = yield* self.load(); yield* checked(() => self.find(initial.state, token));
-      const { records, state } = yield* self.refresh(), order = yield* checked(() => self.find(state, token));
+      const { records, state, tipHash } = yield* self.refresh(), order = yield* checked(() => self.find(state, token));
       const adapters = yield* checked(() => self.refundAdapters());
       yield* checked(() => {
         if (typeof address !== "string" || !address || address.length > 256) fail("invalid refund address", "invalid");
@@ -305,6 +312,8 @@ export class SalesStore {
         advance(state, self.adapters.clock());
         reconcile(state);
       });
+      const eligible = yield* assess(state, adapters, tipHash, self.adapters.clock);
+      yield* verified(() => reconcile(state, eligible));
       yield* self.save(records, state); yield* self.storage.flush(); return yield* self.view(state, order);
     }));
   }

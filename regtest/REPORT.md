@@ -1357,3 +1357,65 @@ e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin
 be97a0efce8e11d3b3d8454be45e7a2faa6fd5bc546f8f85b8e578cb078dac32  ts/src/application/monitor.ts
 0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
 ```
+
+
+## Converted excess deadlines, 2026-11-11
+
+Core 31.2 run `core-adapter-2026-11-11T18-15-15-921Z-92965e22` passes 25 checks
+bound to the 24 source digests below. This uses fresh isolated regtest
+wallets and controlled application time. The earlier unsigned size,
+refund send, family/reorg and cancellation qualification remains in the
+run; the new store adapter now assesses excess eligibility too.
+
+The only configured merchant fee funding is locked before admitting a
+3,000-sat excess. Its estimated fee exceeds the disclosed buyer ceiling,
+yet admission starts the excess clock before preparation. Wallet
+information and the input locks remain unchanged by assessment. The
+funding is then unlocked for preparation/send. The actual
+broadcast services that excess once. A later cancellation starts a
+separate 10,000-sat clock and completes it at the later broadcast time.
+
+Default suites separately exercise the exact fee-plus-546 boundary,
+later amounts, rising/missing estimates, explicit fallback policy, invalid
+rates/tips, journal outages, restart, corrupt acknowledged assessments,
+and a slow unrelated fee RPC crossing the deadline boundary. A captured
+on-time observation stays on time and admission of newly refund-due money
+keeps the original observation time. Those are model/simulated-RPC
+application tests; they are not claims about real network RPC durations.
+
+Local TypeScript tests pass 199 cases. Development coverage reports 254
+fixed-price cases with no gaps and 40 deferred cases. The pilot production
+gate still refuses for 114 cases, including complete K11/K12 coverage.
+Unconverted outgoing-spend accounting, registry lifecycle and full
+application recovery remain. Signing still independently enforces actual
+funding, fees and the measured minimum; canonical eligibility authorizes
+no spend. No public-pilot or whole-host acceptance is claimed.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+f64968a714d684b3c119d7287589b224fa107fc8218364aa088a7ef54f10c0f1  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+9fb2512bba7c820ebcab8c11ab7745fe63979bde2cbeed1c8f07e381574e0646  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a  ts/src/refunds/types.ts
+3a5af8f22082157a172d21dcba7b3e8bf8bad15681c1147f370979dbe18fb7ad  ts/src/refunds/book.ts
+6b3a98e6a66fae8e6c29b9bce56b40f5044ec10a114f6cc8b400fda8c86b8b9f  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+eac4aa3cf8aeff83b5c6ffb9d00e5361b51e4c692bfd936b5e48ea24acb36f4f  ts/src/application/records.ts
+e0b0669aa6ad9cf63838a62f4fc7895eaedba9dc52312fcb875fc8109a344ab8  ts/regtest/core.test.ts
+7d10c5be62c77a6915c9b5212364c93203cbc90eb01e69b02ecb2939c5a8a5c1  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+32052a787beb10de9d8c2b0f97aa9734d6cad43402e4312ee72a29a5644d5c7f  ts/src/application/monitor.ts
+0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
+d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin/excess-fee.ts
+09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0  ts/src/application/assessments.ts
+```

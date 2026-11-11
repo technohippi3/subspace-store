@@ -6,22 +6,25 @@ export class Obligations {
   time = 0;
   evaluate(now: number, eligible: boolean, free: number,
            open: readonly { group: string; maximum: number }[],
-           sent: readonly { group: string; amount: number }[]) {
+           sent: readonly { group: string; amount: number; at?: number }[], excessFee?: number | null) {
     if (!Number.isSafeInteger(now) || now < this.time) throw Error("invalid time");
     this.time = now;
     const due = Math.max(0, free + open.reduce((n, g) => n + Math.max(0, g.maximum - (this.credited.get(g.group) ?? 0)), 0));
     const outstanding = this.debts.reduce((n, d) => n + d.left, 0);
-    if (eligible && due > outstanding) this.debts.push({ amount: due - outstanding, left: due - outstanding, start: now, sent: null, incident: false });
-    for (const d of this.debts) if (d.left && now - d.start > 86400) d.incident = true;
+    const minimumMet = excessFee === undefined || (excessFee !== null && due >= excessFee + 546);
+    if (eligible && minimumMet && due > outstanding) this.debts.push({ amount: due - outstanding, left: due - outstanding, start: now, sent: null, incident: false });
     for (const receipt of sent) {
       let credit = Math.max(0, receipt.amount - (this.credited.get(receipt.group) ?? 0));
       this.credited.set(receipt.group, Math.max(receipt.amount, this.credited.get(receipt.group) ?? 0));
       for (const d of this.debts) {
-        const used = Math.min(d.left, credit); d.left -= used; credit -= used;
-        if (used && !d.left) d.sent = now;
+        const at = Math.max(d.start, receipt.at ?? now), used = Math.min(d.left, credit);
+        if (used && at - d.start > 86400) d.incident = true;
+        d.left -= used; credit -= used;
+        if (used && !d.left) d.sent = at;
       }
       // Surplus from an earlier refund is never credit against future debt.
     }
+    for (const d of this.debts) if (d.left && now - d.start > 86400) d.incident = true;
     return structuredClone(this.debts);
   }
 }

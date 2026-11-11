@@ -84,7 +84,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     const open = () => SalesStore.open({ database: join(root, "store.db"), journalDirectory, riskBudgetSats: 100_000, refundPolicy, merchantDestinations: [feePool] },
       { clock: () => now, snapshot: destinations => core.snapshot(destinations), newDestination: core.newDestination(),
         refunds: { resolveAddress: address => refunds.resolveAddress(address), estimateRate: target => feeEstimateOverride === null ? refunds.estimateRate(target) : Effect.succeed(feeEstimateOverride),
-          build: request => refunds.build(request), rebuildFunding: request => refunds.rebuildFunding(request),
+          build: request => refunds.build(request), rebuildFunding: request => refunds.rebuildFunding(request), assessExcess: request => refunds.assessExcess(request),
           sender: { observe: transactions => sender.observe(transactions), broadcast: (tx, permission, expectedTip, replacement) => Effect.gen(function* () {
             yield* sender.broadcast(tx, permission, expectedTip, replacement); refundSends++;
             if (loseRefundReply) { loseRefundReply = false; return yield* Effect.fail(new ApplicationError({ code: "unavailable", message: "simulated lost send reply" })); }
@@ -157,7 +157,18 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     yield* buyer.call("sendtoaddress", refundInvoice.address, "0.00013000");
     yield* node.call("generatetoaddress", 6, minerAddress); yield* store.observe();
     assert.equal(typeof buyerAddress, "string");
+    const feeCoins = yield* merchant.call("listunspent", 6); assert(Array.isArray(feeCoins));
+    const feeLocks = feeCoins.map(object).filter(c => c.scriptPubKey === feePool.script).map(c => ({ txid: c.txid, vout: c.vout }));
+    assert(feeLocks.length > 0); yield* merchant.call("lockunspent", false, feeLocks);
+    const walletBeforeAdmission = yield* merchant.call("getwalletinfo");
     yield* store.setRefundDestination(refundable.token, buyerAddress as string);
+    const admitted = yield* store.order(refundable.token), excessDue = admitted.refund_deadlines;
+    assert.equal(excessDue.length, 1); assert.equal(excessDue[0]!.principal_sats, 3000); assert.equal(excessDue[0]!.started_at, 0);
+    assert.equal(admitted.excess_assessment?.status, "eligible");
+    assert(admitted.excess_assessment!.estimated_fee_sats! > admitted.buyer_refund_fee_ceiling_sats!);
+    assert.deepEqual(yield* merchant.call("getwalletinfo"), walletBeforeAdmission);
+    assert.deepEqual(yield* merchant.call("listlockunspent"), feeLocks);
+    yield* merchant.call("lockunspent", true, feeLocks);
     const excess = yield* store.prepareRefund("o2", "excess", "buyer");
     assert.equal(excess.phase, "built"); assert.equal(excess.acknowledged, true); assert.equal(excess.charged_sats, 3000);
     assert.equal(excess.buyer_fee_sats, 200); assert(excess.merchant_fee_sats! > 0);
@@ -194,7 +205,8 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       now = 20;
       yield* store.cancel(refundable.token);
       const due = (yield* store.order(refundable.token)).refund_deadlines;
-      assert.equal(due.length, 1); assert.equal(due[0]!.started_at, 20); assert.equal(due[0]!.remaining_sats, 10_000);
+      assert.equal(due.length, 2); assert.equal(due[0]!.remaining_sats, 0);
+      assert.equal(due[1]!.started_at, 20); assert.equal(due[1]!.remaining_sats, 10_000);
       const cancellation = yield* store.prepareRefund("o2", "cancellation", "buyer");
       assert.equal(cancellation.phase, "built"); assert.equal(cancellation.charged_sats, 10_000);
       const db = new DatabaseSync(join(root, "store.db"), { readOnly: true });
@@ -207,8 +219,8 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       yield* store.broadcastRefund(cancellation.id); yield* node.call("generatetoaddress", 6, minerAddress);
       const final = yield* store.order(refundable.token); assert.equal(final.refundable_sats, 0);
       assert.equal(final.refunded_sats, 13_000); assert.equal(final.reserved_refund_sats, 0); assert.equal(refundSends, 3);
-      assert.equal(final.refund_deadlines[0]!.broadcast_at, 21); assert.equal(final.refund_deadlines[0]!.remaining_sats, 0);
-      assert.equal(final.refund_deadlines[0]!.incident, false);
+      assert.equal(final.refund_deadlines[1]!.broadcast_at, 21); assert.equal(final.refund_deadlines[1]!.remaining_sats, 0);
+      assert.equal(final.refund_deadlines[1]!.incident, false);
     }
     // A new obligation is rebuilt through a settled conflicting ancestor.
     yield* store.listName("rebuild@space", 1000);
@@ -284,7 +296,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts",
       "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
       "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts", "ts/src/application/monitor.ts",
-      "ts/src/bitcoin/refund-estimate.ts"];
+      "ts/src/bitcoin/refund-estimate.ts", "ts/src/bitcoin/excess-fee.ts", "ts/src/application/assessments.ts"];
     writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
       files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
       checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -293,7 +305,8 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
         "lost-refund-reply-and-store-restart", "refund-settlement-6-5-6", "deep-refund-reorg-and-remining",
         "refund-fee-bump-retains-inputs-and-buyer-output", "older-family-member-can-win-after-reorg", "rebuild-depends-on-settled-conflict",
         "conflict-ancestor-loss-invalidates-rebuild", "cancellation-deadline-after-earlier-excess-refund",
-        "unsigned-fee-assessment-preserves-wallet-state", "unsigned-size-bounds-real-keypath-spend", "unsigned-fee-assessment-of-spent-receipt"] }, null, 2), { mode: 0o600 });
+        "unsigned-fee-assessment-preserves-wallet-state", "unsigned-size-bounds-real-keypath-spend", "unsigned-fee-assessment-of-spent-receipt",
+        "excess-deadline-before-preparation-and-distinct-cancellation", "excess-deadline-with-fee-coins-locked"] }, null, 2), { mode: 0o600 });
     t.diagnostic(`Core 31.2 passed; retained artifacts: regtest/.run/${name}`);
   })));
   await stop();

@@ -19,6 +19,10 @@ export interface FundingClaim { outpoint: string; script: string; sats: number }
 export interface RefundFeeTemplate {
   inputs: readonly FundingClaim[]; outputs: readonly Destination[]; rate: number;
 }
+export interface ExcessFeeRequest {
+  inputs: readonly FundingClaim[]; destination: Destination; principal: number; ceiling: number; rate: number;
+}
+export interface FeeAssessment { vbytes: number; fee: number; tip: number; tipHash: string }
 export interface BuildRequest {
   group: RefundGroup; destination: Destination;
   orderCoins: readonly FundingClaim[]; merchantScripts: readonly string[];
@@ -43,6 +47,7 @@ export interface RefundPause { group: string; firstAt: number; lastAt: number; a
 export interface RefundAdapters {
   readonly resolveAddress: (address: string) => Effect.Effect<Destination, ApplicationError>;
   readonly estimateRate: (target: number) => Effect.Effect<number | null, ApplicationError>;
+  readonly assessExcess?: (request: ExcessFeeRequest) => Effect.Effect<FeeAssessment, ApplicationError>;
   readonly build: (request: BuildRequest) => Effect.Effect<PreparedRefund, ApplicationError>;
   readonly rebuildFunding?: (request: RebuildRequest) => Effect.Effect<RebuildFunding, ApplicationError>;
   readonly sender?: RefundSender;
