@@ -18,7 +18,7 @@ jobs:
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: ts/.node-version
       - name: Python baseline and shipped controller tests
         run: python3 -m unittest discover -s tests -t .
       - name: Install pinned TypeScript dependencies

@@ -43,8 +43,11 @@ temporary Python comparisons are not a permanent runtime dependency.
 The first implementation increment adds the TypeScript pilot model and
 K1–K19 cases, a 2,000-step generated trace, development/release coverage
 modes, a pilot-readiness workflow and the Python store ownership amendment
-H12. Stage 2's TypeScript store runtime remains unbuilt. The release gate
-must therefore fail; passing model tests does not open sales.
+H12. Stage 2 now has the Effect storage component and production Z1–Z8/H12
+tests for SQLite, journal acknowledgment, ownership and restore. It does
+not yet have a buyer HTTP service, chain adapter or domain persistence
+integration. The release gate therefore remains blocked; neither component
+nor model tests open sales.
 
 ## Work order and gates
 
@@ -52,8 +55,8 @@ must therefore fail; passing model tests does not open sales.
 | --- | --- | --- |
 | 1 | Extend case coverage and build the independent TypeScript pilot model. Land each new payment case with its passing model test. | Deterministic model tests, fixed spec traces and invariant checks. No production reducers inside the model. Coverage distinguishes baseline, model and production tests. Implement the release gate described below. |
 | 2 | Finish the TypeScript store: domain changes, SQLite, journal, HTTP, registry callbacks, certificate views, restore and process ownership. | Named production tests, comparisons for unchanged baseline behavior, and service, checkout and recovery scenarios against the TypeScript runtime. Journal failure and interrupted-send tests preserve uncertainty. |
-| 3 | Build the native installer, updater and Alchemy existing-host driver. Prepare the one-time import or compatible database reuse. | The same standalone package runs by hand and through Alchemy. Tests cover signature failures, resource deletion doing nothing to host data, host-key mismatch, competing writers, interrupted updates and reconciliation before readiness. |
-| 4 | Rehearse installation and Python-to-TypeScript cutover on a disposable host using stage 3's package. | Existing payment addresses and their order attribution, issued handles, certificates, orders, refunds, uncertain attempts, identifiers and journal continuity survive. Host-loss recovery also works from the recovery set. No fresh-wallet shortcut forgets issued names. |
+| 3 | Build the native installer, updater and Alchemy existing-host driver. Prepare import/reuse only if existing financial or issuance history requires it. | The same standalone package runs by hand and through Alchemy. Tests cover signature failures, resource deletion doing nothing to host data, host-key mismatch, competing writers, interrupted updates and reconciliation before readiness. |
+| 4 | Rehearse fresh installation and recovery on a disposable host using stage 3's package; exercise history preservation if cutover actually has prior state. | Existing payment addresses and their order attribution, issued handles, certificates, orders, refunds, uncertain attempts, identifiers and journal continuity survive. Host-loss recovery also works from the recovery set. No fresh-wallet shortcut forgets issued names. |
 | 5 | Deliver the pilot's seller CLI: guided setup, price changes, seller reservations and withdrawal, global and per-space pauses, status and recovery diagnostics. | Repeatable commands preview affected invoices and persist accepted changes. Named cases cover reservations, withdrawal/reopening, price changes and restore. A setup wizard calls these same commands rather than maintaining another configuration path. |
 | Public-pilot gate | Release the TypeScript store with the Python controller and runner only after stages 1–5. | Production case coverage, the buyer and operator acceptance gates, complete sale and refund, deployed-stack recovery and explicit authorization to open sales. The review pause at ten conversions is implemented. |
 | 6, after the pilot | Add open catalog, bulk import and space archiving; complete convenient onboarding of additional spaces. | Both catalog modes work per space. Searches create no orders; order creation is bounded separately from holds; issuance availability includes subs, chain and externally issued or in-flight names. |
@@ -148,10 +151,20 @@ the smaller of ten times the highest listed price and the risk budget.
 Replacing it with an explicit fixed budget independent of premium prices
 is a proposal requiring a recorded policy decision, not an adopted change.
 
+## Initial installation scope
+
+Fresh installation into a new application data path is the initial
+TypeScript release target. A general Python migration or live compatibility
+layer is not a launch prerequisite. If an installation
+has issued names, disclosed payment addresses or financial history, its
+preflight must retain those obligations rather than treating it as empty.
+External issuance state still needs reconciliation even with fresh wallets.
+Future updates of a used TypeScript installation must preserve its data.
+
 ## Recovery work and scope limits
 
-The installer must preserve state rather than empty the application after
-an owner-only test. Prefer compatible database reuse if it is simpler than
+If an owner-only test or other activity creates history before cutover,
+the installer must preserve that state rather than empty the application. Prefer compatible database reuse if it is simpler than
 an import. The initial cutover is one explicit supported transition; future
 releases need a versioned upgrade contract and a test from the previous
 supported release. A database rollback cannot undo a broadcast.

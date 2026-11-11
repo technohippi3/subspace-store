@@ -10,6 +10,7 @@ runs on the store's host.
 import base64
 import json
 import sqlite3
+import weakref
 from pathlib import Path
 
 from controller.journal import Journal
@@ -20,12 +21,39 @@ class Refused(Exception):
     pass
 
 
+class _SnapshotJournal(Journal):
+    """Read the shipped store's acknowledged position for a snapshot.
+
+    The TypeScript journal uses immutable objects. Its SQLite outbox records
+    the acknowledged prefix, so the runner need not reimplement that format.
+    Python stores retain the original JSON-lines position reader.
+    """
+    def __init__(self, directory, store):
+        super().__init__(directory, "store")
+        self.store = weakref.proxy(store)
+
+    def position(self):
+        db = self.store.db
+        typed = db.execute("select 1 from sqlite_master where type='table' "
+                           "and name='store_meta'").fetchone()
+        if not typed:
+            return super().position()
+        meta = db.execute("select version from store_meta where id=1").fetchone()
+        if not meta or meta[0] != 1:
+            raise Refused("unsupported TypeScript store snapshot schema")
+        count, last = db.execute("select count(*),coalesce(max(seq),0) "
+                                 "from outbox where acknowledged=1").fetchone()
+        if count != last:
+            raise Refused("store journal acknowledgments are not a prefix")
+        return last
+
+
 class Store:
     def __init__(self, url, token_file, db_path, journal_dir):
         self.url = url
         self.token_file = Path(token_file)
         self.db_path = Path(db_path)
-        self.journal = Journal(journal_dir, "store")
+        self.journal = _SnapshotJournal(journal_dir, self)
         self._db = None
 
     @property

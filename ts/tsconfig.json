@@ -4,7 +4,7 @@
     "lib": ["es2023"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "types": [],
+    "types": ["node"],
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,

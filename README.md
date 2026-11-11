@@ -37,7 +37,9 @@ seller commands before the pilot gate, and records the deployment and
 recovery work still required. `deploy/README.md` describes the planned
 native systemd installer, safe updates and Infisical contract. Stage 1 now
 has an independent TypeScript pilot model and production release-coverage
-gate (`docs/spec/PILOT-SPEC.md`); the runtime is still to build. The Python
+gate (`docs/spec/PILOT-SPEC.md`). The Effect-based storage component now has
+production SQLite/journal/recovery tests (`docs/spec/STORAGE-SPEC.md`);
+the buyer HTTP service and chain integration are still to build. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

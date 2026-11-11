@@ -1,8 +1,9 @@
 # TypeScript port (in progress)
 
-The start of a port of the store to TypeScript. Nothing runs from it yet:
-the Python service, controller and runner in the parent directory are the
-implementation, and `docs/spec/` stays authoritative.
+The store is being ported to TypeScript. The domain code and Effect-based
+storage component run in tests; the HTTP store and chain integration are
+still to build. The Python service, controller and runner remain the
+complete implementation, and `docs/spec/` stays authoritative.
 
 This port follows the workspace_owner's direction: TypeScript, Effect and
 explicit state machines, deployed through Alchemy to a general Linux host
@@ -88,6 +89,23 @@ incident machines also return effects (alerts, authorizations, sends with
 the exact transaction, rebroadcasts). None reads a clock, chain or
 database or performs an effect.
 
+## Durable runtime component
+
+`src/storage/` now provides Effect-scoped SQLite persistence, a transactional
+outbox, immutable journal objects, acknowledgment receipts, exclusive Linux
+ownership and atomic/resumable journal-only restore. Production cases
+Z1–Z8 and H12 exercise real SQLite, process death, Effect interruption,
+journal outages, corruption and Python-created snapshots. The runner reads
+this storage schema's acknowledged position for coordinated snapshots.
+`../docs/spec/STORAGE-SPEC.md` defines the exact boundary and limitations.
+
+This is not yet a runnable buyer service. Its records are generic JSON;
+domain validation, quote/cancellation instruction gates, chain observation,
+refund sends and controller HTTP/whole-host recovery are still required.
+Restored metadata requires reconciliation before the application can reopen
+admission. The backend is an existing filesystem directory that must live
+off-host for actual host-loss recovery; no object-store adapter is claimed.
+
 ## Not yet ported
 
 Domain rules of `service/ledger.py` still to port, each with its home:
@@ -99,23 +117,28 @@ Domain rules of `service/ledger.py` still to port, each with its home:
 3. Restore from the journal (`restore_from_journal`), which always comes
    back with sales paused.
 
-Then the store layer around the machines (SQLite transactions, the
-journal, the HTTP API), with the new pilot behavior and gates above. The
+Next wire the machines to the storage component, with the pilot behavior,
+HTTP API, chain adapter and the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.
 
-It has no runtime dependencies. Its only development dependency is the
-compiler, pinned to TypeScript 7.0.2 (the native compiler) in
-`package-lock.json`. Node 24 runs the TypeScript directly:
+The runtime dependency is Effect 4.1.4. Development dependencies are
+TypeScript 7.0.2 and full Node types, pinned in `package-lock.json`.
+`.node-version` and CI pin Node 24.14.0; Linux util-linux `/usr/bin/flock`
+is required. Node's SQLite API is marked active development, so runtime
+upgrades need qualification through these tests. No native npm addon or
+source build is required.
 
-    cd ts
+From this directory:
+
     npm ci --ignore-scripts
     npm run check
     npm test
 
 CI runs the same (`.github/workflows/model.yml`, job `typescript`).
-`test/node.d.ts` declares the few Node APIs the tests use, until the
-package takes `@types/node`.
+Production storage tests invoke Python only for temporary interoperability
+checks with the controller and the baseline ownership lock; the storage
+runtime itself never invokes Python.
 
 ## What the tests show
 
