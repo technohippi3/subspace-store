@@ -353,3 +353,20 @@ test("Z2: historical acknowledgment is not a live journal confirmation", async (
     assert.equal(yield* store.confirm(999), false);
   }));
 });
+
+test("acknowledged projection preserves JSON values and ignores newer pending changes", async (t) => {
+  const config = fixture(t), journal = new FailingJournal(config.journalDirectory);
+  await use({ ...config, makeJournal: () => journal }, store => Effect.gen(function* () {
+    const values = ["text", false, 0, null, [1, "two"], { nested: true }];
+    for (const [index, value] of values.entries()) yield* store.commit([{ kind: "sample", key: `k${index}`, value }]);
+    for (const [index, value] of values.entries())
+      assert.deepEqual((yield* store.acknowledged("sample", `k${index}`))?.value, value);
+    journal.down = true;
+    yield* store.commit([{ kind: "sample", key: "k0", value: "pending" }]);
+    assert.equal((yield* store.get("sample", "k0"))?.value, "pending");
+    assert.equal((yield* store.acknowledged("sample", "k0"))?.value, "text");
+    assert.equal(yield* store.acknowledged("sample", "absent"), null);
+    journal.down = false; yield* store.flush();
+    assert.equal((yield* store.acknowledged("sample", "k0"))?.value, "pending");
+  }));
+});

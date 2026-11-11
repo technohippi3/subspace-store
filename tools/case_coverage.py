@@ -12,7 +12,8 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SPEC_FILES = ('PAYMENT-SPEC.md', 'PRIVATE-PURCHASE.md', 'PILOT-SPEC.md', 'STORAGE-SPEC.md')
+SPEC_FILES = ('PAYMENT-SPEC.md', 'PRIVATE-PURCHASE.md', 'PILOT-SPEC.md', 'STORAGE-SPEC.md',
+              'CHECKOUT-SPEC.md')
 KINDS = ('python-model', 'python-store', 'python-controller', 'ts-model', 'ts-store')
 CONTROLLER_FILES = {'test_controller_host.py', 'test_controller_lock.py',
                     'test_runner.py', 'test_runner_recovery.py',

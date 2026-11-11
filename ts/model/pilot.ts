@@ -2,12 +2,12 @@
 // imports no production code. All time and chain evidence comes from callers.
 export type State = "quoted" | "converted" | "issuing" | "cancelled" | "refund_due";
 export interface Order {
-  id: number; handle: string; quotedPrice: number; price: number; quotedAt: number;
+  id: number; sequence: number; handle: string; quotedPrice: number; price: number; quotedAt: number;
   payFirst: boolean; state: State; seenHeight: number | null;
   acquiredHeight: number | null; everConverted: boolean; released: boolean;
 }
 export interface Payment { id: string; order: number; sats: number; confirmations: number }
-interface Hold { order: number; at: number }
+interface Hold { order: number; at: number; converted: boolean }
 export interface Snapshot {
   limit: number; now: number; tip: number; prices: Record<string, number>;
   orders: Order[]; payments: Payment[]; holds: Hold[]; conversions: number[];
@@ -70,7 +70,9 @@ export class Pilot {
     return confirmed + this.data.orders.filter(o => this.active(o))
       .reduce((sum, o) => sum + Math.max(0, o.price - this.sum(o, 1)), 0);
   }
-  quote(handle: string): Order {
+  quote(handle: string, creationSequence = this.data.nextId): Order {
+    whole(creationSequence, 1);
+    if (this.data.orders.some(o => o.sequence === creationSequence)) throw Error("duplicate creation sequence");
     const price = this.data.prices[handle];
     if (price === undefined) throw Error("not listed");
     if (this.data.paused) throw Error("sales paused");
@@ -79,20 +81,22 @@ export class Pilot {
       .reduce((sum, p) => sum + p.sats, 0) - Object.values(this.data.refunded).reduce((sum, value) => sum + value, 0);
     if (confirmed + price > this.data.limit) throw Error("exposure limit");
     const ration = this.data.holds.filter(h => h.at > this.data.now - 86400 &&
-      this.mutable(h.order).handle === handle && !this.mutable(h.order).everConverted).length;
+      this.mutable(h.order).handle === handle && !h.converted).length;
     const open = this.data.orders.filter(o => this.active(o)).length;
     const payFirst = ration >= 2 || open >= 10 || this.exposure() + price > this.data.limit;
-    const order: Order = { id: this.data.nextId++, handle, quotedPrice: price, price,
+    const order: Order = { id: this.data.nextId++, sequence: creationSequence, handle, quotedPrice: price, price,
       quotedAt: this.data.now, payFirst, state: "quoted", seenHeight: null,
       acquiredHeight: null, everConverted: false, released: payFirst };
     this.data.orders.push(order);
-    if (!payFirst) this.data.holds.push({ order: order.id, at: this.data.now });
+    if (!payFirst) this.data.holds.push({ order: order.id, at: this.data.now, converted: false });
     return copy(order);
   }
   private convert(order: Order): void {
     if (this.active(order) && this.sum(order, 3) >= order.price) {
       order.state = "converted";
       order.everConverted = true;
+      const hold = this.data.holds.findLast(h => h.order === order.id);
+      if (hold) hold.converted = true;
       if (!this.data.conversions.includes(order.id)) this.data.conversions.push(order.id);
       if (this.data.conversions.length === 10) this.data.paused = true;
     }
@@ -131,11 +135,12 @@ export class Pilot {
     const candidates = this.data.orders.filter(o => o.state === "quoted" && !this.active(o));
     const needed = (o: Order): number => now < o.quotedAt + 900 ? o.quotedPrice :
       (this.data.prices[o.handle] ?? Infinity);
-    candidates.sort((a, b) => qualifiedAt(a, needed(a)) - qualifiedAt(b, needed(b)) ||
-      a.quotedAt - b.quotedAt || a.id - b.id);
+    candidates.sort((a, b) => qualifiedAt(a, Math.min(needed(a), a.quotedPrice)) -
+      qualifiedAt(b, Math.min(needed(b), b.quotedPrice)) ||
+      a.quotedAt - b.quotedAt || a.sequence - b.sequence);
     for (const order of candidates) {
       const price = needed(order);
-      if (this.sum(order, 1) < price) {
+      if (this.sum(order, 1) < Math.min(price, order.quotedPrice)) {
         // An ordinary hold ending short follows P5. Pay-first has no hold
         // to expire and may accumulate the full amount without reserving.
         if (!order.payFirst && this.sum(order, 1) > 0) order.state = "refund_due";
@@ -148,7 +153,7 @@ export class Pilot {
       order.price = price;
       order.released = false;
       order.acquiredHeight = tip;
-      this.data.holds.push({ order: order.id, at: now });
+      this.data.holds.push({ order: order.id, at: now, converted: false });
       this.convert(order);
     }
   }

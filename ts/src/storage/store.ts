@@ -218,6 +218,22 @@ export class DurableStore {
         acknowledged: ack?.acknowledged === 1 };
     });
   }
+  records(): Effect.Effect<readonly { kind: string; key: string; value: Json }[], StorageError> {
+    return attempt("records", () => this.db.prepare("select kind,key,value from records order by kind,key")
+      .all().map(row => ({ kind: row.kind as string, key: row.key as string,
+        value: JSON.parse(row.value as string) as Json })));
+  }
+  /** Last acknowledged value, even when a newer local transition is pending. */
+  acknowledged(kind: string, key: string): Effect.Effect<RecordValue | null, StorageError> {
+    return attempt("acknowledged", () => {
+      const row = this.db.prepare(`select o.seq, c.value as change
+        from outbox o, json_each(o.payload,'$.changes') c where o.acknowledged=1
+        and json_extract(c.value,'$.kind')=? and json_extract(c.value,'$.key')=?
+        order by o.seq desc limit 1`).get(kind, key);
+      return row ? { value: (JSON.parse(row.change as string) as Change).value,
+        seq: row.seq as number, acknowledged: true } : null;
+    });
+  }
   status() {
     return attempt("status", () => {
       const saved = this.saved();

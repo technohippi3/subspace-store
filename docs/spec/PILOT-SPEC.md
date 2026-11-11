@@ -22,6 +22,9 @@ qualifying amount can win. After quote expiry, the current price must be
 no higher than quoted, as in P12. If several blocks are first read together,
 compare the block in which the full amount qualified before applying the
 same-block quote-time and immutable-order-sequence tie break.
+Creation sequence means request creation, independently of the order in
+which quotes were requested. The model accepts that sequence explicitly;
+its default keeps the existing direct-quote traces concise.
 
 The review pause fires when the tenth distinct order first converts. The
 count never decreases. An explicit operator resume after review is not
@@ -70,6 +73,13 @@ rolling 86,400 seconds, and the global admission cap is ten active holds.
 | K18 | a pay-first invoice with partial confirmed funds | reach expiry, then confirm the full price | partial money waits without a hold; only the full price takes the name, with conversion at three confirmations |
 
 | K19 | a hold released after payment loss, then a new buyer holds the name | the original payment returns after a reorg | old hold never revives automatically; new owner preserved, old order refund due |
+
+| K20 | an order's original hold expires, a later hold converts, then the order is cancelled | quote again, cancel that unpaid hold, and restore | only the converted hold is exempt; the original unpaid hold and the new unpaid hold exhaust the ration across restore |
+
+The exemption belongs to each hold, not to all holds of an order that later
+converts. K7 also checks a late pay-first payment equal to its original
+quote after a price increase: it becomes refund due without needing to
+pay the increased price first.
 
 ## Pilot production applicability
 

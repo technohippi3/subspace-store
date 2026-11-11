@@ -68,6 +68,11 @@ test("K4: payment block, quote time and sequence settle pay-first races", () => 
   tied.observe(1, 10, [payment(b.id), payment(a.id)]);
   assert.equal(tied.order(a.id).state, "converted");
   assert.equal(tied.order(b.id).state, "refund_due");
+  const reordered = shop(); fullHolds(reordered);
+  const newer = reordered.quote("n10@space", 12), older = reordered.quote("n10@space", 11);
+  reordered.observe(1, 10, [payment(newer.id), payment(older.id)]);
+  assert.equal(reordered.order(older.id).state, "converted");
+  assert.equal(reordered.order(newer.id).state, "refund_due");
 });
 
 test("K5: pending money never closes admission, confirmed money can", () => {
@@ -96,6 +101,10 @@ test("K7: late payment uses the lower price and refuses a price rise", () => {
     assert.equal(store.order(order.id).state, price === 500 ? "converted" : "refund_due");
     if (price === 500) assert.equal(store.order(order.id).price, 500);
   }
+  const store = shop(); fullHolds(store);
+  const order = store.quote("n10@space"); store.price(order.handle, 2_000);
+  store.observe(901, 10, [payment(order.id, 1_000, 1)]);
+  assert.equal(store.order(order.id).state, "refund_due");
 });
 
 test("K8: ten conversions pause once, existing invoices and recovery retain the count", () => {
@@ -205,6 +214,18 @@ test("K19: a released hold cannot revive ahead of a newer owner after a reorg", 
   assert.equal(store.order(old.id).state, "refund_due");
   assert.equal(store.order(current.id).state, "quoted");
   refuses(() => store.quote("n0@space"), "name taken");
+});
+
+test("K20: late conversion exempts only the hold that actually converted", () => {
+  const store = shop(); const first = store.quote("n0@space");
+  store.observe(901, 10, [payment(first.id)]);
+  store.cancel(first.id);
+  const second = store.quote("n0@space");
+  assert.equal(second.payFirst, false);
+  store.cancel(second.id);
+  assert.equal(store.quote("n0@space").payFirst, true);
+  const restored = Pilot.restore(store.snapshot()); restored.pause(false);
+  assert.equal(restored.quote("n0@space").payFirst, true);
 });
 
 test("generated pilot traces retain unique issuance and monotonic conversion history", () => {

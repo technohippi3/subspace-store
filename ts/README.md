@@ -1,8 +1,9 @@
 # TypeScript port (in progress)
 
-The store is being ported to TypeScript. The domain code and Effect-based
-storage component run in tests; the HTTP store and chain integration are
-still to build. The Python service, controller and runner remain the
+The store is being ported to TypeScript. The domain code, Effect-based
+storage and loopback buyer JSON API run in tests. Real node integration,
+refunds, registry callbacks and full application recovery are still to
+build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
 This port follows the workspace_owner's direction: TypeScript, Effect and
@@ -19,7 +20,7 @@ Python store.
 
 `../docs/spec/PORT-PLAN.md` defines the work order and release gates.
 Stage 1 now has the independent model under `model/`, named model cases
-K1–K19 in `test/model/pilot.test.ts`, generated trace/recovery checks and
+K1–K20 in `test/model/pilot.test.ts`, generated trace/recovery checks and
 coverage enforcement. `../docs/spec/PILOT-SPEC.md` states the exact scope
 and expected outcomes. The Python store and model retain the owner-only
 baseline at `66db98c`, plus the H12 process-ownership safety amendment.
@@ -53,8 +54,10 @@ lock and real two-process H12 tests are now implemented locally.
 
 ## Current implementation
 
-Three pure state machines and the store-wide request and quote rules are
-ported so far, from `service/ledger.py`:
+Three pure state machines and the store-wide request and quote rules were
+ported from `service/ledger.py` as baseline-equivalence checks. The pilot
+application's changed admission and hold rules live in `src/application/`.
+The baseline reducers remain tested during the transition:
 
 - `src/order.ts`, the order and name-hold machine of a fixed-price sale:
   hold, extension, conversion, late payment, quote, cancellation and the
@@ -99,9 +102,9 @@ journal outages, corruption and Python-created snapshots. The runner reads
 this storage schema's acknowledged position for coordinated snapshots.
 `../docs/spec/STORAGE-SPEC.md` defines the exact boundary and limitations.
 
-This is not yet a runnable buyer service. Its records are generic JSON;
-domain validation, quote/cancellation instruction gates, chain observation,
-refund sends and controller HTTP/whole-host recovery are still required.
+The storage component's records are generic JSON. The application now adds
+domain validation and quote/cancellation instruction gates; real chain
+observation, refund sends and controller HTTP/whole-host recovery remain.
 Restored metadata requires reconciliation before the application can reopen
 admission. The backend is an existing filesystem directory that must live
 off-host for actual host-loss recovery; no object-store adapter is claimed.
@@ -110,15 +113,22 @@ off-host for actual host-loss recovery; no object-store adapter is claimed.
 
 Domain rules of `service/ledger.py` still to port, each with its home:
 
-1. What the buyer is shown: an address and a cancellation only once the
-   journal acknowledged them (`instructions_given`, `order_view`), and a
-   certificate only for a ready or fulfilled order (`deliver_certificate`).
+1. Certificate availability/delivery and refund information in order views.
 2. The registry callbacks (`pending_for`, `subs_ack`, `subs_committed`).
 3. Restore from the journal (`restore_from_journal`), which always comes
    back with sales paused.
 
-Next wire the machines to the storage component, with the pilot behavior,
-HTTP API, chain adapter and the production gates above. The
+`src/application/` now has strict records, serialized Effect commands,
+public request validation, journal-gated addresses/cancellations and
+pilot hold/pay-first evaluation. `CHECKOUT-SPEC.md` defines the HTTP subset,
+the real SQLite/HTTP tests with simulated node adapters and its limitations.
+A 200-step application trace agrees with the independent pilot model on
+the supported sales rules. K20 fixes the model's per-hold conversion
+exemption; K4 also checks creation order independent of quote call order.
+Full recovery remains unverified wherever only a restart was tested.
+
+Next add the real chain adapter, refund/registry operations, complete order
+views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.
 

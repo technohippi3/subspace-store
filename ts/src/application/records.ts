@@ -1,0 +1,152 @@
+import { Data, Effect } from "effect";
+import { canonicalHandle, validP2tr } from "../recipient.ts";
+import type { Json } from "../storage/codec.ts";
+
+export class ApplicationError extends Data.TaggedError("ApplicationError")<{
+  readonly code: "invalid" | "refused" | "unavailable" | "not_found";
+  readonly message: string;
+}> {}
+export function fail(message: string, code: ApplicationError["code"] = "refused"): never {
+  throw new ApplicationError({ code, message });
+}
+export function checked<A>(work: () => A): Effect.Effect<A, ApplicationError> {
+  return Effect.try({ try: work, catch: error => error instanceof ApplicationError ? error :
+    new ApplicationError({ code: "unavailable", message: "application state validation failed" }) });
+}
+export function verified<A>(work: () => A): Effect.Effect<A, ApplicationError> {
+  return checked(work).pipe(Effect.mapError(error => new ApplicationError({ code: "unavailable", message: error.message })));
+}
+export function whole(value: unknown, minimum = 0): asserts value is number {
+  if (!Number.isSafeInteger(value) || (value as number) < minimum) fail("invalid integer", "invalid");
+}
+export const MAX_MONEY = 2_100_000_000_000_000;
+export function sats(value: unknown): asserts value is number {
+  whole(value, 1); if (value > MAX_MONEY) fail("invalid amount", "invalid");
+}
+export interface Destination { address: string; script: string }
+export type Status = "requested" | "quoted" | "unpaid" | "converted" | "issuing" | "cancelled" | "refund_due";
+export interface Grant { at: number; until: number; seenHeight: number | null;
+  acquiredHeight: number | null; released: boolean; converted: boolean }
+export interface Order {
+  id: string; sequence: number; handle: string; space: string; recipient: string; tokenHash: string;
+  status: Status; quotedAt: number | null; quotedPrice: number | null; price: number | null;
+  destination: Destination | null; payFirst: boolean; grants: Grant[]; everConverted: boolean;
+  paymentHistory: "none" | "detected"; lateEvaluated: boolean;
+}
+export interface Listing { handle: string; space: string; price: number }
+export interface Output { outpoint: string; script: string; sats: number; confirmations: number }
+export interface Snapshot { tip: number; outputs: readonly Output[] }
+export interface Payment extends Output { active: boolean }
+export interface Settings { version: 1; riskBudget: number; paused: boolean; conversions: string[];
+  lastTime: number; tip: number; nextOrder: number }
+export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[] }
+export interface Record { kind: string; key: string; value: Json }
+export const claims = (order: Order): boolean => order.status === "converted" || order.status === "issuing";
+export function request(body: unknown): { handle: string; script: string } {
+  if (!body || typeof body !== "object" || Array.isArray(body) ||
+      Object.keys(body).sort().join() !== "handle,script_pubkey") fail("invalid recipient request", "invalid");
+  const value = body as { handle: unknown; script_pubkey: unknown };
+  if (!canonicalHandle(value.handle) || !validP2tr(value.script_pubkey))
+    fail("invalid recipient request", "invalid");
+  return { handle: value.handle, script: value.script_pubkey };
+}
+function object(value: unknown, fields: string): asserts value is { [key: string]: unknown } {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).sort().join() !== fields.split(",").sort().join()) fail("invalid stored fields");
+}
+function bool(value: unknown): void { if (typeof value !== "boolean") fail("invalid boolean"); }
+function text(value: unknown): asserts value is string { if (typeof value !== "string") fail("invalid text"); }
+function nullableWhole(value: unknown): void { if (value !== null) whole(value); }
+export function destination(value: unknown): asserts value is Destination {
+  object(value, "address,script"); text(value.address);
+  if (!value.address || value.address.length > 256 || typeof value.script !== "string" ||
+      !/^(?:[0-9a-f]{2}){1,10000}$/.test(value.script)) fail("invalid wallet destination");
+}
+function listing(value: unknown): asserts value is Listing {
+  object(value, "handle,space,price");
+  if (!canonicalHandle(value.handle) || value.handle.split("@")[1] !== value.space) fail("invalid listing");
+  sats(value.price);
+}
+function order(value: unknown): asserts value is Order {
+  object(value, "id,sequence,handle,space,recipient,tokenHash,status,quotedAt,quotedPrice,price,destination,payFirst,grants,everConverted,paymentHistory,lateEvaluated");
+  whole(value.sequence, 1);
+  if (value.id !== `o${value.sequence}` || !canonicalHandle(value.handle) ||
+      value.handle.split("@")[1] !== value.space || !validP2tr(value.recipient) ||
+      typeof value.tokenHash !== "string" || !/^[0-9a-f]{64}$/.test(value.tokenHash) ||
+      !["requested", "quoted", "unpaid", "converted", "issuing", "cancelled", "refund_due"].includes(String(value.status)) ||
+      !["none", "detected"].includes(String(value.paymentHistory))) fail("invalid stored order");
+  nullableWhole(value.quotedAt);
+  for (const amount of [value.quotedPrice, value.price]) if (amount !== null) sats(amount);
+  if (value.destination !== null) destination(value.destination);
+  for (const v of [value.payFirst, value.everConverted, value.lateEvaluated]) bool(v);
+  if (!Array.isArray(value.grants)) fail("invalid hold history");
+  for (const grant of value.grants) {
+    object(grant, "at,until,seenHeight,acquiredHeight,released,converted");
+    whole(grant.at); whole(grant.until); nullableWhole(grant.seenHeight); nullableWhole(grant.acquiredHeight);
+    bool(grant.released); bool(grant.converted);
+    if ((grant.until as number) !== (grant.at as number) + 900) fail("invalid hold duration");
+  }
+  if ((value.destination === null) !== (value.quotedAt === null) ||
+      (value.destination === null) !== (value.quotedPrice === null) ||
+      (value.destination === null) !== (value.price === null)) fail("incomplete invoice");
+}
+function payment(value: unknown): asserts value is Payment {
+  object(value, "outpoint,script,sats,confirmations,active");
+  text(value.outpoint); text(value.script); sats(value.sats); whole(value.confirmations); bool(value.active);
+  if (!value.outpoint || value.outpoint.length > 256) fail("invalid outpoint");
+}
+export function encode(state: State): Record[] {
+  return [ { kind: "sales_settings", key: "global", value: state.settings as unknown as Json },
+    ...state.listings.map(value => ({ kind: "listing", key: value.handle, value: value as unknown as Json })),
+    ...state.orders.map(value => ({ kind: "sales_order", key: value.id, value: value as unknown as Json })),
+    ...state.payments.map(value => ({ kind: "payment", key: value.outpoint, value: value as unknown as Json })) ];
+}
+export function decode(records: readonly Record[], riskBudget: number): State {
+  const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
+    lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [] };
+  for (const record of records) {
+    // Commands mutate a working copy. The original records remain the
+    // immutable comparison point for the atomic changed-record commit.
+    const v: unknown = structuredClone(record.value);
+    switch (record.kind) {
+      case "sales_settings":
+        object(v, "version,riskBudget,paused,conversions,lastTime,tip,nextOrder");
+        if (record.key !== "global" || v.version !== 1 || v.riskBudget !== riskBudget) fail("unsupported application settings");
+        sats(v.riskBudget); bool(v.paused); whole(v.lastTime); whole(v.tip); whole(v.nextOrder, 1);
+        if (!Array.isArray(v.conversions) || new Set(v.conversions).size !== v.conversions.length ||
+            v.conversions.some(id => typeof id !== "string")) fail("invalid conversion history");
+        state.settings = v as unknown as Settings; break;
+      case "listing": listing(v); if (v.handle !== record.key) fail("listing identity differs"); state.listings.push(v); break;
+      case "sales_order": order(v); if (v.id !== record.key) fail("order identity differs"); state.orders.push(v); break;
+      case "payment": payment(v); if (v.outpoint !== record.key) fail("payment identity differs"); state.payments.push(v); break;
+      default: fail("unknown application record");
+    }
+  }
+  if (records.length && !records.some(r => r.kind === "sales_settings")) fail("missing application settings");
+  const tokens = new Set<string>(), destinations = new Set<string>();
+  for (const o of state.orders) {
+    if (!state.listings.some(n => n.handle === o.handle) || o.sequence >= state.settings.nextOrder ||
+        tokens.has(o.tokenHash)) fail("invalid order relationship");
+    tokens.add(o.tokenHash);
+    if (o.destination) {
+      if (destinations.has(o.destination.script)) fail("duplicate payment destination");
+      destinations.add(o.destination.script);
+    }
+    if (o.everConverted !== state.settings.conversions.includes(o.id) || (claims(o) && !o.everConverted))
+      fail("invalid conversion relationship");
+    if ((o.status === "requested" && o.destination !== null) ||
+        (!["requested", "cancelled"].includes(o.status) && o.destination === null) ||
+        (claims(o) && (!o.grants.at(-1)?.converted || o.grants.at(-1)!.released))) fail("invalid invoice state");
+    let previous = -1;
+    for (const hold of o.grants) {
+      if (hold.at < previous || hold.at > state.settings.lastTime || (hold.converted && !o.everConverted))
+        fail("invalid grant history");
+      previous = hold.at;
+    }
+  }
+  if (state.settings.conversions.some(id => !state.orders.some(o => o.id === id))) fail("missing converted order");
+  if (state.payments.some(p => !destinations.has(p.script))) fail("payment has no invoice");
+  if (state.payments.filter(p => p.active).reduce((sum, p) => sum + p.sats, 0) > MAX_MONEY)
+    fail("stored payments exceed money supply");
+  return state;
+}

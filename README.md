@@ -26,9 +26,9 @@ recovery-time targets, and that the pilot ships on the TypeScript store
 with the Python controller and runner at first. Further decisions the same
 day set buyer cancellation before issuance, the refund deadline and fees,
 the excess minimum, the delivery target and what evidence is published.
-The prices and the risk budget are still the workspace_owner's to set. The
-rules they change are
-still to build, and they authorize no production deployment, no wallet
+The prices and the risk budget are still the workspace_owner's to set.
+Some pilot rules now have runtime coverage, but complete sales, refunds
+and recovery remain unfinished. These decisions authorize no deployment, no wallet
 transaction and no opening of sales.
 
 `docs/spec/PORT-PLAN.md` is the port and release handoff. It separates the
@@ -38,8 +38,10 @@ recovery work still required. `deploy/README.md` describes the planned
 native systemd installer, safe updates and Infisical contract. Stage 1 now
 has an independent TypeScript pilot model and production release-coverage
 gate (`docs/spec/PILOT-SPEC.md`). The Effect-based storage component now has
-production SQLite/journal/recovery tests (`docs/spec/STORAGE-SPEC.md`);
-the buyer HTTP service and chain integration are still to build. The Python
+production SQLite/journal/recovery tests (`docs/spec/STORAGE-SPEC.md`). A
+loopback buyer JSON API now connects requests, quotes and cancellations to
+that storage with injected chain/wallet adapters (`docs/spec/CHECKOUT-SPEC.md`).
+Real node integration, refunds and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

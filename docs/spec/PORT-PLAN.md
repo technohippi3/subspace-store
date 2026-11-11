@@ -41,12 +41,15 @@ temporary Python comparisons are not a permanent runtime dependency.
 ## Implementation status
 
 The first implementation increment adds the TypeScript pilot model and
-K1–K19 cases, a 2,000-step generated trace, development/release coverage
+K1–K20 cases, a 2,000-step generated trace, development/release coverage
 modes, a pilot-readiness workflow and the Python store ownership amendment
 H12. Stage 2 now has the Effect storage component and production Z1–Z9/H12
-tests for SQLite, journal acknowledgment, ownership and restore. It does
-not yet have a buyer HTTP service, chain adapter or domain persistence
-integration. The release gate therefore remains blocked; neither component
+tests for SQLite, journal acknowledgment, ownership and restore. It now
+also has the buyer JSON API and domain persistence boundary described in
+`CHECKOUT-SPEC.md`, tested with real SQLite/HTTP and simulated chain/wallet
+adapters. A 200-step trace compares supported sales behavior with the
+independent model. Real node integration, refunds, registry callbacks and
+application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 
 ## Work order and gates
@@ -109,7 +112,7 @@ to cases, invariants, fault injection and regtest evidence.
 
 ## Pilot behavior and remaining seller operations
 
-`PILOT-SPEC.md` supplies K1–K19 with independent model tests for full-price late
+`PILOT-SPEC.md` supplies K1–K20 with independent model tests for full-price late
 reacquisition, pay-first admission and deterministic ties, the per-name
 rolling hold ration, the global hold limit, the durable pause after ten
 distinct conversions, buyer cancellation before issuance, the refund
