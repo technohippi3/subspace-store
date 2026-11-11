@@ -64,3 +64,5 @@ jobs:
         with:
           name: core-regtest-qualification
           path: regtest/.run/**/qualification.json
+          include-hidden-files: true
+          if-no-files-found: error
