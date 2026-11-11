@@ -1083,3 +1083,46 @@ Qualified SHA-256 source digests:
 d7b29b627e0601e2747009e0f42eb5fa30a9118a191df1ca95d870ab284ecde3  ts/src/application/records.ts
 86627ddab761bdc9e178e7878e95e9bc3e49b157117c4eef7c0e1230ec0a3390  ts/regtest/core.test.ts
 ```
+
+## TypeScript refund preparation, 2026-11-11
+
+Run `core-adapter-2026-11-11T15-40-43-266Z-64edbff9` passed on the checksum-pinned
+Core 31.2 binary through `npm run test:core`, in a loopback-only network
+namespace with fresh merchant, buyer and miner wallets. The earlier Core
+observation checks above still passed. The retained qualification JSON
+binds the source digests below and twelve completed checks.
+
+The application journaled an excess refund reservation before signing,
+built the signed transaction with the buyer fee capped at the disclosed
+200-sat test ceiling and the remainder paid from an explicit merchant fee
+pool, and returned no raw transaction in its public view. Its transaction
+was absent from the mempool until the isolated test operator read the
+private test database and broadcast it. After six blocks the order was
+cancelled, and preparation of its remaining 10,000-sat principal spent
+proven order change from that excess refund. The test operator broadcast
+and settled that transaction too. Rates, amounts and limits are fixtures,
+not deployment choices.
+
+The application has no refund sender, settled-group reconciliation, fee
+bump/rebuild or deadline lifecycle yet. Both built groups remain reserved
+in its conservative accounting. These manual regtest sends do not qualify
+uncertain-send recovery, the complete refund protocol, host recovery,
+subs/spaced integration or either public-pilot acceptance gate.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+7ecc08b49053b284dd07b6d8552aae71d7288b4aa6daac89e4bfdc4029905b10  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+b6116157c59833747e65b6c7a987673c6e034c11519d436cf47d2583f1affa47  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+0ae035a869008f553f80bfa0ba8be927ddc12fef0ba5e9f09cdfe54d9f11ea7c  ts/src/refunds/types.ts
+ec5384f2cf4cd0564fcb8f2ebf8c0be0c3ed81f45fbcb65a48b4135cb33323c8  ts/src/refunds/book.ts
+6d8a67eb3b75ba6d2b4ce427c78e9a4081abc401a4c21635b1c3e9c7ff213109  ts/src/application/store.ts
+82a9f70dcd35f64892658e63006294e188ccc1b1a3e1866ad0e27f54e8986f0f  ts/src/application/sales.ts
+6a06658708e2360afcc537f01b9f4a2130519a3a8873a5c273971bde0c38b40d  ts/src/application/records.ts
+d65b07206ce7fc3edf3ab986fa724bc2110b6c0b67a4804f4a2088af7e795eef  ts/regtest/core.test.ts
+ec737eb6ab075c5e38e0572bb00f820d9e9bd0bb95512d70a47fbfc1206674fe  ts/test/production/application-fixture.ts
+```

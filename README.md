@@ -42,7 +42,9 @@ production SQLite/journal/recovery tests (`docs/spec/STORAGE-SPEC.md`). A
 loopback buyer JSON API now connects requests, quotes and cancellations to
 that storage with injected chain/wallet adapters (`docs/spec/CHECKOUT-SPEC.md`).
 The payment adapter now has isolated Bitcoin Core 31.2 regtest qualification
-(`docs/spec/CORE-SPEC.md`). Refunds, registry integration and full application
+(`docs/spec/CORE-SPEC.md`). Durable refund preparation now has signed Core
+regtest coverage (`docs/spec/REFUND-PREPARATION.md`); refund sending and
+reconciliation, registry integration and full application
 recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 

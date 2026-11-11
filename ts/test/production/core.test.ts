@@ -8,6 +8,7 @@ import { Effect } from "effect";
 import { BitcoinRpc, RpcError } from "../../src/bitcoin/rpc.ts";
 import { CoreAdapter } from "../../src/bitcoin/core.ts";
 import { amount } from "../../src/bitcoin/validation.ts";
+import { refundPolicy } from "./application-fixture.ts";
 import { SalesStore } from "../../src/application/store.ts";
 import { nodeFixture, rpcFixture, recorded, script, hash, txid } from "./core-fixture.ts";
 
@@ -138,7 +139,7 @@ test("Z18: the store passes historical destinations and retains prior state acro
   const history = () => ({ result: { lastblock: hash, transactions: [{ address: "mock-new-address", txid }] } });
   f.state.mutate = call => call.method === "listsinceblock" ? history() : undefined;
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-    const store = yield* SalesStore.open({ database: join(f.root, "store.db"), journalDirectory: directory, riskBudgetSats: 100_000 },
+    const store = yield* SalesStore.open({ database: join(f.root, "store.db"), journalDirectory: directory, riskBudgetSats: 100_000, refundPolicy },
       { clock: () => 0, snapshot: ds => core.snapshot(ds), newDestination: core.newDestination() });
     yield* store.listName("one@space", 1000); yield* store.pause(false);
     const order = yield* store.request({ handle: "one@space", script_pubkey: "5120" + "1".padStart(64, "0") });

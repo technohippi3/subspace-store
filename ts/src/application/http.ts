@@ -8,6 +8,13 @@ import type { SalesStore } from "./store.ts";
 const string = String.raw`"(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"`;
 const pair = `(${string})\\s*:\\s*(${string})`;
 const requestShape = new RegExp(`^\\s*\\{\\s*${pair}\\s*,\\s*${pair}\\s*\\}\\s*$`);
+const addressShape = new RegExp(`^\\s*\\{\\s*${pair}\\s*\\}\\s*$`);
+function parseAddress(raw: string): string {
+  const match = addressShape.exec(raw);
+  if (!match || JSON.parse(match[1]!) !== "address") throw new ApplicationError({ code: "invalid", message: "invalid refund destination request" });
+  try { JSON.parse(raw); return JSON.parse(match[2]!) as string; }
+  catch { throw new ApplicationError({ code: "invalid", message: "invalid refund destination request" }); }
+}
 function parseRequest(raw: string): unknown {
   const match = requestShape.exec(raw);
   if (!match) throw new ApplicationError({ code: "invalid", message: "invalid recipient request" });
@@ -47,7 +54,7 @@ export function serve(store: SalesStore, port = 0) {
       const work = (async () => {
         try {
           const path = request.url ?? "", method = request.method;
-          const match = /^\/orders\/([A-Za-z0-9_-]{32})(\/(?:quote|cancel))?$/.exec(path);
+          const match = /^\/orders\/([A-Za-z0-9_-]{32})(\/(?:quote|cancel|refund-destination))?$/.exec(path);
           const operation: Effect.Effect<{ code: number; value: unknown }, unknown> = method === "POST" && path === "/requests" ?
             store.request(parseRequest(await body(request))).pipe(Effect.map(value => ({ code: 201, value }))) :
             match && method === "GET" && !match[2] ?
@@ -56,6 +63,8 @@ export function serve(store: SalesStore, port = 0) {
               store.quote(match[1]!).pipe(Effect.map(value => ({ code: value.acknowledged ? 200 : 503, value }))) :
             match && method === "POST" && match[2] === "/cancel" ?
               store.cancel(match[1]!).pipe(Effect.map(value => ({ code: value.cancellation === "final" ? 200 : 202, value }))) :
+            match && method === "POST" && match[2] === "/refund-destination" ?
+              store.setRefundDestination(match[1]!, parseAddress(await body(request))).pipe(Effect.map(value => ({ code: 200, value }))) :
               Effect.succeed({ code: 404, value: { error: "not found" } });
           const answer = responseFor(operation);
           const result = await Effect.runPromise(answer, { signal: controller.signal });

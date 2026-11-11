@@ -9,6 +9,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import { BitcoinRpc } from "../src/bitcoin/rpc.ts";
 import { CoreAdapter } from "../src/bitcoin/core.ts";
+import { CoreRefundWallet } from "../src/bitcoin/refunds.ts";
+import { DatabaseSync } from "node:sqlite";
+import { refundPolicy } from "../test/production/application-fixture.ts";
 import { SalesStore } from "../src/application/store.ts";
 import { object, hex, integer } from "../src/bitcoin/validation.ts";
 
@@ -67,11 +70,16 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
   await run(miner.call("sendtoaddress", buyerAddress, "1.00000000"));
   await run(node.call("generatetoaddress", 1, minerAddress));
   const core = await run(CoreAdapter.make({ ...config, wallet: "merchant", network: "regtest" }));
+  const refunds = await run(CoreRefundWallet.make({ ...config, wallet: "merchant", network: "regtest" }));
+  const feePool = await run(core.newDestination());
+  await run(miner.call("sendtoaddress", feePool.address, "0.00010000"));
+  await run(node.call("generatetoaddress", 6, minerAddress));
   let now = 0;
   const journalDirectory = join(root, "journal"); mkdirSync(journalDirectory);
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-    const store = yield* SalesStore.open({ database: join(root, "store.db"), journalDirectory, riskBudgetSats: 100_000 },
-      { clock: () => now, snapshot: destinations => core.snapshot(destinations), newDestination: core.newDestination() });
+    const store = yield* SalesStore.open({ database: join(root, "store.db"), journalDirectory, riskBudgetSats: 100_000, refundPolicy, merchantDestinations: [feePool] },
+      { clock: () => now, snapshot: destinations => core.snapshot(destinations), newDestination: core.newDestination(),
+        refunds: { resolveAddress: address => refunds.resolveAddress(address), estimateRate: target => refunds.estimateRate(target), build: request => refunds.build(request) } });
     yield* store.listName("one@space", 1_000); yield* store.pause(false);
     const order = yield* store.request({ handle: "one@space", script_pubkey: "5120" + "1".padStart(64, "0") });
     const quote = yield* store.quote(order.token); assert(quote.address);
@@ -116,6 +124,35 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     assert.equal(typeof unlabelled, "string");
     const found = yield* reader.snapshot([{ address: unlabelled as string, script: addressInfo.scriptPubKey as string }]);
     assert.equal(found.outputs.reduce((sum, o) => sum + o.sats, 0), 1_000);
+    // Real refund preparation. Only this isolated test operator broadcasts;
+    // the application has no sender or raw-transaction export endpoint.
+    yield* store.listName("refund@space", 10_000);
+    const refundable = yield* store.request({ handle: "refund@space", script_pubkey: "5120" + "3".padStart(64, "0") });
+    const refundInvoice = yield* store.quote(refundable.token); assert(refundInvoice.address);
+    yield* buyer.call("sendtoaddress", refundInvoice.address, "0.00013000");
+    yield* node.call("generatetoaddress", 6, minerAddress); yield* store.observe();
+    assert.equal(typeof buyerAddress, "string");
+    yield* store.setRefundDestination(refundable.token, buyerAddress as string);
+    const excess = yield* store.prepareRefund("o2", "excess", "buyer");
+    assert.equal(excess.phase, "built"); assert.equal(excess.acknowledged, true); assert.equal(excess.charged_sats, 3000);
+    assert.equal(excess.buyer_fee_sats, 200); assert(excess.merchant_fee_sats! > 0);
+    const firstPool = yield* node.call("getrawmempool"); assert(Array.isArray(firstPool)); assert(!firstPool.includes(excess.txid));
+    const db = new DatabaseSync(join(root, "store.db"), { readOnly: true });
+    const savedRaw = (id: string) => {
+      const row = db.prepare("select value from records where kind='refund_group' and key=?").get(id);
+      assert(row); const g = JSON.parse(row.value as string) as { transaction: { raw: string } }; return g.transaction.raw;
+    };
+    try {
+      yield* node.call("sendrawtransaction", savedRaw(excess.id)); yield* node.call("generatetoaddress", 6, minerAddress);
+      yield* store.cancel(refundable.token);
+      const cancellation = yield* store.prepareRefund("o2", "cancellation", "buyer");
+      assert.equal(cancellation.phase, "built"); assert.equal(cancellation.charged_sats, 10_000);
+      const decodedRefund = object(yield* node.call("decoderawtransaction", savedRaw(cancellation.id)));
+      assert(Array.isArray(decodedRefund.vin));
+      assert(decodedRefund.vin.some(v => object(v).txid === excess.txid), "later refund uses proven order change");
+      yield* node.call("sendrawtransaction", savedRaw(cancellation.id)); yield* node.call("generatetoaddress", 6, minerAddress);
+      assert.equal((yield* store.order(refundable.token)).refundable_sats, 0);
+    } finally { db.close(); }
     yield* store.listName("two@space", 1_000);
     const second = yield* store.request({ handle: "two@space", script_pubkey: "5120" + "2".padStart(64, "0") });
     const invoice = yield* store.quote(second.token); assert(invoice.address);
@@ -151,12 +188,14 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     yield* node.call("generatetoaddress", 7, minerAddress);
     view = yield* store.order(second.token); assert.equal(view.status, "unpaid"); assert.equal(view.confirmed_sats, 0);
     // This records Core's actual evidence; it does not adopt a hold-recovery rule.
-    const files = ["ts/src/bitcoin/rpc.ts", "ts/src/bitcoin/core.ts", "ts/src/bitcoin/validation.ts",
-      "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts"];
+    const files = ["ts/src/bitcoin/rpc.ts", "ts/src/bitcoin/core.ts", "ts/src/bitcoin/validation.ts", "ts/src/bitcoin/refunds.ts",
+      "ts/src/refunds/policy.ts", "ts/src/refunds/records.ts", "ts/src/refunds/types.ts", "ts/src/refunds/book.ts",
+      "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts"];
     writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
       files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
       checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
-        "replacement", "mempool-entry-time-preserved", "mempool-entry-height-reconstructed", "missing-mempool-without-rebroadcast"] }, null, 2), { mode: 0o600 });
+        "replacement", "mempool-entry-time-preserved", "mempool-entry-height-reconstructed", "missing-mempool-without-rebroadcast",
+        "refund-preparation-with-capped-buyer-fee", "refund-from-proven-order-change", "operator-only-regtest-refund-send"] }, null, 2), { mode: 0o600 });
     t.diagnostic(`Core 31.2 passed; retained artifacts: regtest/.run/${name}`);
   })));
   await stop();

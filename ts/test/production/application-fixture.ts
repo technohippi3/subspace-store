@@ -3,11 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
 import { Effect, type Scope } from "effect";
-import { SalesStore } from "../../src/application/store.ts";
+import { SalesStore, type Adapters } from "../../src/application/store.ts";
 import { ApplicationError, type Output } from "../../src/application/records.ts";
 import { FileJournal } from "../../src/storage/journal.ts";
 import type { Entry } from "../../src/storage/codec.ts";
 
+export const refundPolicy = { minimumRate: 1000, maximumRate: 100_000, fallbackRate: 2000,
+  buyerFeeCeiling: 200, confirmationTarget: 6, maximumFee: 10_000, maximumRefund: 100_000 };
 export const script = "5120" + "1".padStart(64, "0");
 export class Journal extends FileJournal {
   down = false;
@@ -27,7 +29,7 @@ export function fixture(t: TestContext, budget = 1_000_000) {
   const journal = new Journal(directory);
   const node = { now: 0, tip: 10, outputs: [] as Output[], draws: 0, observations: 0,
     beforeDestination: null as (() => Promise<void>) | null };
-  const adapters = { clock: () => node.now,
+  const adapters: { -readonly [K in keyof Adapters]: Adapters[K] } = { clock: () => node.now,
     snapshot: () => Effect.sync(() => { node.observations++; return { tip: node.tip, outputs: structuredClone(node.outputs) }; }),
     newDestination: Effect.tryPromise({ try: async () => {
       const index = ++node.draws;
@@ -35,7 +37,7 @@ export function fixture(t: TestContext, budget = 1_000_000) {
       return { address: `mock-address-${index}`, script: "0014" + index.toString(16).padStart(40, "0") };
     }, catch: () => new ApplicationError({ code: "unavailable", message: "wallet unavailable" }) }) };
   const config = { database: join(root, "store.db"), journalDirectory: directory,
-    riskBudgetSats: budget, makeJournal: () => journal };
+    riskBudgetSats: budget, refundPolicy, makeJournal: () => journal };
   return { root, node, journal, adapters, config };
 }
 export type Fixture = ReturnType<typeof fixture>;

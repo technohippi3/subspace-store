@@ -2,8 +2,10 @@
 
 The store is being ported to TypeScript. The domain code, Effect-based
 storage and loopback buyer JSON API run in tests. The payment adapter now
-has isolated Core 31.2 regtest qualification. Refunds, registry callbacks
-and full application recovery are still to
+has isolated Core 31.2 regtest qualification. Refund destinations,
+durable reservations and explicit-input signed refund preparation now run
+in tests (`../docs/spec/REFUND-PREPARATION.md`). Refund sending/reconciliation,
+registry callbacks and full application recovery are still to
 build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -55,6 +57,29 @@ lock and real two-process H12 tests are now implemented locally.
 
 ## Current implementation
 
+`src/refunds/` holds production fee policy, strict records and reservation
+accounting, separately from `model/refunds.ts`. `src/bitcoin/refunds.ts`
+builds and validates a first signed refund without broadcasting. The
+application journals credit before signing, snapshots the buyer fee ceiling
+at quote, excludes historical payment scripts from refund destinations and
+retains signed attempts through restart. Order and merchant fee inputs and
+change have explicit provenance. Installation requires explicit refund
+policy and merchant fee-pool destinations; there are no deployment defaults
+or automatic wallet-funding heuristics. These prototype application settings
+must match their journal on restart; a future journaled operator command
+will update policy for new quotes. No general migration layer was added.
+
+The buyer JSON route accepts a refund destination, and views expose fee
+ceilings and sanitized group summaries. Preparation remains an operator
+building block with no operator HTTP route. Original receipt accounting is
+still conservative, and built groups stay reserved: closing/reopening,
+outgoing-spend observations, uncertain sends, fee bumps, deadline tracking
+and full recovery are the next refund work. Unconverted excess refunds and
+the T3 skipped-script operator alert remain unsupported. Core qualification
+includes signed excess/cancellation refunds and proven change funding; only
+the isolated test operator sends them. This is not a production sender or
+the public-pilot acceptance gate.
+
 Three pure state machines and the store-wide request and quote rules were
 ported from `service/ledger.py` as baseline-equivalence checks. The pilot
 application's changed admission and hold rules live in `src/application/`.
@@ -104,8 +129,8 @@ this storage schema's acknowledged position for coordinated snapshots.
 `../docs/spec/STORAGE-SPEC.md` defines the exact boundary and limitations.
 
 The storage component's records are generic JSON. The application now adds
-domain validation and quote/cancellation instruction gates; real chain
-observation, refund sends and controller HTTP/whole-host recovery remain.
+domain validation and quote/cancellation instruction gates. Real chain
+observation is qualified; refund sends and controller HTTP/whole-host recovery remain.
 Restored metadata requires reconciliation before the application can reopen
 admission. The backend is an existing filesystem directory that must live
 off-host for actual host-loss recovery; no object-store adapter is claimed.
@@ -137,9 +162,11 @@ the pinned binary from `../regtest/fetch-bitcoin.sh`, plus unshare and ip.
 Hosted CI uses `test:core:ci` for privileged namespace creation followed by
 an immediate drop to the original unprivileged UID/GID.
 The application passes every historical payment destination to the adapter.
-This is payment-observation qualification, not complete stack acceptance.
+It now also qualifies first-attempt refund signing and proven change
+funding, with broadcasts performed only by the isolated test operator.
+Complete stack acceptance remains.
 
-Next add refund/registry operations, complete order
+Next add refund send/reconciliation and registry operations, complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

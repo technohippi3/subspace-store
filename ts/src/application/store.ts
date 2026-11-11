@@ -3,15 +3,20 @@ import { Effect, Semaphore } from "effect";
 import { canonicalHandle } from "../recipient.ts";
 import { DurableStore, type StorageConfig } from "../storage/store.ts";
 import { ApplicationError, checked, claims, decode, destination, encode, fail, request, sats, verified,
-  type Destination, type Order, type Record, type Snapshot, type State } from "./records.ts";
+  type Destination, type Order, type Record, type RefundSettings, type Snapshot, type State } from "./records.ts";
 import { active, admission, grant, refresh, release, total } from "./sales.ts";
+import { policy, type RefundPolicy } from "../refunds/policy.ts";
+import { available, buildRequest, configuration, heldScripts, recordBuilt, reserve, summary } from "../refunds/book.ts";
+import type { RefundAdapters, RefundGroup } from "../refunds/types.ts";
 
 export interface Adapters {
   readonly clock: () => number;
   readonly snapshot: (destinations: readonly Destination[]) => Effect.Effect<Snapshot, ApplicationError>;
   readonly newDestination: Effect.Effect<Destination, ApplicationError>;
+  readonly refunds?: RefundAdapters;
 }
-export interface Config extends StorageConfig { readonly riskBudgetSats: number }
+export interface Config extends StorageConfig { readonly riskBudgetSats: number;
+  readonly refundPolicy: RefundPolicy; readonly merchantDestinations?: readonly Destination[] }
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 /** One serialized application queue, including asynchronous wallet/chain work.
  * SQLite transactions cover only local writes; no RPC runs inside one. */
@@ -20,14 +25,16 @@ export class SalesStore {
   private readonly storage: DurableStore;
   private readonly adapters: Adapters;
   private readonly budget: number;
-  private constructor(storage: DurableStore, adapters: Adapters, budget: number) {
-    this.storage = storage; this.adapters = adapters; this.budget = budget;
+  private readonly refunds: RefundSettings;
+  private constructor(storage: DurableStore, adapters: Adapters, config: Config) {
+    this.storage = storage; this.adapters = adapters; this.budget = config.riskBudgetSats;
+    this.refunds = configuration({ version: 1, policy: structuredClone(config.refundPolicy), merchantDestinations: structuredClone([...(config.merchantDestinations ?? [])]) });
   }
   static open(config: Config, adapters: Adapters) {
     return Effect.gen(function* () {
-      yield* checked(() => sats(config.riskBudgetSats));
+      yield* checked(() => { sats(config.riskBudgetSats); policy(config.refundPolicy); });
       const storage = yield* DurableStore.open(config);
-      const result = new SalesStore(storage, adapters, config.riskBudgetSats);
+      const result = new SalesStore(storage, adapters, config);
       if ((yield* storage.status()).restoreRequired)
         return yield* checked(() => fail("restored application requires controller and chain reconciliation", "unavailable"));
       const { records, state } = yield* result.load();
@@ -39,14 +46,14 @@ export class SalesStore {
     const self = this;
     return Effect.gen(function* () {
       const records = yield* self.storage.records();
-      const state = yield* verified(() => decode(records, self.budget));
+      const state = yield* verified(() => decode(records, self.budget, self.refunds));
       return { records, state };
     });
   }
   private save(before: readonly Record[], state: State) {
     const self = this;
     return Effect.gen(function* () {
-      const after = yield* verified(() => { const records = encode(state); decode(records, self.budget); return records; });
+      const after = yield* verified(() => { const records = encode(state); decode(records, self.budget, self.refunds); return records; });
       const previous = new Map(before.map(r => [JSON.stringify([r.kind, r.key]), JSON.stringify(r.value)]));
       const changed = after.filter(r => previous.get(JSON.stringify([r.kind, r.key])) !== JSON.stringify(r.value));
       if (changed.length) yield* self.storage.commit(changed);
@@ -82,6 +89,8 @@ export class SalesStore {
       const hold = active(state, order) ? order.grants.at(-1)! : null;
       const rejected = state.orders.some(o => o.destination?.script === order.recipient ||
         (o.handle !== order.handle && claims(o) && o.recipient === order.recipient));
+      const account = yield* self.storage.acknowledged("refund_account", order.id);
+      const refund = account?.value as unknown as State["accounts"][number] | undefined;
       return { handle: order.handle, recipient_script_pubkey: order.recipient,
         status: cancelled && !final ? (acknowledged?.status ?? "requested") : order.status,
         cancellation: cancelled ? (final ? "final" : "unconfirmed") : null,
@@ -97,6 +106,11 @@ export class SalesStore {
         detected_sats: total(state, order, 0), confirmed_sats: total(state, order, 1),
         batchable_sats: total(state, order, 3), settled_sats: total(state, order, 6),
         payment_history: order.paymentHistory,
+        refund_address: refund?.destination?.address ?? null,
+        buyer_refund_fee_ceiling_sats: refund?.ceiling ?? null,
+        excess_minimum: "Estimated refund fee plus 546 sats; smaller excess is not refunded.",
+        refundable_sats: available(state, order.id),
+        refund_groups: yield* Effect.forEach(state.groups.filter(g => g.order === order.id), g => self.groupView(g)),
         reconciling: claims(order) && total(state, order, 3) < order.price! ? ["issuance"] : [] };
     });
   }
@@ -117,6 +131,7 @@ export class SalesStore {
           recipient: input.script, tokenHash: hash(token), status: "requested", quotedAt: null,
           quotedPrice: null, price: null, destination: null, payFirst: false, grants: [],
           everConverted: false, paymentHistory: "none", lateEvaluated: false });
+        state.accounts.push({ order: `o${sequence}`, destination: null, ceiling: null });
         yield* self.save(records, state);
         return { order_link: `/orders/${token}`, token };
       }));
@@ -143,7 +158,7 @@ export class SalesStore {
       const position = yield* self.storage.status();
       if (!flushed || !(yield* self.storage.confirm(position.seq)))
         return yield* checked(() => fail("the off-host journal is unavailable; no quote was made", "unavailable"));
-      const held = new Set(state.orders.flatMap(o => o.destination ? [o.destination.script] : []));
+      const held = new Set(heldScripts(state));
       let chosen: Destination | undefined;
       for (let draw = 0; draw <= held.size; draw++) {
         const candidate = yield* self.adapters.newDestination;
@@ -161,6 +176,7 @@ export class SalesStore {
         order.destination = chosen; order.payFirst = payFirst; order.status = "quoted";
         order.quotedAt = state.settings.lastTime;
         order.price = order.quotedPrice = state.listings.find(n => n.handle === order.handle)!.price;
+        state.accounts.find(a => a.order === order.id)!.ceiling = state.refunds.policy.buyerFeeCeiling;
         if (!payFirst) grant(state, order);
       });
       yield* self.save(records, state);
@@ -195,6 +211,75 @@ export class SalesStore {
     }));
   }
   observe() { return this.queue.withPermit(this.refresh().pipe(Effect.asVoid)); }
+  private refundAdapters(): RefundAdapters {
+    return this.adapters.refunds ?? fail("refund wallet is not configured", "unavailable");
+  }
+  private groupView(g: RefundGroup) {
+    const self = this;
+    return Effect.gen(function* () {
+      const saved = yield* self.storage.acknowledged("refund_group", g.id);
+      // No raw transaction or intermediate signed draft leaves this API.
+      return summary(g, !!saved && JSON.stringify(saved.value) === JSON.stringify(g));
+    });
+  }
+  setRefundDestination(token: string, address: string) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { records, state } = yield* self.load(), order = yield* checked(() => self.find(state, token));
+      const adapters = yield* checked(() => self.refundAdapters());
+      yield* checked(() => {
+        if (typeof address !== "string" || !address || address.length > 256) fail("invalid refund address", "invalid");
+        if (state.groups.some(g => g.order === order.id && g.phase === "built")) fail("a refund has been built; its destination is fixed");
+      });
+      const resolved = yield* adapters.resolveAddress(address);
+      yield* checked(() => {
+        destination(resolved);
+        if (state.orders.some(o => o.destination?.script === resolved.script) ||
+            state.refunds.merchantDestinations.some(d => d.script === resolved.script) ||
+            state.groups.some(g => g.transaction?.outputs.some(o => o.role !== "buyer" && o.script === resolved.script)))
+          fail("a refund never goes to a store payment or funding address");
+        state.accounts.find(a => a.order === order.id)!.destination = { ...resolved };
+      });
+      yield* self.save(records, state); yield* self.storage.flush(); return yield* self.view(state, order);
+    }));
+  }
+  /** Operator building block only. No operator HTTP route or send RPC exists. */
+  prepareRefund(id: string, kind: RefundGroup["kind"], cause: RefundGroup["cause"]) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const adapters = yield* checked(() => self.refundAdapters());
+      const { records, state } = yield* self.refresh();
+      const estimate = yield* adapters.estimateRate(state.refunds.policy.confirmationTarget);
+      const g = yield* checked(() => reserve(state, id, kind, cause, estimate));
+      yield* self.save(records, state);
+      return yield* self.build(g.id);
+    }));
+  }
+  private build(id: string) {
+    const self = this;
+    return Effect.gen(function* () {
+      const { records, state } = yield* self.refresh();
+      const g = yield* checked(() => state.groups.find(g => g.id === id) ?? fail("no such refund", "not_found"));
+      if (g.phase !== "reserved") { yield* self.storage.flush(); return yield* self.groupView(g); }
+      const flushed = yield* self.storage.flush(), position = yield* self.storage.status();
+      if (!flushed || !(yield* self.storage.confirm(position.seq))) return yield* self.groupView(g);
+      const request = yield* checked(() => buildRequest(state, g));
+      const adapters = yield* checked(() => self.refundAdapters());
+      const transaction = yield* adapters.build(request);
+      yield* verified(() => recordBuilt(g, request, transaction));
+      yield* self.save(records, state); return yield* self.groupView(g);
+    });
+  }
+  buildRefund(id: string) { return this.queue.withPermit(this.build(id)); }
+  discardUnbuiltRefund(id: string) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { records, state } = yield* self.load();
+      const g = yield* checked(() => state.groups.find(g => g.id === id) ?? fail("no such refund", "not_found"));
+      yield* checked(() => { if (g.phase !== "reserved") fail("only an unbuilt reservation can be discarded"); });
+      g.phase = "void"; yield* self.save(records, state); return yield* self.groupView(g);
+    }));
+  }
   /** Freezes an order only; this does not sign, broadcast or serve a batch. */
   beginIssuance(id: string) {
     const self = this;

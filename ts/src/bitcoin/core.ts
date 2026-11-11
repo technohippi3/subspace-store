@@ -63,6 +63,8 @@ export class CoreAdapter {
       const tip = yield* self.tip(); yield* self.walletReady(tip); return tip;
     });
   }
+  /** Readiness guard shared with the explicit refund builder. */
+  checkReady() { return this.ready(); }
   private owned(address: string, script?: string) {
     const self = this;
     return Effect.gen(function* () {

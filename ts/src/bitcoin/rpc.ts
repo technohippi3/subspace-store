@@ -62,7 +62,7 @@ export class BitcoinRpc {
           (key: string, value: unknown, context?: { source?: string }) => {
             // Preserve Core's exact decoded-output BTC number before binary
             // floating point can round it. Node 24 supplies primitive sources.
-            if (key === "value" && typeof value === "number") {
+            if (["value", "amount", "feerate"].includes(key) && typeof value === "number") {
               if (!context?.source) throw Error("numeric source unavailable");
               return context.source;
             }
