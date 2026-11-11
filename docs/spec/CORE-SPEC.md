@@ -75,7 +75,8 @@ command uses unprivileged user/network namespaces.
 
 The adapter is wired through the application's destination-aware snapshot
 interface. First-attempt refund funding/signing is now qualified separately
-in `REFUND-PREPARATION.md`. Refund sends/spend-family observations, registry callbacks,
+in `REFUND-PREPARATION.md`. First-attempt sends and settlement/reorg
+observations are qualified in `REFUND-SENDING.md`. Multiple spend families, registry callbacks,
 full application recovery, attended maintenance and the deployed-stack
 acceptance gates remain. The hold-recovery/Infisical-outage scenarios in
 `deploy/README.md` are not established by this narrower qualification.

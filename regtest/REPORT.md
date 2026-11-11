@@ -1126,3 +1126,57 @@ ec5384f2cf4cd0564fcb8f2ebf8c0be0c3ed81f45fbcb65a48b4135cb33323c8  ts/src/refunds
 d65b07206ce7fc3edf3ab986fa724bc2110b6c0b67a4804f4a2088af7e795eef  ts/regtest/core.test.ts
 ec737eb6ab075c5e38e0572bb00f820d9e9bd0bb95512d70a47fbfc1206674fe  ts/test/production/application-fixture.ts
 ```
+
+## TypeScript refund sending, 2026-11-11
+
+Run `core-adapter-2026-11-11T16-15-18-469Z-de0ce9e5` passed on the checksum-pinned
+Core 31.2 binary through `npm run test:core`, with fresh isolated regtest
+wallets. It retains the earlier payment and signing checks while replacing
+the earlier manual refund sends with the application sender. Its
+qualification JSON binds sixteen source digests and fifteen checks.
+
+The first send reached Core, then an injected lost reply left the
+application intent uncertain. Closing and reopening the store reconciled
+the same transaction in the mempool; explicit reconciliation sent nothing
+else. Six confirmations moved its charge from reserved to refunded.
+Invalidating and reconsidering the last block exercised 6–5–6 accounting.
+Removing the refund block and building seven empty alternative blocks
+reopened the same reservation; re-mining closed it again. A later
+cancellation refund used proven order change and settled through the
+application sender. Core preflight also requires the observation tip to remain unchanged
+before the final journal gate. Exactly two application sends paid the two groups,
+with 13,000 sats charged to the order once. The buyer fee ceiling and
+other amounts remain test inputs, not deployment choices.
+
+Separate production process tests kill a writer with SIGKILL after the
+acknowledged send gate, then reopen its SQLite/journal and retry the same
+signed bytes. That test caught and now verifies a reused journal backend
+refreshing its append cursor after another owner advanced the journal.
+No process-death claim is inferred from the Core restart alone.
+
+This qualifies one attempt per group. Exclusive fee bumps/rebuilds,
+full host recovery, deadline/incident lifecycle, durable operator alerts,
+registry integration, buyer-client acceptance and the pilot gates remain.
+The live sender is a programmatic operator building block; there is no
+operator HTTP route, automatic service launcher or production deployment.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+f64968a714d684b3c119d7287589b224fa107fc8218364aa088a7ef54f10c0f1  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+b6116157c59833747e65b6c7a987673c6e034c11519d436cf47d2583f1affa47  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+5de1bf129f5bb0592c7c78229da0adf0e14c6162e3cc55a5d12552b74c12fba6  ts/src/refunds/types.ts
+bd793bd8acc5d4deeb13ea83396b0606fb63372321af09bfbbe11ca23d76775b  ts/src/refunds/book.ts
+cb67e6bf416c004d761f723d3f915fc3ad7ef82a703532a15f9e6baa7ea7fb17  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+d37a9028e871682ad426df364579cd037ae287d95c7674b8d468f737c375717e  ts/src/application/records.ts
+6bf16bef51ce55a1a2e6790b3682fec83a49be9bea4acbcb63c339c03cf4f0ad  ts/regtest/core.test.ts
+ec737eb6ab075c5e38e0572bb00f820d9e9bd0bb95512d70a47fbfc1206674fe  ts/test/production/application-fixture.ts
+b39841e6cbf4bd0ac9c249415d8d6c84377792efe1c1836bd791250677dd9e13  ts/src/bitcoin/refund-sender.ts
+8564b8a289505aa5b7a50ce8284ba4766c1db45fcdd10498b9683b32317d6fe3  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+```

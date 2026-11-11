@@ -8,6 +8,7 @@ import { active, admission, grant, refresh, release, total } from "./sales.ts";
 import { policy, type RefundPolicy } from "../refunds/policy.ts";
 import { available, buildRequest, configuration, heldScripts, recordBuilt, reserve, summary } from "../refunds/book.ts";
 import type { RefundAdapters, RefundGroup } from "../refunds/types.ts";
+import { applyObservations, balance, refundStatus } from "../refunds/observations.ts";
 
 export interface Adapters {
   readonly clock: () => number;
@@ -38,7 +39,10 @@ export class SalesStore {
       if ((yield* storage.status()).restoreRequired)
         return yield* checked(() => fail("restored application requires controller and chain reconciliation", "unavailable"));
       const { records, state } = yield* result.load();
+      if ((state.refundSends.length || state.refundObservations.length) && !adapters.refunds?.sender)
+        return yield* checked(() => fail("refund reconciliation adapter is required", "unavailable"));
       yield* result.save(records, state);
+      if (adapters.refunds?.sender && state.groups.some(g => g.transaction)) yield* result.refresh();
       return result;
     });
   }
@@ -64,10 +68,19 @@ export class SalesStore {
     return Effect.gen(function* () {
       const current = yield* self.load();
       const destinations = current.state.orders.flatMap(o => o.destination ? [{ ...o.destination }] : []);
-      const snapshot = yield* self.adapters.snapshot(destinations);
-      yield* verified(() => refresh(current.state, self.adapters.clock(), snapshot));
-      yield* self.save(current.records, current.state);
-      return yield* self.load();
+      const transactions = current.state.groups.flatMap(g => g.transaction ? [g.transaction] : []), sender = self.adapters.refunds?.sender;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const snapshot = yield* self.adapters.snapshot(destinations);
+        if (sender && transactions.length) {
+          const observations = yield* sender.observe(transactions);
+          if (snapshot.tip !== observations.tip || snapshot.tipHash !== observations.tipHash) continue;
+          yield* verified(() => applyObservations(current.state, observations));
+        }
+        yield* verified(() => refresh(current.state, self.adapters.clock(), snapshot));
+        yield* self.save(current.records, current.state);
+        return yield* self.load();
+      }
+      return yield* checked(() => fail("payment and refund observations disagree on the chain tip", "unavailable"));
     });
   }
   private find(state: State, token: string): Order {
@@ -91,6 +104,7 @@ export class SalesStore {
         (o.handle !== order.handle && claims(o) && o.recipient === order.recipient));
       const account = yield* self.storage.acknowledged("refund_account", order.id);
       const refund = account?.value as unknown as State["accounts"][number] | undefined;
+      const funds = balance(state, order), shortfall = claims(order) && total(state, order, 3) < order.price!;
       return { handle: order.handle, recipient_script_pubkey: order.recipient,
         status: cancelled && !final ? (acknowledged?.status ?? "requested") : order.status,
         cancellation: cancelled ? (final ? "final" : "unconfirmed") : null,
@@ -110,8 +124,10 @@ export class SalesStore {
         buyer_refund_fee_ceiling_sats: refund?.ceiling ?? null,
         excess_minimum: "Estimated refund fee plus 546 sats; smaller excess is not refunded.",
         refundable_sats: available(state, order.id),
-        refund_groups: yield* Effect.forEach(state.groups.filter(g => g.order === order.id), g => self.groupView(g)),
-        reconciling: claims(order) && total(state, order, 3) < order.price! ? ["issuance"] : [] };
+        refunded_sats: funds.refunded, reserved_refund_sats: funds.reserved, refund_exposure_sats: funds.exposure,
+        refund_groups: yield* Effect.forEach(state.groups.filter(g => g.order === order.id), g => self.groupView(state, g)),
+        reconciling: [...(shortfall ? [order.status === "issuing" ? "post_issuance_deficit" : "issuance"] : []),
+          ...(funds.exposure > 0 ? ["refunds"] : [])] };
     });
   }
   request(body: unknown) {
@@ -214,12 +230,15 @@ export class SalesStore {
   private refundAdapters(): RefundAdapters {
     return this.adapters.refunds ?? fail("refund wallet is not configured", "unavailable");
   }
-  private groupView(g: RefundGroup) {
+  private groupView(state: State, g: RefundGroup) {
     const self = this;
     return Effect.gen(function* () {
       const saved = yield* self.storage.acknowledged("refund_group", g.id);
+      const intent = state.refundSends.find(s => s.group === g.id);
+      const savedIntent = intent ? yield* self.storage.acknowledged("refund_send", g.id) : null;
       // No raw transaction or intermediate signed draft leaves this API.
-      return summary(g, !!saved && JSON.stringify(saved.value) === JSON.stringify(g));
+      return { ...summary(g, !!saved && JSON.stringify(saved.value) === JSON.stringify(g)), ...refundStatus(state, g),
+        intent_acknowledged: intent ? !!savedIntent && JSON.stringify(savedIntent.value) === JSON.stringify(intent) : null };
     });
   }
   setRefundDestination(token: string, address: string) {
@@ -243,7 +262,7 @@ export class SalesStore {
       yield* self.save(records, state); yield* self.storage.flush(); return yield* self.view(state, order);
     }));
   }
-  /** Operator building block only. No operator HTTP route or send RPC exists. */
+  /** Operator building block only. No operator HTTP route exists. */
   prepareRefund(id: string, kind: RefundGroup["kind"], cause: RefundGroup["cause"]) {
     const self = this;
     return self.queue.withPermit(Effect.gen(function* () {
@@ -260,14 +279,14 @@ export class SalesStore {
     return Effect.gen(function* () {
       const { records, state } = yield* self.refresh();
       const g = yield* checked(() => state.groups.find(g => g.id === id) ?? fail("no such refund", "not_found"));
-      if (g.phase !== "reserved") { yield* self.storage.flush(); return yield* self.groupView(g); }
+      if (g.phase !== "reserved") { yield* self.storage.flush(); return yield* self.groupView(state, g); }
       const flushed = yield* self.storage.flush(), position = yield* self.storage.status();
-      if (!flushed || !(yield* self.storage.confirm(position.seq))) return yield* self.groupView(g);
+      if (!flushed || !(yield* self.storage.confirm(position.seq))) return yield* self.groupView(state, g);
       const request = yield* checked(() => buildRequest(state, g));
       const adapters = yield* checked(() => self.refundAdapters());
       const transaction = yield* adapters.build(request);
       yield* verified(() => recordBuilt(g, request, transaction));
-      yield* self.save(records, state); return yield* self.groupView(g);
+      yield* self.save(records, state); return yield* self.groupView(state, g);
     });
   }
   buildRefund(id: string) { return this.queue.withPermit(this.build(id)); }
@@ -277,7 +296,54 @@ export class SalesStore {
       const { records, state } = yield* self.load();
       const g = yield* checked(() => state.groups.find(g => g.id === id) ?? fail("no such refund", "not_found"));
       yield* checked(() => { if (g.phase !== "reserved") fail("only an unbuilt reservation can be discarded"); });
-      g.phase = "void"; yield* self.save(records, state); return yield* self.groupView(g);
+      g.phase = "void"; yield* self.save(records, state); return yield* self.groupView(state, g);
+    }));
+  }
+  private sendRefund(id: string) {
+    const self = this;
+    return Effect.gen(function* () {
+      const sender = yield* checked(() => self.refundAdapters().sender ?? fail("refund sender is not configured", "unavailable"));
+      const { records, state } = yield* self.refresh();
+      const g = yield* checked(() => state.groups.find(g => g.id === id) ?? fail("no such refund", "not_found"));
+      const tx = yield* checked(() => g.transaction ?? fail("refund has not been built"));
+      const facts = state.refundObservations.find(o => o.group === id);
+      if (facts?.seen === "mempool" || facts?.seen === "mined") return yield* self.groupView(state, g);
+      const previous = state.refundSends.find(s => s.group === id);
+      yield* checked(() => {
+        if (!facts || facts.needsRebuild || !facts.inputsAvailable || facts.conflicts.length) fail("refund funding is unavailable or needs rebuild");
+        if (!previous && balance(state, state.orders.find(o => o.id === g.order)!).exposure > 0) fail("refund credit is no longer settled");
+      });
+      const intent = { group: id, txid: tx.txid, firstIntentAt: previous?.firstIntentAt ?? state.settings.lastTime,
+        lastIntentAt: state.settings.lastTime, calls: (previous?.calls ?? 0) + 1, result: "uncertain" as const };
+      if (previous) Object.assign(previous, intent); else state.refundSends.push(intent);
+      yield* self.save(records, state);
+      yield* self.storage.flush();
+      const position = yield* self.storage.status();
+      if (!(yield* self.storage.confirm(position.seq))) return yield* self.groupView(state, g);
+      const permission = self.storage.confirm(position.seq).pipe(Effect.mapError(() => new ApplicationError({ code: "unavailable", message: "refund journal check failed" })));
+      const accepted = yield* sender.broadcast(tx, permission, { tip: facts!.tip, tipHash: facts!.tipHash })
+        .pipe(Effect.match({ onSuccess: () => true, onFailure: () => false }));
+      // Interruption anywhere above leaves the durable intent uncertain.
+      if (accepted) {
+        const current = yield* self.load();
+        current.state.refundSends.find(s => s.group === id)!.result = "accepted";
+        yield* self.save(current.records, current.state);
+      }
+      const current = yield* self.refresh();
+      return yield* self.groupView(current.state, current.state.groups.find(g => g.id === id)!);
+    });
+  }
+  broadcastRefund(id: string) { return this.queue.withPermit(this.sendRefund(id)); }
+  /** Only previously attempted, absent transactions may be retried. Reads do not send. */
+  reconcileRefunds() {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { state } = yield* self.refresh();
+      const candidates = state.refundSends.filter(s => {
+        const facts = state.refundObservations.find(o => o.group === s.group);
+        return facts?.seen === "absent" && facts.inputsAvailable && !facts.needsRebuild && !facts.conflicts.length;
+      });
+      return yield* Effect.forEach(candidates, s => self.sendRefund(s.group));
     }));
   }
   /** Freezes an order only; this does not sign, broadcast or serve a batch. */

@@ -43,8 +43,9 @@ loopback buyer JSON API now connects requests, quotes and cancellations to
 that storage with injected chain/wallet adapters (`docs/spec/CHECKOUT-SPEC.md`).
 The payment adapter now has isolated Bitcoin Core 31.2 regtest qualification
 (`docs/spec/CORE-SPEC.md`). Durable refund preparation now has signed Core
-regtest coverage (`docs/spec/REFUND-PREPARATION.md`); refund sending and
-reconciliation, registry integration and full application
+regtest coverage (`docs/spec/REFUND-PREPARATION.md`). First-attempt sends,
+lost replies and settlement/reorg accounting are now qualified separately
+(`docs/spec/REFUND-SENDING.md`). Multi-family refunds, registry integration and full application
 recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 

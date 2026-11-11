@@ -1,5 +1,6 @@
 // Production payment/hold rules. No reference-model imports or shared reducers.
 import { claims, fail, MAX_MONEY, sats, whole, type Grant, type Order, type Snapshot, type State } from "./records.ts";
+import { refunded } from "../refunds/observations.ts";
 
 export function total(state: State, order: Order, depth: number): number {
   return state.payments.filter(p => p.active && p.script === order.destination?.script && p.confirmations >= depth)
@@ -106,7 +107,7 @@ export function admission(state: State, order: Order): boolean {
   const price = state.listings.find(n => n.handle === order.handle)!.price;
   const highest = state.listings.reduce((price, n) => Math.max(price, n.price), 0);
   const limit = Math.min(state.settings.riskBudget, 10 * highest);
-  const confirmed = state.payments.filter(p => p.active && p.confirmations >= 1).reduce((n, p) => n + p.sats, 0);
+  const confirmed = state.payments.filter(p => p.active && p.confirmations >= 1).reduce((n, p) => n + p.sats, 0) - refunded(state);
   if (confirmed + price > limit) fail("sales are paused: the store is at its exposure limit");
   const held = state.orders.filter(o => active(state, o));
   const reserved = held.reduce((sum, o) => sum + Math.max(0, o.price! - total(state, o, 1)), 0);

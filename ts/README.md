@@ -4,8 +4,9 @@ The store is being ported to TypeScript. The domain code, Effect-based
 storage and loopback buyer JSON API run in tests. The payment adapter now
 has isolated Core 31.2 regtest qualification. Refund destinations,
 durable reservations and explicit-input signed refund preparation now run
-in tests (`../docs/spec/REFUND-PREPARATION.md`). Refund sending/reconciliation,
-registry callbacks and full application recovery are still to
+in tests (`../docs/spec/REFUND-PREPARATION.md`). First-attempt sends and
+settlement/reorg accounting are now qualified in `../docs/spec/REFUND-SENDING.md`.
+Multi-family refunds, registry callbacks and full application recovery are still to
 build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -70,15 +71,23 @@ must match their journal on restart; a future journaled operator command
 will update policy for new quotes. No general migration layer was added.
 
 The buyer JSON route accepts a refund destination, and views expose fee
-ceilings and sanitized group summaries. Preparation remains an operator
-building block with no operator HTTP route. Original receipt accounting is
-still conservative, and built groups stay reserved: closing/reopening,
-outgoing-spend observations, uncertain sends, fee bumps, deadline tracking
-and full recovery are the next refund work. Unconverted excess refunds and
-the T3 skipped-script operator alert remain unsupported. Core qualification
-includes signed excess/cancellation refunds and proven change funding; only
-the isolated test operator sends them. This is not a production sender or
-the public-pilot acceptance gate.
+ceilings, balances and sanitized group summaries. Preparation and sending
+are operator building blocks with no operator HTTP route. The first-attempt
+sender journals uncertain intent before sending and checks live permission
+immediately before the Core send RPC. Startup observes refunds before
+returning a ready application; explicit reconciliation retries only absent,
+previously attempted signed transactions. Reads never send. Settled charges
+move from reserved to refunded, and losing settlement reopens the same
+reservation. Admission subtracts only settled refunds. Conflicting spends
+keep their reservations and a sticky rebuild guard, without an independent
+replacement. Group and intent acknowledgments are reported separately.
+
+Fee bumps, exclusive family replacements, deadline tracking, durable owner
+alerts/losses and full recovery remain. Unconverted excess refunds and the
+T3 skipped-script operator alert remain unsupported. Core qualification now
+includes application sends, a lost reply and store restart, settlement
+changes and deep reorg/re-mining, as well as proven change funding. These
+use fresh isolated regtest wallets and do not pass public-pilot acceptance.
 
 Three pure state machines and the store-wide request and quote rules were
 ported from `service/ledger.py` as baseline-equivalence checks. The pilot
@@ -130,7 +139,8 @@ this storage schema's acknowledged position for coordinated snapshots.
 
 The storage component's records are generic JSON. The application now adds
 domain validation and quote/cancellation instruction gates. Real chain
-observation is qualified; refund sends and controller HTTP/whole-host recovery remain.
+observation and first-attempt refund sends are qualified; multi-family
+refunds and controller HTTP/whole-host recovery remain.
 Restored metadata requires reconciliation before the application can reopen
 admission. The backend is an existing filesystem directory that must live
 off-host for actual host-loss recovery; no object-store adapter is claimed.
@@ -162,11 +172,11 @@ the pinned binary from `../regtest/fetch-bitcoin.sh`, plus unshare and ip.
 Hosted CI uses `test:core:ci` for privileged namespace creation followed by
 an immediate drop to the original unprivileged UID/GID.
 The application passes every historical payment destination to the adapter.
-It now also qualifies first-attempt refund signing and proven change
-funding, with broadcasts performed only by the isolated test operator.
+It now also qualifies first-attempt signing/sending, uncertain replies,
+store restart, settlement/reorg accounting and proven change funding.
 Complete stack acceptance remains.
 
-Next add refund send/reconciliation and registry operations, complete order
+Next add refund family/rebuild and deadline handling, registry operations, complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

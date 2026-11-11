@@ -24,4 +24,24 @@ export interface RefundAdapters {
   readonly resolveAddress: (address: string) => Effect.Effect<Destination, ApplicationError>;
   readonly estimateRate: (target: number) => Effect.Effect<number | null, ApplicationError>;
   readonly build: (request: BuildRequest) => Effect.Effect<PreparedRefund, ApplicationError>;
+  readonly sender?: RefundSender;
+}
+export interface RefundSend {
+  group: string; txid: string; firstIntentAt: number; lastIntentAt: number;
+  calls: number; result: "uncertain" | "accepted";
+}
+export interface RefundFacts {
+  txid: string; seen: "absent" | "mempool" | "mined"; confirmations: number;
+  blockHash: string | null; inputsAvailable: boolean;
+  conflicts: { txid: string; confirmations: number; mempool: boolean }[];
+}
+export interface RefundObservation extends RefundFacts {
+  group: string; tip: number; tipHash: string; needsRebuild: boolean;
+}
+export interface RefundSnapshot { tip: number; tipHash: string; transactions: RefundFacts[] }
+export interface RefundSender {
+  readonly observe: (transactions: readonly PreparedRefund[]) => Effect.Effect<RefundSnapshot, ApplicationError>;
+  /** Evaluate permission after preflight, immediately before the send RPC. */
+  readonly broadcast: (transaction: PreparedRefund, permission: Effect.Effect<boolean, ApplicationError>,
+    expectedTip: Pick<RefundSnapshot, "tip" | "tipHash">) => Effect.Effect<void, ApplicationError>;
 }

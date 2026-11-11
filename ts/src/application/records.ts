@@ -3,7 +3,8 @@ import { canonicalHandle, validP2tr } from "../recipient.ts";
 import type { Json } from "../storage/codec.ts";
 import { policy, type RefundPolicy } from "../refunds/policy.ts";
 import { account, group } from "../refunds/records.ts";
-import type { RefundAccount, RefundGroup } from "../refunds/types.ts";
+import type { RefundAccount, RefundGroup, RefundObservation, RefundSend } from "../refunds/types.ts";
+import { observation, sendRecord } from "../refunds/observations.ts";
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly code: "invalid" | "refused" | "unavailable" | "not_found";
@@ -38,13 +39,14 @@ export interface Order {
 }
 export interface Listing { handle: string; space: string; price: number }
 export interface Output { outpoint: string; script: string; sats: number; confirmations: number }
-export interface Snapshot { tip: number; outputs: readonly Output[] }
+export interface Snapshot { tip: number; tipHash?: string; outputs: readonly Output[] }
 export interface Payment extends Output { active: boolean }
 export interface Settings { version: 1; riskBudget: number; paused: boolean; conversions: string[];
   lastTime: number; tip: number; nextOrder: number }
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
 export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[];
-  refunds: RefundSettings; accounts: RefundAccount[]; groups: RefundGroup[] }
+  refunds: RefundSettings; accounts: RefundAccount[]; groups: RefundGroup[];
+  refundObservations: RefundObservation[]; refundSends: RefundSend[] }
 export interface Record { kind: string; key: string; value: Json }
 export const claims = (order: Order): boolean => order.status === "converted" || order.status === "issuing";
 export function request(body: unknown): { handle: string; script: string } {
@@ -105,6 +107,8 @@ export function encode(state: State): Record[] {
     { kind: "refund_settings", key: "global", value: state.refunds as unknown as Json },
     ...state.accounts.map(value => ({ kind: "refund_account", key: value.order, value: value as unknown as Json })),
     ...state.groups.map(value => ({ kind: "refund_group", key: value.id, value: value as unknown as Json })),
+    ...state.refundObservations.map(value => ({ kind: "refund_observation", key: value.group, value: value as unknown as Json })),
+    ...state.refundSends.map(value => ({ kind: "refund_send", key: value.group, value: value as unknown as Json })),
     ...state.listings.map(value => ({ kind: "listing", key: value.handle, value: value as unknown as Json })),
     ...state.orders.map(value => ({ kind: "sales_order", key: value.id, value: value as unknown as Json })),
     ...state.payments.map(value => ({ kind: "payment", key: value.outpoint, value: value as unknown as Json })) ];
@@ -114,7 +118,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   for (const d of refunds.merchantDestinations) destination(d);
   const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
     lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [],
-    refunds: structuredClone(refunds), accounts: [], groups: [] };
+    refunds: structuredClone(refunds), accounts: [], groups: [], refundObservations: [], refundSends: [] };
   for (const record of records) {
     // Commands mutate a working copy. The original records remain the
     // immutable comparison point for the atomic changed-record commit.
@@ -126,6 +130,8 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
         break;
       case "refund_account": account(v); if (v.order !== record.key) fail("refund account differs"); state.accounts.push(v); break;
       case "refund_group": group(v); if (v.id !== record.key) fail("refund group differs"); state.groups.push(v); break;
+      case "refund_observation": observation(v); if (v.group !== record.key) fail("refund observation differs"); state.refundObservations.push(v); break;
+      case "refund_send": sendRecord(v); if (v.group !== record.key) fail("refund send differs"); state.refundSends.push(v); break;
       case "sales_settings":
         object(v, "version,riskBudget,paused,conversions,lastTime,tip,nextOrder");
         if (record.key !== "global" || v.version !== 1 || v.riskBudget !== riskBudget) fail("unsupported application settings");
@@ -193,5 +199,14 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
         fail("refund change destination reused");
     }
   }
+  for (const collection of [state.refundObservations, state.refundSends]) {
+    const ids = new Set<string>();
+    for (const value of collection) {
+      const g = state.groups.find(g => g.id === value.group);
+      if (ids.has(value.group) || !g?.transaction || g.transaction.txid !== value.txid) fail("invalid refund evidence relationship");
+      ids.add(value.group);
+    }
+  }
+  for (const s of state.refundSends) if (s.lastIntentAt > state.settings.lastTime) fail("refund intent is in the future");
   return state;
 }

@@ -3,9 +3,10 @@
 This is a partial implementation of the existing refund rules, not a new
 refund policy. `PAYMENT-SPEC.md` and K13–K17 in `PILOT-SPEC.md` govern amounts,
 fee allocation and funding. The independent model predates this component.
-This increment prepares a group's first signed attempt. It has no sender,
-raw transaction export endpoint, fee bump, settled-group closing, conflict
-rebuild or outgoing-spend reconciliation. Paid sales remain closed.
+This component prepares a group's first signed attempt. `REFUND-SENDING.md`
+now adds first-attempt sending and settlement/reorg reconciliation. Raw
+transaction export, fee bumps and safe conflict rebuilds remain unbuilt.
+Paid sales remain closed.
 
 ## Policy and destinations
 
@@ -80,15 +81,15 @@ controller/chain reconciliation are implemented.
 
 ## Remaining refund work
 
-Before sending, add journaled broadcast intent and live acknowledgment,
-uncertain-result recovery, family-member chain/mempool observations,
-settled closing/reopening and deficits, mutually exclusive fee bumps and
-rebuilds, and real maintenance/recovery tests. Deadlines K11/K12 need an
+`REFUND-SENDING.md` now adds journaled intent, live acknowledgment,
+uncertain-result recovery and settlement/reorg accounting for the first
+attempt. Multi-family observations, mutually exclusive fee bumps/rebuilds,
+operator alerts/losses and maintenance/full recovery tests remain. Deadlines K11/K12 need an
 obligation lifecycle that survives several excess and cancellation refunds;
 a timestamp on this preparation group is not deadline implementation.
-Original receipt accounting and admission remain conservative while no
-application sender exists. Manual test-operator broadcasts are confined to
-fresh isolated regtest wallets and do not qualify application send/recovery.
+Admission now subtracts observed settled refunds and restores the charge
+when they lose settlement. Earlier manual test-operator broadcasts are
+historical evidence; the expanded regtest now uses the application sender.
 
 ## Runtime cases
 

@@ -46,6 +46,9 @@ export class FileJournal implements Journal {
     // A crashed append may have linked a fully fsynced file but not synced
     // its directory. Observation alone cannot acknowledge that publication.
     this.syncDirectory();
+    // A backend instance may be reused after another owner has advanced the
+    // journal. Adopt only after the same directory durability proof as readback.
+    this.entries = entries;
     return entries;
   }
   append(value: Entry): undefined {

@@ -66,7 +66,7 @@ binding pre-broadcast check remain required.
 The HTTP component currently serves `/requests`, private order reads,
 `/quote`, `/cancel` and `/refund-destination`, on loopback only. `CORE-SPEC.md` describes the
 separately qualified real Core payment adapter. There is no launcher, public
-checkout page, authenticated operator/registry API, refund sender or
+checkout page, authenticated operator/registry API or
 certificate delivery. The application refuses restored storage
 until controller/chain reconciliation is implemented. The generic storage
 restore component is not full application recovery. Future restore must
@@ -74,10 +74,10 @@ retain ration and conversion history and start paused; existing model
 cases remain required production work wherever full recovery is untested.
 
 `REFUND-PREPARATION.md` now defines durable first-attempt reservations,
-fee policy and explicit-input signing. Outgoing refund accounting is not
-connected yet. Admission conservatively counts
-all confirmed receipts without subtracting refunds; no refund can be sent
-by this component. K5's complete refund/resume scenario, K8/K9/K20's full
+fee policy and explicit-input signing. `REFUND-SENDING.md` adds a
+programmatic sender and first-attempt chain reconciliation. Admission now
+subtracts settled refunds, restoring that charge on a reorg. Multiple
+attempt/family handling remains unfinished. K5's complete refund/resume scenario, K8/K9/K20's full
 restore scenarios and K11/K12/K17's complete refund rules remain release requirements.
 The pilot release gate remains blocked.
 

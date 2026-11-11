@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { claims, fail, type State, type RefundSettings } from "../application/records.ts";
-import { total } from "../application/sales.ts";
 import { rate } from "./policy.ts";
 import { group as validateGroup } from "./records.ts";
 import type { BuildRequest, PreparedRefund, RefundGroup } from "./types.ts";
+import { balance } from "./observations.ts";
 
 export function heldScripts(state: State): string[] {
   return [...state.orders.flatMap(o => o.destination ? [o.destination.script] : []),
@@ -17,8 +17,7 @@ export function configuration(settings: RefundSettings): RefundSettings {
 }
 export function available(state: State, id: string, except?: string): number {
   const order = state.orders.find(o => o.id === id) ?? fail("no such order", "not_found");
-  const reserved = state.groups.filter(g => g.order === id && g.phase !== "void" && g.id !== except).reduce((sum, g) => sum + g.charged, 0);
-  return Math.max(0, total(state, order, 6) - reserved - (claims(order) ? order.price! : 0));
+  return Math.max(0, balance(state, order, except).available);
 }
 export function reserve(state: State, id: string, kind: RefundGroup["kind"], cause: RefundGroup["cause"], estimate: number | null): RefundGroup {
   const order = state.orders.find(o => o.id === id) ?? fail("no such order", "not_found");

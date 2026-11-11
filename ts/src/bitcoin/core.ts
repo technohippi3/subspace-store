@@ -160,7 +160,7 @@ export class CoreAdapter {
         if (!current || current.marker !== original.marker) return null;
       }
       const end = yield* self.tip(); yield* self.walletReady(end);
-      return end.hash === tip.hash && end.height === tip.height ? { tip: tip.height, outputs } satisfies Snapshot : null;
+      return end.hash === tip.hash && end.height === tip.height ? { tip: tip.height, tipHash: tip.hash, outputs } satisfies Snapshot : null;
     });
   }
   snapshot(destinations: readonly Destination[]): Effect.Effect<Snapshot, ApplicationError> {
