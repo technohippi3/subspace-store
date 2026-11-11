@@ -134,6 +134,8 @@ defines readiness, stable-read guards and limitations. `npm run test:core`
 qualifies real Core 31.2 in isolation, separately from the default test
 suite's RPC stand-in. It retains artifacts under `regtest/.run/` and needs
 the pinned binary from `../regtest/fetch-bitcoin.sh`, plus unshare and ip.
+Hosted CI uses `test:core:ci` for privileged namespace creation followed by
+an immediate drop to the original unprivileged UID/GID.
 The application passes every historical payment destination to the adapter.
 This is payment-observation qualification, not complete stack acceptance.
 

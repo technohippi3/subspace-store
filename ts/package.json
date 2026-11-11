@@ -9,7 +9,8 @@
   "scripts": {
     "check": "tsc -p .",
     "test": "node --test \"test/**/*.test.ts\"",
-    "test:core": "../regtest/in-netns.sh env SUBSPACE_CORE_REGTEST_ISOLATED=1 node --test regtest/core.test.ts"
+    "test:core": "../regtest/in-netns.sh env SUBSPACE_CORE_REGTEST_ISOLATED=1 node --test regtest/core.test.ts",
+    "test:core:ci": "../regtest/in-netns-ci.sh"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

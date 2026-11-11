@@ -37,6 +37,8 @@ wallets are made fresh for each run inside `.run/`.
   TypeScript payment adapter's isolated `npm run test:core` uses them without
   building the complete issuance stack; `../docs/spec/CORE-SPEC.md` gives its scope.
 - `in-netns.sh`: runs a command in the isolated namespace.
+- `in-netns-ci.sh`: creates the hosted-CI test network namespace with sudo,
+  then runs Node/Core as the original unprivileged UID/GID.
 - `run-id.sh`: makes a fresh run id. Run ids are never reused, and the
   harness never deletes a run directory.
 - `start.sh [prefix]`: starts a stack in the namespace and opens a shell

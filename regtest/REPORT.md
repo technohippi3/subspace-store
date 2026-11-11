@@ -1059,6 +1059,11 @@ the missing-address-book regression therefore uses a genuinely unlabelled
 change address. All run directories, including failed ones, remain under
 `regtest/.run/` locally.
 
+The first hosted-CI attempt failed before the test with
+`unshare: write failed /proc/self/uid_map: Operation not permitted`.
+Hosted CI therefore creates the network namespace with sudo, then drops
+back to the original unprivileged UID/GID before running Node and Core.
+
 This run did not issue through subs/spaced, deliver a certificate, execute
 the store's refund protocol, restore the complete host or use a buyer's
 client. It does not pass either public-pilot acceptance gate.

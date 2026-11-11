@@ -67,6 +67,10 @@ spent receipts, replacement, node restart and mempool persistence. It
 retains run directories under `regtest/.run/`. CI and pilot readiness run
 the same qualification. `regtest/fetch-bitcoin.sh` fetches just the Core
 binary without building subs or spaced.
+Hosted CI uses `in-netns-ci.sh` to create the network namespace with sudo,
+then drops to the runner's original UID/GID with cleared supplementary
+groups and no-new-privileges before Node or Core starts. The normal local
+command uses unprivileged user/network namespaces.
 
 The adapter is wired through the application's destination-aware snapshot
 interface. Refund funding/spend-family observations, registry callbacks,
