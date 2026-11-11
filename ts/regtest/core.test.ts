@@ -110,11 +110,26 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     const received = object(yield* merchant.call("gettransaction", txid, true, true));
     const decoded = object(received.decoded), vout = decoded.vout as { n: number; scriptPubKey: { address?: string } }[];
     const paid = vout.find(out => out.scriptPubKey.address === quote.address); assert(paid);
+    const invoiceDestination = yield* refunds.resolveAddress(quote.address!);
+    assert.equal(typeof txid, "string"); assert.equal(typeof buyerAddress, "string");
+    const feeTemplate = { inputs: [{ outpoint: `${txid}:${paid.n}`, script: invoiceDestination.script, sats: 1000 }],
+      outputs: [yield* refunds.resolveAddress(buyerAddress as string)], rate: 2001 };
+    const walletBeforeEstimate = yield* merchant.call("getwalletinfo"), coinsBeforeEstimate = yield* merchant.call("listunspent");
+    const locksBeforeEstimate = yield* merchant.call("listlockunspent");
+    const estimated = yield* refunds.estimateFee(feeTemplate);
+    assert.equal(estimated.fee, Math.ceil(estimated.vbytes * feeTemplate.rate / 1000));
+    assert.deepEqual(yield* merchant.call("getwalletinfo"), walletBeforeEstimate);
+    assert.deepEqual(yield* merchant.call("listunspent"), coinsBeforeEstimate);
+    assert.deepEqual(yield* merchant.call("listlockunspent"), locksBeforeEstimate);
     const spend = yield* node.call("createrawtransaction", [{ txid, vout: paid.n }], [{ [buyerAddress as string]: "0.00000330" }]);
     const signed = object(yield* merchant.call("signrawtransactionwithwallet", spend)); assert.equal(signed.complete, true);
+    const measuredSpend = object(yield* node.call("decoderawtransaction", signed.hex));
+    assert(estimated.vbytes >= integer(measuredSpend.vsize)); assert(estimated.vbytes <= integer(measuredSpend.vsize) + 1);
     yield* node.call("sendrawtransaction", signed.hex); yield* node.call("generatetoaddress", 1, minerAddress);
     assert.equal(yield* node.call("gettxout", txid, paid.n), null);
     assert.equal((yield* store.order(order.token)).confirmed_sats, 1_000, "spent receipts are still receipts");
+    const historicalEstimate = yield* refunds.estimateFee(feeTemplate);
+    assert.equal(historicalEstimate.vbytes, estimated.vbytes, "spent wallet receipts remain measurable without new signing");
     // Change addresses remain owned without address-book entries, including
     // after public descriptor recovery. The reader must not omit them.
     const unlabelled = yield* merchant.call("getrawchangeaddress", "bech32m");
@@ -268,7 +283,8 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       "ts/src/refunds/policy.ts", "ts/src/refunds/records.ts", "ts/src/refunds/types.ts", "ts/src/refunds/book.ts",
       "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts",
       "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
-      "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts", "ts/src/application/monitor.ts"];
+      "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts", "ts/src/application/monitor.ts",
+      "ts/src/bitcoin/refund-estimate.ts"];
     writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
       files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
       checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -276,7 +292,8 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
         "refund-preparation-with-capped-buyer-fee", "refund-from-proven-order-change", "application-refund-send",
         "lost-refund-reply-and-store-restart", "refund-settlement-6-5-6", "deep-refund-reorg-and-remining",
         "refund-fee-bump-retains-inputs-and-buyer-output", "older-family-member-can-win-after-reorg", "rebuild-depends-on-settled-conflict",
-        "conflict-ancestor-loss-invalidates-rebuild", "cancellation-deadline-after-earlier-excess-refund"] }, null, 2), { mode: 0o600 });
+        "conflict-ancestor-loss-invalidates-rebuild", "cancellation-deadline-after-earlier-excess-refund",
+        "unsigned-fee-assessment-preserves-wallet-state", "unsigned-size-bounds-real-keypath-spend", "unsigned-fee-assessment-of-spent-receipt"] }, null, 2), { mode: 0o600 });
     t.diagnostic(`Core 31.2 passed; retained artifacts: regtest/.run/${name}`);
   })));
   await stop();

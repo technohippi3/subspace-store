@@ -9,7 +9,8 @@ settlement/reorg accounting are now qualified in `../docs/spec/REFUND-SENDING.md
 Family maxima, fee bumps and exclusive rebuilds now have separate coverage
 in `../docs/spec/REFUND-FAMILIES.md`. Cancellation/refund-due clocks and
 durable deficit/loss reporting are specified in `../docs/spec/REFUND-OBLIGATIONS.md`.
-Excess deadline assessment, registry callbacks and full application recovery are still to
+Read-only unsigned Core template measurement follows in `../docs/spec/REFUND-ESTIMATES.md`.
+Application excess deadline assessment, registry callbacks and full application recovery are still to
 build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -196,7 +197,13 @@ conflict-dependent families. Either an older or newer saved member may
 win after a reorg; the ledger counts the group once.
 Complete stack acceptance remains.
 
-Next add read-only excess fee/deadline assessment, registry operations, complete order
+Unsigned Core template measurement now returns a coherent size/fee estimate
+without signing, funding, locking inputs or allocating addresses. It can
+measure spent wallet receipts but does not authorize spending them. Output
+values are placeholders; only shape is measured. Actual refund signing
+still measures and validates the final transaction.
+
+Next connect coin/change planning and excess fee/deadline assessment, registry operations, complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

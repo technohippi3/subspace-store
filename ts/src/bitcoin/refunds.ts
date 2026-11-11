@@ -2,13 +2,14 @@ import { Effect } from "effect";
 import { ApplicationError, destination, verified } from "../application/records.ts";
 import { fee, split, excessRefundable } from "../refunds/policy.ts";
 import { group, prepared } from "../refunds/records.ts";
-import type { BuildRequest, Coin, PreparedRefund, RebuildRequest, RefundOutput } from "../refunds/types.ts";
+import type { BuildRequest, Coin, PreparedRefund, RebuildRequest, RefundOutput, RefundFeeTemplate } from "../refunds/types.ts";
 import { CoreAdapter, type CoreConfig } from "./core.ts";
 import { BitcoinRpc } from "./rpc.ts";
 import { amount, hex, integer, invalid, object } from "./validation.ts";
 import { replacement } from "../refunds/families.ts";
 import { verifyReplacement } from "./exclusivity.ts";
 import { rebuildFunding } from "./rebuild-funding.ts";
+import { estimateRefundFee } from "./refund-estimate.ts";
 
 const decimal = (sats: number) => `${Math.floor(sats / 100_000_000)}.${(sats % 100_000_000).toString().padStart(8, "0")}`;
 function outpoint(value: string): { txid: string; vout: number } {
@@ -63,6 +64,7 @@ export class CoreRefundWallet {
     });
   }
   rebuildFunding(request: RebuildRequest) { return rebuildFunding(request, this.core, this.node, this.wallet); }
+  estimateFee(template: RefundFeeTemplate) { return estimateRefundFee(template, this.core, this.node, this.wallet); }
   private change(forbidden: Set<string>) {
     const self = this;
     return Effect.gen(function* () {

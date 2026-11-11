@@ -1304,3 +1304,56 @@ e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin
 3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
 be97a0efce8e11d3b3d8454be45e7a2faa6fd5bc546f8f85b8e578cb078dac32  ts/src/application/monitor.ts
 ```
+
+
+## Unsigned Core refund template assessment, 2026-11-11
+
+Core 31.2 run `core-adapter-2026-11-11T17-43-37-875Z-dddf1729` passes 23 checks
+bound to the 22 source digests below. It uses fresh isolated regtest
+wallets. The unsigned assessment explicitly disables signing and
+finalization, binds previous-output metadata to the supplied claims,
+and checks a coherent ready tip before returning size and a fee.
+
+For a one-input/one-output Taproot key-path shape, Core's unsigned
+estimate bounds an independently signed transaction's measured size
+within one vbyte. Wallet information, UTXOs and input locks are unchanged
+around assessment. The same wallet receipt remains measurable after its
+spend confirms; this does not assert spendability or authorize a refund.
+Only estimated size, fee at the supplied rate and tip are returned.
+
+Runtime cases Z48/Z49 separately cover upward fee rounding, explicit
+no-sign/no-finalize RPC flags, parent metadata, malformed templates,
+changed outputs/UTXOs, signature material, missing/invalid sizes, failed
+RPCs and tip changes. This is a measurement primitive. Coin/change
+planning, excess minimum/deadline integration and K11/K12 production
+coverage remain unfinished. The pilot gate still refuses for 114 cases;
+no complete application recovery or public-pilot acceptance is claimed.
+CI may upload only qualification JSON; wallet data, cookies and logs
+remain local.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+f64968a714d684b3c119d7287589b224fa107fc8218364aa088a7ef54f10c0f1  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+e0b0af3363a1179c1250cc7b9ff9b2f46a7c9061773fc1aac16581a55698d2e2  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+8c0ee69eb806f0e56460f859d24a0e4c72ad331b21fd8189dd30dd85cccd5757  ts/src/refunds/types.ts
+3a5af8f22082157a172d21dcba7b3e8bf8bad15681c1147f370979dbe18fb7ad  ts/src/refunds/book.ts
+0e427dc61ffa5f2f042fe9a0cc7432731696bb2208fb0b18abc91a21eb21074e  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+56d48e21f6d8e752bdca66095cdfd33d5cdaf87c03e64d08220acb233f163749  ts/src/application/records.ts
+30e7a3b142b31fac5e265ca315a8a8642b426f0d9f012cdd849dd943b9f76e12  ts/regtest/core.test.ts
+ec737eb6ab075c5e38e0572bb00f820d9e9bd0bb95512d70a47fbfc1206674fe  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+be97a0efce8e11d3b3d8454be45e7a2faa6fd5bc546f8f85b8e578cb078dac32  ts/src/application/monitor.ts
+0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
+```

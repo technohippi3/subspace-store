@@ -48,8 +48,10 @@ lost replies and settlement/reorg accounting are now qualified separately
 (`docs/spec/REFUND-SENDING.md`). Family maxima, fee bumps and exclusive
 rebuilds now have separate coverage (`docs/spec/REFUND-FAMILIES.md`).
 Cancellation/refund-due deadlines and durable deficit/loss reporting now
-have separate runtime coverage (`docs/spec/REFUND-OBLIGATIONS.md`). Excess
-deadline assessment, registry integration and full application recovery
+have separate runtime coverage (`docs/spec/REFUND-OBLIGATIONS.md`). A
+read-only Core PSBT size/fee primitive now has separate qualification
+(`docs/spec/REFUND-ESTIMATES.md`). Application excess deadline assessment,
+registry integration and full application recovery
 remain. The Python
 store has the H12 process-ownership safety amendment.
 

@@ -15,6 +15,10 @@ export interface RefundGroup {
   phase: "reserved" | "built" | "void"; transaction: PreparedRefund | null;
 }
 export interface FundingClaim { outpoint: string; script: string; sats: number }
+/** Public inputs and existing destination templates only. No coin selection or authorization. */
+export interface RefundFeeTemplate {
+  inputs: readonly FundingClaim[]; outputs: readonly Destination[]; rate: number;
+}
 export interface BuildRequest {
   group: RefundGroup; destination: Destination;
   orderCoins: readonly FundingClaim[]; merchantScripts: readonly string[];
