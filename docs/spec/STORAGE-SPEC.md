@@ -30,7 +30,11 @@ One SQLite transaction updates records and a durable outbox entry. The
 outbox records every transition's sequence, instance identity, changes,
 preceding digest and SHA-256 digest. Individual records retain their latest
 sequence. A caller must not expose an address, final cancellation or send
-intent until the corresponding receipt is acknowledged. The component
+intent until the corresponding receipt is acknowledged. That receipt is a
+historical durability marker, not a live availability check. Application
+broadcast handlers must call `confirm(seq)` immediately before the RPC,
+as well as applying their financial and controller guards. The storage
+component does not itself authorize a broadcast. The component
 returns pending receipts during a journal outage; that is not authorization
 for any external effect. Operator diagnostics retain the journal failure. This backend interface is
 synchronous; a Promise-returning adapter is rejected, not mistaken for an
@@ -87,14 +91,13 @@ stage 2 work; the new storage tests do not claim the operator gate passed.
 | Case | Given | When | Then |
 | --- | --- | --- | --- |
 | Z1 | a fresh owned SQLite store and journal | commit several records, close, reopen and update | records and acknowledgment survive; sequence advances once; record and journal agree |
-| Z2 | an open store whose journal becomes unavailable | commit, inspect receipt, restart with storage available | local transaction remains pending, external acknowledgment false with a diagnostic; restart retries and acknowledges once |
+| Z2 | an open store whose journal becomes unavailable | commit, inspect receipt, confirm an older acknowledged entry, restart with storage available | local transaction remains pending, external acknowledgment false with a diagnostic; an unreachable journal fails live confirmation even for an older acknowledgment; restart retries and acknowledges once |
 | Z3 | an append published but its answer lost, or a process killed before updating SQLite's acknowledgment | retry or restart, then commit again | first entry adopted once and the next sequence is used; same historical payment address retained |
 | Z4 | a store with journal history | damage a checksum, remove entries or select another journal | startup refuses before replay; no empty-history fallback or replacement of good state |
 | Z5 | acknowledged name, order, certificate and committed-handle records | normal empty start, then explicit restore | normal start refuses; explicit restore retains records and monotonic sequence, sets reconciliation-required metadata and refuses overwrite |
 | Z6 | a batch whose later record hits a SQLite constraint failure | commit the batch | records and outbox roll back together, journal unchanged |
 | Z7 | a Python-created SQLite backup behind the TypeScript journal | reopen the backup with the current journal | later state replayed, no second journal entry; Python snapshot reader reports the acknowledged position |
 | Z8 | restore killed during its replay transaction | inspect serving path, then retry restore | no partial serving database; retry completes and remains reconciliation-required |
-
 | Z9 | crash after linking a fsynced journal file but before directory sync | startup adoption first fails its directory sync, then retries successfully | failed sync adopts no acknowledgment; successful sync acknowledges the original entry once |
 
 H12 additionally runs against the TypeScript storage component: real

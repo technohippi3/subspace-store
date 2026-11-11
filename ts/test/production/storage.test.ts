@@ -2,7 +2,7 @@ import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync,
-  rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+  renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -337,5 +337,19 @@ test("Z2: an asynchronous backend cannot manufacture a synchronous acknowledgmen
   }));
   await use(config, store => Effect.gen(function* () {
     assert.equal((yield* store.get("name", "one@space"))?.acknowledged, true);
+  }));
+});
+
+test("Z2: historical acknowledgment is not a live journal confirmation", async (t) => {
+  const config = fixture(t);
+  await use(config, store => Effect.gen(function* () {
+    const receipt = yield* store.commit([name(1_000)]);
+    assert.equal(yield* store.confirm(receipt.seq), true);
+    renameSync(config.journalDirectory, config.journalDirectory + "-offline");
+    assert.equal((yield* store.get("name", "one@space"))?.acknowledged, true);
+    assert.equal(yield* store.confirm(receipt.seq), false);
+    renameSync(config.journalDirectory + "-offline", config.journalDirectory);
+    assert.equal(yield* store.confirm(receipt.seq), true);
+    assert.equal(yield* store.confirm(999), false);
   }));
 });

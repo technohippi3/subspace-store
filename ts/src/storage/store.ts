@@ -187,6 +187,28 @@ export class DurableStore {
     });
   }
   flush(): Effect.Effect<boolean, StorageError> { return attempt("flush", () => this.flushSync()); }
+  /** Live proof for the application send gate, immediately before its RPC.
+   * A historical SQLite acknowledgment alone is not an availability probe. */
+  confirm(seq: number): Effect.Effect<boolean, StorageError> {
+    return attempt("confirm", () => {
+      if (!Number.isSafeInteger(seq) || seq < 1) return false;
+      const row = this.db.prepare("select payload,acknowledged from outbox where seq=?").get(seq);
+      if (!row || row.acknowledged !== 1) return false;
+      const expected = decode(row.payload as string);
+      try {
+        const value = this.journal.read()[seq - 1];
+        if (!value) throw Error("journal entry is not currently confirmed");
+        const actual = decode(JSON.stringify(value));
+        if (actual.seq !== seq || actual.hash !== expected.hash || actual.store !== this.identity)
+          throw Error("live journal entry differs from acknowledged state");
+        this.journalFailure = null;
+        return true;
+      } catch (error) {
+        this.journalFailure = error instanceof Error ? error.message : "journal unavailable";
+        return false;
+      }
+    });
+  }
   get(kind: string, key: string): Effect.Effect<RecordValue | null, StorageError> {
     return attempt("get", () => {
       const row = this.db.prepare("select value,seq from records where kind=? and key=?").get(kind, key);
