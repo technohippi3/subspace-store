@@ -72,10 +72,14 @@ it has no business with.
   transaction is readable while it is in the mempool and unreadable once it
   is mined, and the controller could no longer follow it to finality. So
   the first test keeps an indexed node, and the code isn't changed to do
-  without one. Open question: whether the node available has both. The
-  buyer gate's `spaced` syncs through a remote Bitcoin RPC, and a hosted
-  RPC may give neither wallet calls nor an index. A node of its own means
-  a full sync with the index, several hundred gigabytes and a day or more.
+  without one. The hosted endpoint the buyer gate's `spaced` uses was
+  probed read-only on 2026-11-10: Bitcoin Core 29.4.0 on mainnet, synced,
+  with its transaction index, but with no wallet methods, so the store
+  can't run on it. Decided by the workspace_owner on 2026-11-10: the
+  store gets its own full node on the VPS, with the index and the store's
+  wallet, on a disk of about 1,200 GB. That endpoint then reported 892 GB
+  of block data; the index comes on top and wasn't measured. A pruned
+  node or a remote backend is later work, not part of this test.
 - `spaced` v0.5.0 and the loopback-binding build of the pinned `subs`
   (`regtest/build-private.sh`), confined, with the `operator-2` wallet.
   The build also includes U1(b) and explicit relay seeds. One purchase on
@@ -312,9 +316,6 @@ Stop, and change nothing on-chain, when any of these happens:
 
 ## Decisions for the workspace_owner
 
-- Which Bitcoin Core node the store uses. A reviewer recommends checking
-  first what the node available can do, a synced index and wallet access,
-  before choosing a new sync.
 - Which clean VM or machine. A reviewer recommends a clean VM with no
   existing wallet directory shared into it.
 - Whether the buyer gate or the purchase runs first on the space. A
@@ -325,6 +326,7 @@ Stop, and change nothing on-chain, when any of these happens:
 - The fee-rate ceiling and the operator wallet's funding.
 - The authorization of the filled-in transaction plan.
 
+The node is decided: a full node of the store's own on the VPS (above).
 These choices remain open. The local implementation is complete for the
 Python private-test path; the preflight and budget preparation do not
 choose a machine, set a spending limit or authorize a transaction. The
