@@ -16,6 +16,7 @@ import { DatabaseSync } from "node:sqlite";
 import { refundPolicy } from "../test/production/application-fixture.ts";
 import { SalesStore } from "../src/application/store.ts";
 import { serveOperator } from "../src/application/operator-http.ts";
+import { servePending } from "../src/application/pending-http.ts";
 import { object, hex, integer } from "../src/bitcoin/validation.ts";
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
@@ -109,7 +110,9 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       const observed = await fetch(operator.url + "/operator/observe", { ...options, method: "POST" }); assert.equal(observed.status, 200);
       const response = await fetch(operator.url + "/operator/orders?status=converted", options); assert.equal(response.status, 200);
       const data = object(await response.json()); assert(Array.isArray(data.orders));
-      const row = object(data.orders[0]); assert.equal(row.oid, "o1"); assert.equal(row.journaled_status, "converted");
+      assert.deepEqual(data.orders, ["o1"]);
+      const row = object(await (await fetch(operator.url + "/operator/orders/o1", options)).json());
+      assert.equal(row.oid, "o1"); assert.equal(row.journaled_status, "converted");
       assert.equal(row.batchable_sum, 1000); assert.equal(JSON.stringify(data).includes(order.token), false);
     });
     yield* Scope.close(inspectionScope, Exit.void);
@@ -285,8 +288,31 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     yield* buyer.call("sendtoaddress", oldInvoice.address, "0.00010000"); yield* node.call("generatetoaddress", 6, minerAddress);
     const late = yield* store.order(old.token); assert.equal(late.status, "cancelled"); assert.equal(late.refundable_sats, 10_000);
     assert.equal((yield* store.order(fresh.token)).confirmed_sats, 0);
-    yield* buyer.call("sendtoaddress", freshInvoice.address, "0.00010000"); yield* node.call("generatetoaddress", 3, minerAddress);
+    yield* buyer.call("sendtoaddress", freshInvoice.address, "0.00010000");
+    const entryBlocks = yield* node.call("generatetoaddress", 3, minerAddress); assert(Array.isArray(entryBlocks));
     assert.equal((yield* store.order(fresh.token)).status, "converted"); assert.equal((yield* store.order(old.token)).status, "cancelled");
+    const entryScope = yield* Scope.fork(parentScope);
+    const entryOperator = yield* Scope.provide(entryScope)(serveOperator(store, Effect.succeed(credential)));
+    const subsCredential = "mock-subs-entry-qualification".padEnd(48, "y");
+    const pendingServer = yield* Scope.provide(entryScope)(servePending(store, Effect.succeed(subsCredential)));
+    yield* Effect.promise(async () => {
+      const options = { method: "POST", headers: { Authorization: `Bearer ${credential}` }, body: '{"oids":["o1","o5"]}' };
+      const frozen = await fetch(entryOperator.url + "/operator/pending", options); assert.equal(frozen.status, 200);
+      assert.equal(object(await frozen.json()).acknowledged, true);
+      const pending = await fetch(pendingServer.url + "/pending?space=%40space", { headers: { Authorization: `Bearer ${subsCredential}` } });
+      const handles = object(await pending.json()).handles; assert(Array.isArray(handles));
+      assert.deepEqual(handles.map(h => object(h).handle), ["one@space", "partial@space"]);
+      const marked = await fetch(entryOperator.url + "/operator/issuing", options); assert.equal(marked.status, 200);
+      assert.deepEqual(object(await marked.json()).acknowledged, ["o1", "o5"]);
+    });
+    yield* Effect.promise(() => assert.rejects(run(store.cancel(fresh.token)), /once issuing/));
+    assert.equal((yield* store.registry.entry("o5")).issuing_recheck, true);
+    yield* node.call("invalidateblock", entryBlocks[0]);
+    assert.equal((yield* store.registry.entry("o5")).issuing_recheck, false);
+    assert.equal((yield* store.order(fresh.token)).status, "issuing");
+    yield* node.call("reconsiderblock", entryBlocks[0]);
+    assert.equal((yield* store.registry.entry("o5")).issuing_recheck, true);
+    yield* store.registry.setPending([]); yield* Scope.close(entryScope, Exit.void);
     yield* store.listName("two@space", 1_000);
     const second = yield* store.request({ handle: "two@space", script_pubkey: "5120" + "2".padStart(64, "0") });
     const invoice = yield* store.quote(second.token); assert(invoice.address);
@@ -328,7 +354,8 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
       "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts", "ts/src/application/monitor.ts",
       "ts/src/bitcoin/refund-estimate.ts", "ts/src/bitcoin/excess-fee.ts", "ts/src/application/assessments.ts",
-      "ts/src/application/http.ts", "ts/src/application/operator-http.ts"];
+      "ts/src/application/http.ts", "ts/src/application/operator-http.ts", "ts/src/application/authenticated-http.ts",
+      "ts/src/application/pending-http.ts", "ts/src/application/entry.ts", "ts/src/application/registry.ts"];
     writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
       files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
       checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -340,7 +367,8 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
         "unsigned-fee-assessment-preserves-wallet-state", "unsigned-size-bounds-real-keypath-spend", "unsigned-fee-assessment-of-spent-receipt",
         "excess-deadline-before-preparation-and-distinct-cancellation", "excess-deadline-with-fee-coins-locked",
         "authenticated-operator-inspection-with-core", "cancelled-partial-invoice-stays-refund-only",
-        "fresh-checkout-separates-late-old-payments"] }, null, 2), { mode: 0o600 });
+        "fresh-checkout-separates-late-old-payments", "registry-entry-acknowledgment-with-core",
+        "registry-frozen-pending-acknowledgment", "registry-issuing-recheck-after-reorg"] }, null, 2), { mode: 0o600 });
     t.diagnostic(`Core 31.2 passed; retained artifacts: regtest/.run/${name}`);
   })));
   await stop();

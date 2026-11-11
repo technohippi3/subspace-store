@@ -100,6 +100,10 @@ class Store:
         return self.op("POST", "/operator/issuing", {"oids": list(oids)})["acknowledged"]
 
     def acknowledged_status(self, oid):
+        # A cached acknowledgment is history, not a live send guard. Recheck
+        # the current order against the reachable off-host journal first.
+        if not self.journal_ok(oid):
+            return None
         return self.order(oid)["journaled_status"]
 
     def journal_ok(self, oid):

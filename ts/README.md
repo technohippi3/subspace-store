@@ -13,7 +13,9 @@ Read-only unsigned Core template measurement follows in `../docs/spec/REFUND-EST
 Converted/issuing excess clocks now use that assessment in `../docs/spec/EXCESS-DEADLINES.md`.
 K21 keeps partial refunds cancel-first; a new purchase uses a new checkout.
 The separate operator inspection listener is covered in `../docs/spec/OPERATOR-INSPECTION.md`.
-Registry write callbacks and full application recovery are still to
+Atomic issuing marks, live journal guards and frozen pending sets follow in
+`../docs/spec/REGISTRY-ENTRY.md`. Commitment callbacks, certificate delivery
+and full application recovery are still to
 build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -223,9 +225,16 @@ Continuing the same checkout after a partial withdrawal is deferred.
 An authenticated operator inspection listener now exposes status, alerts,
 order summaries and explicit observation on a separate loopback port.
 Credentials are injected as an Effect and reevaluated without disk caching.
-No controller issuance or financial write endpoint is exposed yet.
+Atomic multi-member entry, fresh payment and recipient binding checks,
+live per-order journal confirmation and frozen pending selection now use
+the same application queue. The operator order-list HTTP shape contains
+IDs as the Python runner expects; summaries remain on individual routes.
+A separate subs credential/listener serves only the acknowledged pending
+set. The actual Python runner/client and controller send gate are tested
+over HTTP with a recording subs stand-in. No real commitment send is
+claimed by that test. Eligibility proofs and quotas remain unimplemented.
 
-Next add registry write operations, complete order
+Next add commitment callbacks, certificate delivery, recovery transitions and complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

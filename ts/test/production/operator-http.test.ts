@@ -50,9 +50,10 @@ test("O2: operator order inspection preserves acknowledged status without exposi
     yield* Effect.promise(async () => {
       const orders = await call(listener.url, "/operator/orders?status=converted"); assert.equal(orders.response.status, 200);
       assert.equal(orders.value.orders.length, 1);
+      assert.deepEqual(orders.value.orders, ["o1"]);
       const row = (await call(listener.url, "/operator/orders/o1")).value;
       assert.equal(row.name, "n0@space"); assert.equal(row.journaled_status, "converted"); assert.equal(row.dest_address, old.quote.address);
-      const encoded = JSON.stringify(orders.value);
+      const encoded = JSON.stringify([orders.value, row]);
       for (const forbidden of [old.token, "tokenHash", "order_link", "raw", secret]) assert.equal(encoded.includes(forbidden), false);
       assert.deepEqual((await call(listener.url, "/operator/orders?status=ready")).value, { orders: [] });
       assert.equal((await call(listener.url, "/operator/orders?status=invalid")).response.status, 400);
@@ -82,7 +83,7 @@ test("O3: observation has a strict empty body and unsupported write routes never
       assert.equal(f.node.observations, before);
       assert.equal((await call(listener.url, "/operator/observe", secret, { method: "POST", body: "{}" })).response.status, 200);
       assert.equal(f.node.observations, before + 1);
-      for (const path of ["/operator/issuing", "/operator/pending", "/operator/orders/o1/refunds", "/operator/refunds/g1/broadcast", "/operator/orders/o1/certificate"])
+      for (const path of ["/operator/orders/o1/refunds", "/operator/refunds/g1/broadcast", "/operator/orders/o1/certificate"])
         assert.equal((await call(listener.url, path, secret, { method: "POST", body: "{}" })).response.status, 404);
       assert.equal((await call(listener.url, "/operator/orders/o1")).value.status, "converted");
     });

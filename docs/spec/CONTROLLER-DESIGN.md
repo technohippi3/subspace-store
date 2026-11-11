@@ -1,6 +1,8 @@
 # Subspace store issuance controller design (draft 10, 2026-11-10)
 
-Status: draft design. Nothing is built. Payment, reservation, cancellation
+Status: reviewed design with a Python implementation and regtest evidence.
+Public-pilot acceptance and TypeScript store integration are incomplete.
+Payment, reservation, cancellation
 and refund rules are in `PAYMENT-SPEC.md`, including the depth arithmetic
 used here. This file covers how the controller drives `subs`, what it
 journals and snapshots, and how it is restored. Draft 2 replaces the assumed

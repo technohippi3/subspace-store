@@ -13,6 +13,8 @@ import { allMembers, evidenceKey, members, preferred, reservation } from "../ref
 import { attemptRequest, finishAttempt, rebuildRequest, reserveAttempt } from "../refunds/attempts.ts";
 import { advance, noteBroadcast, reconcile, recordLoss, tick, unserved, type Reason } from "./monitor.ts";
 import { assess } from "./assessments.ts";
+import { auditRecipients, recipientBlock } from "./entry.ts";
+import { IssuanceRegistry } from "./registry.ts";
 
 export interface Adapters {
   readonly clock: () => number;
@@ -26,6 +28,7 @@ const hash = (token: string) => createHash("sha256").update(token).digest("hex")
 /** One serialized application queue, including asynchronous wallet/chain work.
  * SQLite transactions cover only local writes; no RPC runs inside one. */
 export class SalesStore {
+  readonly registry: IssuanceRegistry;
   private readonly queue = Semaphore.makeUnsafe(1);
   private readonly storage: DurableStore;
   private readonly adapters: Adapters;
@@ -34,6 +37,8 @@ export class SalesStore {
   private constructor(storage: DurableStore, adapters: Adapters, config: Config) {
     this.storage = storage; this.adapters = adapters; this.budget = config.riskBudgetSats;
     this.refunds = configuration({ version: 1, policy: structuredClone(config.refundPolicy), merchantDestinations: structuredClone([...(config.merchantDestinations ?? [])]) });
+    this.registry = new IssuanceRegistry({ storage, queue: this.queue, load: () => this.load(),
+      refresh: () => this.refresh(), save: (before, state) => this.save(before, state) });
   }
   static open(config: Config, adapters: Adapters) {
     return Effect.gen(function* () {
@@ -45,6 +50,7 @@ export class SalesStore {
       const { records, state } = yield* result.load();
       if ((state.refundSends.length || state.refundObservations.length) && !adapters.refunds?.sender)
         return yield* checked(() => fail("refund reconciliation adapter is required", "unavailable"));
+      yield* verified(() => auditRecipients(state));
       yield* result.save(records, state);
       if (adapters.refunds?.sender && state.groups.some(g => g.transaction)) yield* result.refresh();
       return result;
@@ -87,6 +93,7 @@ export class SalesStore {
         for (const fact of current.state.refundObservations) if (fact.seen !== "absent") noteBroadcast(current.state, fact.group, fact.txid, observedAt);
         const eligibleExcess = yield* assess(current.state, self.adapters.refunds, snapshot.tipHash, self.adapters.clock);
         yield* verified(() => reconcile(current.state, eligibleExcess, observedAt));
+        yield* verified(() => auditRecipients(current.state));
         yield* self.save(current.records, current.state);
         return { ...(yield* self.load()), tipHash: snapshot.tipHash };
       }
@@ -110,7 +117,7 @@ export class SalesStore {
       const cancelled = order.status === "cancelled";
       const final = cancelled && acknowledged?.status === "cancelled";
       const hold = active(state, order) ? order.grants.at(-1)! : null;
-      const rejected = state.orders.some(o => o.destination?.script === order.recipient ||
+      const rejected = order.status === "issuing" ? recipientBlock(state, order) !== null : state.orders.some(o => o.destination?.script === order.recipient ||
         (o.handle !== order.handle && claims(o) && o.recipient === order.recipient));
       const account = yield* self.storage.acknowledged("refund_account", order.id);
       const refund = account?.value as unknown as State["accounts"][number] | undefined;
@@ -495,19 +502,9 @@ export class SalesStore {
       return yield* Effect.forEach(candidates, m => self.sendRefund(m.group, m.transaction!.txid));
     }));
   }
-  /** Freezes an order only; this does not sign, broadcast or serve a batch. */
+  /** Single-member convenience; batch callers use the atomic registry method. */
   beginIssuance(id: string) {
-    const self = this;
-    return self.queue.withPermit(Effect.gen(function* () {
-      const { records, state } = yield* self.refresh();
-      yield* checked(() => {
-        const order = state.orders.find(o => o.id === id) ?? fail("no such order", "not_found");
-        if (order.status !== "converted" || total(state, order, 3) < order.price!) fail("not batchable");
-        self.recipient(state, order);
-        order.status = "issuing";
-      });
-      yield* self.save(records, state);
-    }));
+    return this.registry.markIssuing([id]).pipe(Effect.asVoid);
   }
   listName(handle: string, price: number) {
     const self = this;

@@ -1482,3 +1482,77 @@ d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin
 767476ffe8c7461970b19404f1fde150001d3396c6c7e2f5e649dff79ca18052  ts/src/application/http.ts
 3c4644dd2baa65ffd5c801a9a6c53af4333a90c5dbaf3c7780b37e3ca9eba881  ts/src/application/operator-http.ts
 ```
+
+
+## Atomic registry entry and frozen pending sets, 2026-11-11
+
+Core 31.2 run `core-adapter-2026-11-11T19-26-54-940Z-4599181e` passes
+31 checks bound to the 30 source digests below. It uses fresh isolated
+regtest wallets and controlled application time. The earlier payment,
+refund, family, excess deadline and cancel-first scenarios remain.
+
+Two real converted orders are frozen through the authenticated operator
+API. A separately authenticated subs listener serves exactly their public
+handle/script pairs. The operator API marks both issuing and acknowledges
+both; buyer cancellation then refuses. Invalidating the new payment's
+block makes its issuing recheck fail while preserving the issuing lock.
+Reconsidering the block restores its eligibility for issuance. No actual
+Spaces commitment is broadcast by this scenario.
+
+Default integration tests separately exercise multi-member atomic refusal,
+cancellation races, journal loss before and after acknowledgment, restart,
+frozen-set changes during an outage, malformed records and requests, and
+role separation. V12/V13 cover converted recipient conflicts and an
+issuing order's priority, with notices retained once across restart.
+
+The shipped Python runner HTTP client talks to the TypeScript listener
+and reads its SQLite acknowledged position. The actual controller send
+guard is exercised with a recording subs stand-in: either unavailable
+journal prevents even an attempted send; both confirmed permits one
+stand-in call. This is HTTP/client/controller-gate integration evidence,
+not real commitment-broadcast evidence. The runner now asks for live
+current-order journal confirmation before reporting an acknowledged
+status. The frozen Python store's payment rules do not change.
+
+Local checks pass 273 Python tests and 214 TypeScript tests. Development
+coverage reports 266 fixed-price cases with no gaps, 40 deferred cases,
+and TypeScript model/store coverage of 36/120. The pilot production gate
+still refuses for 112 cases. Lost HTTP answers during entry, controller
+recovery transitions, commitment callbacks, finality/certificate delivery
+and whole-application recovery remain unqualified. This is not a complete
+runner interface, and no public-pilot or host acceptance is claimed.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+f64968a714d684b3c119d7287589b224fa107fc8218364aa088a7ef54f10c0f1  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+9fb2512bba7c820ebcab8c11ab7745fe63979bde2cbeed1c8f07e381574e0646  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a  ts/src/refunds/types.ts
+9023af566c4978d910bd776cb3a9038dc2002f4eeb17a82a751c6f8ff8556d2a  ts/src/refunds/book.ts
+67e320f37429030a3d33d2c319cafd656e6d96d8354234fe032ea5c7947a18f3  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+3d0ca929eaa1be2b68a2c822ea490b243c91461c0c460eb02dde5904f72c9d5a  ts/src/application/records.ts
+7e3302b7be22c0f8a7598b1a4b4e56d13dad9fee798ec2fb2f55345ec00a46f9  ts/regtest/core.test.ts
+7d10c5be62c77a6915c9b5212364c93203cbc90eb01e69b02ecb2939c5a8a5c1  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+a232f7d62cf57390b4b5b617c85d4427240a887e13cad987aca3dac3095b6f52  ts/src/application/monitor.ts
+0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
+d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin/excess-fee.ts
+09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0  ts/src/application/assessments.ts
+767476ffe8c7461970b19404f1fde150001d3396c6c7e2f5e649dff79ca18052  ts/src/application/http.ts
+51e0cc3f0eb5e969f7a9d45d7fd0aba1541357bc371ea08742d9c7317f2910c3  ts/src/application/operator-http.ts
+205663367370e64521a8aad08d442ee1b9a5c3afa50837bf32660dd05b5996e1  ts/src/application/authenticated-http.ts
+8cd0b89fbf629272935bfff87fbfdb91701dd2cfe8caa63b02338387e475378c  ts/src/application/pending-http.ts
+227fc72491795cb4cd3b193860048635706f09f36d54b5d632c2f29e8d855310  ts/src/application/entry.ts
+0ffb6e6409161684bf8bd1a1cd554fa036b4d1563077383f081d01accdb721ed  ts/src/application/registry.ts
+```

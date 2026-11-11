@@ -2,10 +2,12 @@
 
 This implements an Effect-scoped inspection listener, separate from the
 buyer listener and bound only to loopback. It supplies the read portion
-needed by the future registry/runner bridge. It is not yet a complete
-runner interface: batch entry, frozen pending sets, issuance transitions,
-certificates, cancellation by operator ID and refund-write routes remain
-unimplemented. No signing or broadcasting route is exposed here.
+needed by the registry/runner bridge. `REGISTRY-ENTRY.md` adds atomic
+issuing marks, live journal confirmation and frozen pending sets through
+the same operator listener. It is not yet a complete runner interface:
+recovery transitions, commitment callbacks, certificates, cancellation by
+operator ID and refund-write routes remain unimplemented. No signing or
+broadcasting route is exposed here.
 
 ## Authentication and lifetime
 
@@ -35,7 +37,7 @@ second writer and does not change the deployment/restart contract.
 | --- | --- |
 | `GET /operator/status` | Advance persisted clocks and return monitoring state with journal acknowledgment. It does not infer chain state or send transactions. |
 | `GET /operator/alerts` | Return durable alerts through that same inspection path. |
-| `GET /operator/orders` | List persisted order summaries, optionally with one valid `status` query parameter. |
+| `GET /operator/orders` | List persisted order IDs as the runner expects, optionally with one valid `status` query parameter. |
 | `GET /operator/orders/<oid>` | Return one summary, including local and last acknowledged status separately. |
 | `POST /operator/observe` | Observe the chain using existing adapters; accept only an empty body or `{}`. No signing or send occurs. |
 
@@ -50,8 +52,9 @@ without claiming the cancellation is final.
 
 Filters accept the existing lifecycle vocabulary. Ready/fulfilled lists
 are empty until those transitions are ported. This is not evidence that
-fulfillment works. Unknown routes and every write route not listed above
-return not found. A controller must not be configured to issue against
+fulfillment works. The additional entry routes are specified in
+`REGISTRY-ENTRY.md`. Other unknown routes and writes return not found.
+A controller must not be configured to issue against
 this incomplete interface. Full binding checks and recovery remain gates.
 
 The pinned Core regtest now performs authenticated observation and order
@@ -66,5 +69,5 @@ release. Neither evidence set qualifies a full controller sale.
 | --- | --- | --- | --- |
 | O1 | separate buyer/operator listeners and a live credential provider | omit, duplicate or change a bearer header; rotate or lose the credential | reject before store access as appropriate, reload credentials, scrub provider failures and keep operator routes absent from the buyer listener |
 | O2 | current and journal-acknowledged order states | inspect individual/filtered orders while the journal lags | return local and acknowledged status separately, withhold unacknowledged addresses and never return buyer links, hashes or signed data |
-| O3 | a valid operator credential | observe with valid/invalid bodies or attempt an unsupported write | validate the body before observation, expose no issuance/refund/certificate mutation and preserve order state |
+| O3 | a valid operator credential | observe with valid/invalid bodies or attempt an unsupported financial/certificate write | validate the body before observation, expose no financial send or certificate mutation and preserve order state |
 | O4 | invalid startup credentials or an acquired listener | start, close its Effect scope and bind the port again | failed credentials open no listener; normal scoped close releases the port |

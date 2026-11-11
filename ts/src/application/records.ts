@@ -48,7 +48,7 @@ export interface Payment extends Output { active: boolean }
 export interface Settings { version: 1; riskBudget: number; paused: boolean; conversions: string[];
   lastTime: number; tip: number; nextOrder: number }
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
-export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[];
+export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[]; pending: string[];
   refunds: RefundSettings; accounts: RefundAccount[]; groups: RefundGroup[];
   monitors: OrderMonitor[]; broadcastReceipts: BroadcastReceipt[]; alerts: OperatorAlert[];
   assessments: ExcessAssessment[];
@@ -110,6 +110,7 @@ function payment(value: unknown): asserts value is Payment {
 }
 export function encode(state: State): Record[] {
   return [ { kind: "sales_settings", key: "global", value: state.settings as unknown as Json },
+    { kind: "registry_pending", key: "global", value: { version: 1, orders: [...state.pending] } },
     { kind: "refund_settings", key: "global", value: state.refunds as unknown as Json },
     ...state.assessments.map(value => ({ kind: "excess_assessment", key: value.order, value: value as unknown as Json })),
     ...state.monitors.map(value => ({ kind: "order_monitor", key: value.order, value: value as unknown as Json })),
@@ -129,7 +130,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   policy(refunds.policy);
   for (const d of refunds.merchantDestinations) destination(d);
   const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
-    lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [],
+    lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [],
     refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [], assessments: [],
     refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
   for (const record of records) {
@@ -137,6 +138,11 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
+      case "registry_pending":
+        object(v, "version,orders");
+        if (record.key !== "global" || v.version !== 1 || !Array.isArray(v.orders) || v.orders.length > 1000 ||
+            v.orders.some(id => typeof id !== "string") || new Set(v.orders).size !== v.orders.length) fail("invalid pending set");
+        state.pending = v.orders as string[]; break;
       case "excess_assessment": assessment(v); if (v.order !== record.key) fail("assessment key differs"); state.assessments.push(v); break;
       case "order_monitor": decodeMonitor(v); if (v.order !== record.key) fail("monitor key differs"); state.monitors.push(v); break;
       case "refund_receipt": decodeReceipt(v); if (v.txid !== record.key) fail("receipt key differs"); state.broadcastReceipts.push(v); break;
@@ -192,6 +198,8 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     }
   }
   if (state.settings.conversions.some(id => !state.orders.some(o => o.id === id))) fail("missing converted order");
+  if (state.pending.some(id => !state.orders.some(o => o.id === id)) ||
+      new Set(state.orders.filter(o => state.pending.includes(o.id)).map(o => o.space)).size > 1) fail("invalid pending relationship");
   if (state.payments.some(p => !destinations.has(p.script))) fail("payment has no invoice");
   if (state.payments.filter(p => p.active).reduce((sum, p) => sum + p.sats, 0) > MAX_MONEY)
     fail("stored payments exceed money supply");

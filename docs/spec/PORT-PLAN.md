@@ -31,6 +31,9 @@ allowed and must record its spec, tests and commit as an amendment to the
 baseline; do not silently backport pilot features. The first such
 fix is store process ownership, now implemented and specified as H12 in
 `PAYMENT-SPEC.md`, with real process tests in `tests/test_store_lock.py`.
+The runner's live per-order journal readback before its send guard is a
+further safety amendment, specified and exercised in `REGISTRY-ENTRY.md`.
+It does not backport TypeScript pilot payment rules to the Python store.
 
 The public pilot uses the TypeScript store with the Python controller and
 attended runner. Those components retain the applicable controller rules
@@ -60,7 +63,9 @@ qualified (`REFUND-ESTIMATES.md`). Converted/issuing excess assessment and
 deadlines now connect them (`EXCESS-DEADLINES.md`). K21 keeps the first
 release's partial refunds cancel-first; continuing an invoice after a
 partial withdrawal is outside the pilot scope. Authenticated operator
-inspection is qualified separately (`OPERATOR-INSPECTION.md`). Registry write callbacks and
+inspection is qualified separately (`OPERATOR-INSPECTION.md`). Atomic issuing
+marks, live journal confirmation and frozen pending sets now have separate
+qualification (`REGISTRY-ENTRY.md`). Commitment callbacks, certificates and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 
