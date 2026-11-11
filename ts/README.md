@@ -14,6 +14,44 @@ and HTTP API, built on Effect around these machines, and the regtest
 service, checkout and recovery scenarios passing with it in place of the
 Python store.
 
+## Port handoff and pilot boundary
+
+`../docs/spec/PORT-PLAN.md` defines the work order and release gates.
+Stage 1 now has the independent model under `model/`, named model cases
+K1–K19 in `test/model/pilot.test.ts`, generated trace/recovery checks and
+coverage enforcement. `../docs/spec/PILOT-SPEC.md` states the exact scope
+and expected outcomes. The Python store and model retain the owner-only
+baseline at `66db98c`, plus the H12 process-ownership safety amendment.
+
+The pilot model imports no production reducers. It models the new payment
+admission, conversion-review, cancellation and refund-policy rules, with
+explicit time and chain observations. It is not a full replacement for the
+Python payment/controller model. These are model results only; real refund
+funding, journal boundaries and node behavior need production/regtest tests.
+Fixed traces and invariants supplement the model; baseline comparisons
+remain for unchanged rules. The 2,000-step seeded trace caught and now
+checks against a released hold reviving after a reorg (K19).
+
+Case coverage accepts literal names such as
+`test("K1: rolling ration", () => { ... })`. The directory distinguishes
+model evidence from production tests in `test/production/`. The existing
+unnumbered production-reducer tests remain useful but do not supply named
+runtime coverage. The development gate accepts model evidence;
+`python3 ../tools/case_coverage.py --release pilot` requires named production
+coverage and currently fails. The pilot-readiness workflow runs both suites
+and this release gate on manual dispatch or a `pilot-*` tag.
+
+The native installer and updater precede the disposable-host cutover
+rehearsal. Essential seller commands then precede the public-pilot gate:
+setup, prices, reservation and withdrawal, global/per-space pause and
+diagnostics. The pilot ships this store with the Python controller and
+runner. Open catalog, bulk import and archiving follow the pilot; the
+remaining controller, runner, model and tooling ports then remove Python.
+The Python node/test-purchase track runs in parallel. Its store ownership
+lock and real two-process H12 tests are now implemented locally.
+
+## Current implementation
+
 Three pure state machines and the store-wide request and quote rules are
 ported so far, from `service/ledger.py`:
 
@@ -62,8 +100,9 @@ Domain rules of `service/ledger.py` still to port, each with its home:
    back with sales paused.
 
 Then the store layer around the machines (SQLite transactions, the
-journal, the HTTP API), and the controller, whose batch machine needs the
-interrupted-broadcast recovery decided in the specification first.
+journal, the HTTP API), with the new pilot behavior and gates above. The
+controller port follows the first pilot and must preserve the specified
+interrupted-broadcast recovery; the Python controller ships initially.
 
 It has no runtime dependencies. Its only development dependency is the
 compiler, pinned to TypeScript 7.0.2 (the native compiler) in

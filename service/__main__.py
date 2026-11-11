@@ -39,6 +39,7 @@ from pathlib import Path
 from .app import Service
 from .bitcoin import BitcoinChainView
 from .journal import Journal
+from .locking import StoreBusy
 from .ledger import Ledger, Policy, Refused, RestoreRefused, RestoreRequired, restore_from_journal
 from .rpc import BitcoinRpc
 from .private_purchase import ConfigError, loopback, private_config, require_indexed_node
@@ -100,7 +101,7 @@ def build(cfg):
                     excess_minimum_over_fee=int(p.get("excess_minimum_over_fee", 546)),
                     refund_fee=int(p.get("refund_fee_sats", 300)),
                     exposure_limit_sats=_limit(p.get("exposure_limit_sats")))
-    ledger = Ledger(cfg["db"], view, Journal(cfg["journal_dir"]), policy,
+    ledger = Ledger(cfg["db"], view, lambda: Journal(cfg["journal_dir"]), policy,
                     private_purchase=private)
     return Service(ledger, view, read_token(cfg["tokens"]["operator"]),
                    read_token(cfg["tokens"]["subs"]),
@@ -109,7 +110,7 @@ def build(cfg):
 
 
 def restore(cfg):
-    counts = restore_from_journal(cfg["db"], Journal(cfg["journal_dir"]))
+    counts = restore_from_journal(cfg["db"], lambda: Journal(cfg["journal_dir"]))
     print(f"restored {cfg['db']} from the off-host journal: {json.dumps(counts)}", flush=True)
     return 0
 
@@ -118,7 +119,7 @@ def main(argv):
     if len(argv) == 3 and argv[1] == "restore":
         try:
             return restore(load(argv[2]))
-        except (ConfigError, RestoreRefused) as e:
+        except (ConfigError, RestoreRefused, StoreBusy) as e:
             print(f"refusing to restore: {e}", file=sys.stderr)
             return 3
     if len(argv) != 2:
@@ -127,7 +128,7 @@ def main(argv):
     try:
         cfg = load(argv[1])
         service = build(cfg)
-    except (ConfigError, RestoreRequired, Refused) as e:
+    except (ConfigError, RestoreRequired, Refused, StoreBusy) as e:
         print(f"refusing to start: {e}", file=sys.stderr)
         return 3
     service.start()

@@ -31,6 +31,15 @@ rules they change are
 still to build, and they authorize no production deployment, no wallet
 transaction and no opening of sales.
 
+`docs/spec/PORT-PLAN.md` is the port and release handoff. It separates the
+Python owner-only test baseline from the TypeScript pilot, places essential
+seller commands before the pilot gate, and records the deployment and
+recovery work still required. `deploy/README.md` describes the planned
+native systemd installer, safe updates and Infisical contract. Stage 1 now
+has an independent TypeScript pilot model and production release-coverage
+gate (`docs/spec/PILOT-SPEC.md`); the runtime is still to build. The Python
+store has the H12 process-ownership safety amendment.
+
 There is a reviewed specification, a reference model of the fixed-price
 rules, and a regtest harness that drives the pinned `subs`, `spaced` and
 Bitcoin Core on a local regtest network. On regtest the harness has issued

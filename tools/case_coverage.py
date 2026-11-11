@@ -1,70 +1,152 @@
-"""Report which named specification cases have tests.
+"""Named spec coverage, separated by implementation and evidence type.
 
-Reads the case tables in the payment and private-purchase specifications and test names in
-tests/, and prints implemented and missing case identifiers. Most cases are
-tested against the reference model. The recipient-request cases (V), the
-service restore cases (H), the checkout cases (C), the attended-runner
-cases (A), the sales-pause cases (S), refund-destination cases (T) and private-test cases (Y)
-are the service's and the runner's own. Their tests are service API tests,
-runner tests or, for H7, a model-twin test, and they are reported
-separately, never as model results.
-
-With --check it is also a gate: it exits non-zero when a fixed-price MVP
-case has no test, or a test names a case the specification doesn't
-have. Deferred auction cases are reported but never fail the check.
+--check is the development gate. --release pilot additionally requires
+production tests of the shipped TS store and Python controller/runner.
+Discovery does not execute tests; CI must run the corresponding suites.
 """
 
+import argparse
+import ast
 import pathlib
 import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+SPEC_FILES = ('PAYMENT-SPEC.md', 'PRIVATE-PURCHASE.md', 'PILOT-SPEC.md')
+KINDS = ('python-model', 'python-store', 'python-controller', 'ts-model', 'ts-store')
+CONTROLLER_FILES = {'test_controller_host.py', 'test_controller_lock.py',
+                    'test_runner.py', 'test_runner_recovery.py',
+                    'test_interrupted_broadcast.py'}
+SERVICE_PREFIXES = 'VHCASTY'
+TS_LEXEMES = re.compile(r'//[^\n]*|/\*[\s\S]*?\*/|`(?:\\.|[^`\\])*`|'
+                        r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
+TS_CASE = re.compile(r'^\s*test(?P<method>\.(?:skip|todo|only))?\(\s*'
+                     r'(?P<quote>["\'])(?P<id>[A-Z]\d+):[^\n]*?(?P=quote)\s*,', re.M)
 
 
-def spec_cases():
-    text = "\n".join((ROOT / "docs/spec" / name).read_text()
-                     for name in ("PAYMENT-SPEC.md", "PRIVATE-PURCHASE.md"))
-    return sorted(set(re.findall(r"^\| ([A-Z]\d+) \|", text, re.M)),
-                  key=lambda c: (c[0], int(c[1:])))
+def ordered(cases):
+    return sorted(cases, key=lambda c: (c[0], int(c[1:])))
 
 
-def tested_cases():
-    found = set()
-    for path in (ROOT / "tests").glob("test_*.py"):
-        found.update(re.findall(r"def test_([A-Z]\d+)_", path.read_text()))
-    return found
+def spec_cases(root=ROOT):
+    paths = [root / 'docs/spec' / name for name in SPEC_FILES]
+    return ordered({case for path in paths if path.exists()
+                    for case in re.findall(r'^\| ([A-Z]\d+) \|', path.read_text(), re.M)})
 
 
-DEFERRED_AFTER_MVP = lambda c: c[0] in "DE" or c == "N6"
-SERVICE_CASES = lambda c: c[0] in "VHCASTY"
+def deferred(case):
+    return case[0] in 'DE' or case == 'N6'
 
 
-def main(argv=None):
-    argv = sys.argv[1:] if argv is None else argv
-    strict = "--check" in argv
-    spec = spec_cases()
-    tested = tested_cases()
-    mvp = [c for c in spec if not DEFERRED_AFTER_MVP(c)]
-    mvp_missing = [c for c in mvp if c not in tested]
-    unknown = sorted(tested - set(spec))
-    missing = [c for c in spec if c not in tested]
-    done = [c for c in spec if c in tested]
-    service = [c for c in spec if SERVICE_CASES(c)]
-    print(f"spec cases: {len(spec)}, with tests: {len(done)}, without: {len(missing)}")
-    print("with tests:", " ".join(done))
-    print(f"of which service tests (API or model twin), not model results: "
-          f"{len([c for c in service if c in tested])} of {len(service)}")
-    print("without:", " ".join(missing))
-    print(f"fixed-price MVP cases: {len(mvp)}, without tests: {len(mvp_missing)}"
-          + (": " + " ".join(mvp_missing) if mvp_missing else ""))
+def pilot_target(case):
+    if case[0] in 'ABLX' or (case[0] == 'J' and int(case[1:]) <= 10):
+        return 'python-controller'
+    return 'ts-store'
+
+
+def supersessions(root):
+    path = root / 'docs/spec/PILOT-SPEC.md'
+    if not path.exists():
+        return {}
+    # The separate applicability table is not a case-status system.
+    return dict(re.findall(r'^\| baseline ([A-Z]\d+) \| ([A-Z]\d+) \|',
+                           path.read_text(), re.M))
+
+
+def evidence(root=ROOT):
+    found = {kind: set() for kind in KINDS}
+    errors = []
+    for path in sorted((root / 'tests').glob('test_*.py')):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            match = re.match(r'test_([A-Z]\d+)_', node.name)
+            if not match:
+                continue
+            case = match[1]
+            decorators = list(node.decorator_list)
+            parent = parents.get(node)
+            while parent is not None:
+                if isinstance(parent, ast.ClassDef):
+                    decorators.extend(parent.decorator_list)
+                parent = parents.get(parent)
+            if any('skip' in ast.unparse(d).lower() or 'expectedFailure' in ast.unparse(d)
+                   for d in decorators):
+                errors.append(f'{path.name}: {case} cannot use a skip/expected-failure decorator')
+                continue
+            kind = ('python-controller' if case.startswith('A') or path.name in CONTROLLER_FILES else
+                    'python-store' if case[0] in SERVICE_PREFIXES else 'python-model')
+            found[kind].add(case)
+    for path in sorted((root / 'ts/test').rglob('*.test.ts')):
+        # Remove comments and template bodies, preserving offsets/newlines and
+        # quoted strings. Thus example test names in comments are not evidence.
+        def mask(match):
+            value = match[0]
+            return re.sub(r'[^\n]', ' ', value) if value.startswith(('//', '/*', '`')) else value
+        source = TS_LEXEMES.sub(mask, path.read_text())
+        for match in TS_CASE.finditer(source):
+            case = match['id']
+            tail = source[match.end():]
+            if match['method'] or not re.match(r'\s*(?:async\s*)?\([^)]*\)\s*=>', tail):
+                errors.append(f'{path.relative_to(root)}: {case} requires an unconditional callback')
+                continue
+            relative = path.relative_to(root / 'ts/test')
+            kind = {'model': 'ts-model', 'production': 'ts-store'}.get(relative.parts[0])
+            if kind is None:
+                errors.append(f'{relative}: named cases belong in model/ or production/')
+                continue
+            found[kind].add(case)
+    return found, errors
+
+
+def tested_cases(root=ROOT):
+    found, _ = evidence(root)
+    return set().union(*found.values())
+
+
+def main(argv=None, root=ROOT):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check', action='store_true')
+    parser.add_argument('--release', choices=['pilot'])
+    args = parser.parse_args(argv)
+    spec = set(spec_cases(root))
+    found, errors = evidence(root)
+    tested = set().union(*found.values())
+    unknown = tested - spec
     if unknown:
-        print("tests naming unknown cases:", " ".join(unknown))
-        return 1
-    if strict and mvp_missing:
-        print("check failed: every fixed-price MVP case needs a test")
-        return 1
-    return 0
+        errors.append('tests naming unknown cases: ' + ' '.join(ordered(unknown)))
+    pilot_spec = root / 'docs/spec/PILOT-SPEC.md'
+    model_cases = set(re.findall(r'^\| ([A-Z]\d+) \|', pilot_spec.read_text(), re.M)) if pilot_spec.exists() else set()
+    missing_model = model_cases - found['ts-model']
+    if (args.check or args.release) and missing_model:
+        errors.append('independent TS model tests missing for ' + ' '.join(ordered(missing_model)))
+    replacements = supersessions(root)
+    for old, new in replacements.items():
+        if old not in spec or new not in spec or old == new or deferred(new) or new in replacements:
+            errors.append(f'invalid pilot supersession: {old} -> {new}')
+    mvp = {case for case in spec if not deferred(case)}
+    missing = mvp - tested
+    print(f'spec cases: {len(spec)}, with tests: {len(tested & spec)}, '
+          f'without: {len(spec - tested)}')
+    for kind in KINDS:
+        print(f'{kind}: {len(found[kind] & spec)}')
+    print(f'fixed-price MVP cases: {len(mvp)}, without tests: {len(missing)}')
+    if missing:
+        print('missing:', ' '.join(ordered(missing)))
+    if args.check and missing:
+        errors.append('check failed: every fixed-price MVP case needs a test')
+    if args.release:
+        required = mvp - {case for case in mvp if case.startswith('Y')} - replacements.keys()
+        gaps = {case for case in required if case not in found[pilot_target(case)]}
+        print(f'pilot production cases: {len(required)}, without production tests: {len(gaps)}')
+        if gaps:
+            errors.append('release blocked: production tests missing for ' + ' '.join(ordered(gaps)))
+    for error in errors:
+        print(error)
+    return int(bool(errors))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())
