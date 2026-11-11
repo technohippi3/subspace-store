@@ -6,6 +6,8 @@ import { account, group } from "../refunds/records.ts";
 import type { RefundAccount, RefundAttempt, RefundGroup, RefundObservation, RefundPause, RefundSend } from "../refunds/types.ts";
 import { observation, sendRecord } from "../refunds/observations.ts";
 import { allMembers, attempt, evidenceKey, members } from "../refunds/families.ts";
+import { decodeAlert, decodeMonitor, decodeReceipt, validateMonitoring,
+  type BroadcastReceipt, type OperatorAlert, type OrderMonitor } from "./monitor.ts";
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly code: "invalid" | "refused" | "unavailable" | "not_found";
@@ -47,6 +49,7 @@ export interface Settings { version: 1; riskBudget: number; paused: boolean; con
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
 export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[];
   refunds: RefundSettings; accounts: RefundAccount[]; groups: RefundGroup[];
+  monitors: OrderMonitor[]; broadcastReceipts: BroadcastReceipt[]; alerts: OperatorAlert[];
   refundObservations: RefundObservation[]; refundSends: RefundSend[]; refundAttempts: RefundAttempt[]; refundPauses: RefundPause[] }
 export interface Record { kind: string; key: string; value: Json }
 export const claims = (order: Order): boolean => order.status === "converted" || order.status === "issuing";
@@ -106,6 +109,9 @@ function payment(value: unknown): asserts value is Payment {
 export function encode(state: State): Record[] {
   return [ { kind: "sales_settings", key: "global", value: state.settings as unknown as Json },
     { kind: "refund_settings", key: "global", value: state.refunds as unknown as Json },
+    ...state.monitors.map(value => ({ kind: "order_monitor", key: value.order, value: value as unknown as Json })),
+    ...state.broadcastReceipts.map(value => ({ kind: "refund_receipt", key: value.txid, value: value as unknown as Json })),
+    ...state.alerts.map(value => ({ kind: "operator_alert", key: String(value.id), value: value as unknown as Json })),
     ...state.accounts.map(value => ({ kind: "refund_account", key: value.order, value: value as unknown as Json })),
     ...state.groups.map(value => ({ kind: "refund_group", key: value.id, value: value as unknown as Json })),
     ...state.refundAttempts.map(value => ({ kind: "refund_attempt", key: value.id, value: value as unknown as Json })),
@@ -121,12 +127,16 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   for (const d of refunds.merchantDestinations) destination(d);
   const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
     lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [],
-    refunds: structuredClone(refunds), accounts: [], groups: [], refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
+    refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [],
+    refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
   for (const record of records) {
     // Commands mutate a working copy. The original records remain the
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
+      case "order_monitor": decodeMonitor(v); if (v.order !== record.key) fail("monitor key differs"); state.monitors.push(v); break;
+      case "refund_receipt": decodeReceipt(v); if (v.txid !== record.key) fail("receipt key differs"); state.broadcastReceipts.push(v); break;
+      case "operator_alert": decodeAlert(v); if (String(v.id) !== record.key) fail("alert key differs"); state.alerts.push(v); break;
       case "refund_settings":
         object(v, "version,policy,merchantDestinations");
         if (record.key !== "global" || JSON.stringify(v) !== JSON.stringify(refunds)) fail("refund configuration differs from the journal");
@@ -155,6 +165,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   }
   if (records.length && !records.some(r => r.kind === "sales_settings")) fail("missing application settings");
   if (records.length && !records.some(r => r.kind === "refund_settings")) fail("missing refund settings; explicit import required");
+  state.alerts.sort((a, b) => a.id - b.id);
   const tokens = new Set<string>(), destinations = new Set<string>();
   for (const o of state.orders) {
     if (!state.listings.some(n => n.handle === o.handle) || o.sequence >= state.settings.nextOrder ||
@@ -237,5 +248,6 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   }
   for (const s of state.refundSends) if (s.lastIntentAt > state.settings.lastTime) fail("refund intent is in the future");
   for (const p of state.refundPauses) if (!state.groups.some(g => g.id === p.group && g.transaction) || p.lastAt > state.settings.lastTime) fail("invalid rebuild pause relationship");
+  validateMonitoring(state);
   return state;
 }

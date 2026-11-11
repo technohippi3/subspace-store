@@ -176,7 +176,10 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     assert.equal((yield* store.order(refundable.token)).refunded_sats, 3000);
     assert.equal((yield* store.order(refundable.token)).refund_groups[0]!.settled_txid, excess.txid);
     {
+      now = 20;
       yield* store.cancel(refundable.token);
+      const due = (yield* store.order(refundable.token)).refund_deadlines;
+      assert.equal(due.length, 1); assert.equal(due[0]!.started_at, 20); assert.equal(due[0]!.remaining_sats, 10_000);
       const cancellation = yield* store.prepareRefund("o2", "cancellation", "buyer");
       assert.equal(cancellation.phase, "built"); assert.equal(cancellation.charged_sats, 10_000);
       const db = new DatabaseSync(join(root, "store.db"), { readOnly: true });
@@ -185,9 +188,12 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       const decodedRefund = object(yield* node.call("decoderawtransaction", saved.transaction.raw));
       assert(Array.isArray(decodedRefund.vin));
       assert(decodedRefund.vin.some(v => object(v).txid === excess.txid), "later refund uses proven order change");
+      now = 21;
       yield* store.broadcastRefund(cancellation.id); yield* node.call("generatetoaddress", 6, minerAddress);
       const final = yield* store.order(refundable.token); assert.equal(final.refundable_sats, 0);
       assert.equal(final.refunded_sats, 13_000); assert.equal(final.reserved_refund_sats, 0); assert.equal(refundSends, 3);
+      assert.equal(final.refund_deadlines[0]!.broadcast_at, 21); assert.equal(final.refund_deadlines[0]!.remaining_sats, 0);
+      assert.equal(final.refund_deadlines[0]!.incident, false);
     }
     // A new obligation is rebuilt through a settled conflicting ancestor.
     yield* store.listName("rebuild@space", 1000);
@@ -252,7 +258,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       if (!loaded.includes(name)) yield* node.call("loadwallet", name);
     }
     yield* Effect.promise(() => until(async () => { assert.equal(object(await run(node.call("getmempoolinfo"))).loaded, true); }));
-    now = 901;
+    now += 901;
     view = yield* store.order(second.token);
     assert.equal(view.detected_sats, 0); assert.equal(view.payment_history, "detected");
     yield* node.call("generatetoaddress", 7, minerAddress);
@@ -262,7 +268,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       "ts/src/refunds/policy.ts", "ts/src/refunds/records.ts", "ts/src/refunds/types.ts", "ts/src/refunds/book.ts",
       "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts",
       "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
-      "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts"];
+      "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts", "ts/src/application/monitor.ts"];
     writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
       files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
       checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -270,7 +276,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
         "refund-preparation-with-capped-buyer-fee", "refund-from-proven-order-change", "application-refund-send",
         "lost-refund-reply-and-store-restart", "refund-settlement-6-5-6", "deep-refund-reorg-and-remining",
         "refund-fee-bump-retains-inputs-and-buyer-output", "older-family-member-can-win-after-reorg", "rebuild-depends-on-settled-conflict",
-        "conflict-ancestor-loss-invalidates-rebuild"] }, null, 2), { mode: 0o600 });
+        "conflict-ancestor-loss-invalidates-rebuild", "cancellation-deadline-after-earlier-excess-refund"] }, null, 2), { mode: 0o600 });
     t.diagnostic(`Core 31.2 passed; retained artifacts: regtest/.run/${name}`);
   })));
   await stop();

@@ -7,8 +7,9 @@ durable reservations and explicit-input signed refund preparation now run
 in tests (`../docs/spec/REFUND-PREPARATION.md`). First-attempt sends and
 settlement/reorg accounting are now qualified in `../docs/spec/REFUND-SENDING.md`.
 Family maxima, fee bumps and exclusive rebuilds now have separate coverage
-in `../docs/spec/REFUND-FAMILIES.md`. Refund deadlines/general alerts,
-registry callbacks and full application recovery are still to
+in `../docs/spec/REFUND-FAMILIES.md`. Cancellation/refund-due clocks and
+durable deficit/loss reporting are specified in `../docs/spec/REFUND-OBLIGATIONS.md`.
+Excess deadline assessment, registry callbacks and full application recovery are still to
 build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -94,8 +95,8 @@ authorizing an independent payment. Only the latest previously attempted
 member is retried per group. Views expose per-member positions, group
 maximum and settled charges, without raw transactions or proofs.
 
-The direct-ancestor funding planner is deliberately conservative. Deadlines,
-general durable alerts/losses and full recovery remain. Unconverted excess refunds and the
+The direct-ancestor funding planner is deliberately conservative. Excess
+deadline assessment and full recovery remain. Unconverted excess refunds and the
 T3 skipped-script operator alert remain unsupported. Core qualification now
 includes application sends, a lost reply and store restart, settlement
 changes and deep reorg/re-mining, as well as proven change funding. These
@@ -151,8 +152,13 @@ this storage schema's acknowledged position for coordinated snapshots.
 
 The storage component's records are generic JSON. The application now adds
 domain validation and quote/cancellation instruction gates. Real chain
-observation and exclusive family sends are qualified; refund deadlines and
-controller HTTP/whole-host recovery remain.
+observation and exclusive family sends are qualified. Cancellation clocks,
+first-known broadcasts, permanent missed-target incidents, durable alerts
+and recorded losses now persist through restart. Existing clocks can be
+ticked during a Core outage through operator inspection, without signing
+or sending. A future runner must poll this; no background scheduler or
+operator HTTP endpoint ships yet. Excess clocks and controller HTTP/whole-host
+recovery remain.
 Restored metadata requires reconciliation before the application can reopen
 admission. The backend is an existing filesystem directory that must live
 off-host for actual host-loss recovery; no object-store adapter is claimed.
@@ -190,7 +196,7 @@ conflict-dependent families. Either an older or newer saved member may
 win after a reorg; the ledger counts the group once.
 Complete stack acceptance remains.
 
-Next add refund deadlines and general alerts/loss handling, registry operations, complete order
+Next add read-only excess fee/deadline assessment, registry operations, complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

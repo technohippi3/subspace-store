@@ -86,7 +86,8 @@ through a settled conflict's output, settles the new member, removes the
 conflict, and mines the old refund. Each obligation pays once. This uses
 fresh isolated regtest wallets and does not qualify complete host recovery.
 
-Deadlines, general durable alerts/losses, unconverted excess, merchant
+Cancellation/refund-due deadlines and durable deficit/loss reporting follow
+in `REFUND-OBLIGATIONS.md`. Excess clocks, unconverted excess, merchant
 principal advances, PSBT export, full application restore, registry
 integration, installer/Alchemy and seller setup remain. Recovery may pause
 when available order funding cannot cover a chosen charge; it does not

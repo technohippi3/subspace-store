@@ -53,8 +53,9 @@ regtest qualification (`CORE-SPEC.md`). Refund preparation now has durable
 reservations and signed Core regtest evidence (`REFUND-PREPARATION.md`).
 First-attempt sends and settlement/reorg reconciliation now have runtime
 and Core evidence (`REFUND-SENDING.md`), followed by family maxima, fee
-bumps and exclusive rebuilds (`REFUND-FAMILIES.md`). Refund deadlines/general
-alerts, registry callbacks and
+bumps and exclusive rebuilds (`REFUND-FAMILIES.md`). Cancellation/refund-due
+clocks and durable deficit/loss reporting now have runtime coverage
+(`REFUND-OBLIGATIONS.md`). Excess deadline assessment, registry callbacks and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 

@@ -11,6 +11,7 @@ import type { RefundAdapters, RefundGroup } from "../refunds/types.ts";
 import { applyObservations, balance, refundStatus, sendable, settled, winner } from "../refunds/observations.ts";
 import { allMembers, evidenceKey, members, preferred, reservation } from "../refunds/families.ts";
 import { attemptRequest, finishAttempt, rebuildRequest, reserveAttempt } from "../refunds/attempts.ts";
+import { advance, noteBroadcast, reconcile, recordLoss, tick, type Reason } from "./monitor.ts";
 
 export interface Adapters {
   readonly clock: () => number;
@@ -81,6 +82,7 @@ export class SalesStore {
           yield* verified(() => applyObservations(current.state, observations));
         }
         yield* verified(() => refresh(current.state, self.adapters.clock(), snapshot));
+        yield* verified(() => reconcile(current.state));
         yield* self.save(current.records, current.state);
         return yield* self.load();
       }
@@ -108,7 +110,7 @@ export class SalesStore {
         (o.handle !== order.handle && claims(o) && o.recipient === order.recipient));
       const account = yield* self.storage.acknowledged("refund_account", order.id);
       const refund = account?.value as unknown as State["accounts"][number] | undefined;
-      const funds = balance(state, order), shortfall = claims(order) && total(state, order, 3) < order.price!;
+      const funds = balance(state, order), monitoring = state.monitors.find(m => m.order === order.id);
       return { handle: order.handle, recipient_script_pubkey: order.recipient,
         status: cancelled && !final ? (acknowledged?.status ?? "requested") : order.status,
         cancellation: cancelled ? (final ? "final" : "unconfirmed") : null,
@@ -130,8 +132,9 @@ export class SalesStore {
         refundable_sats: available(state, order.id),
         refunded_sats: funds.refunded, reserved_refund_sats: funds.reserved, refund_exposure_sats: funds.exposure,
         refund_groups: yield* Effect.forEach(state.groups.filter(g => g.order === order.id), g => self.groupView(state, g)),
-        reconciling: [...(shortfall ? [order.status === "issuing" ? "post_issuance_deficit" : "issuance"] : []),
-          ...(funds.exposure > 0 ? ["refunds"] : [])] };
+        refund_deadlines: (monitoring?.deadlines ?? []).map(d => ({ started_at: d.dueAt, target_at: d.dueAt + 86400,
+          principal_sats: d.principal, remaining_sats: d.remaining, broadcast_at: d.completedAt, incident: d.incident })),
+        reconciling: monitoring?.reasons ?? [] };
     });
   }
   request(body: unknown) {
@@ -224,6 +227,8 @@ export class SalesStore {
       yield* checked(() => {
         if (order.status === "issuing") fail("not cancellable once issuing");
         order.status = "cancelled"; release(order);
+        advance(state, self.adapters.clock());
+        reconcile(state);
       });
       yield* self.save(records, state);
       yield* self.storage.flush();
@@ -231,6 +236,27 @@ export class SalesStore {
     }));
   }
   observe() { return this.queue.withPermit(this.refresh().pipe(Effect.asVoid)); }
+  /** Operator inspection advances existing clocks even when Core is unavailable.
+   * It discovers no new obligations and never signs or sends. */
+  operatorStatus() {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { records, state } = yield* self.load();
+      yield* verified(() => tick(state, self.adapters.clock()));
+      yield* self.save(records, state); yield* self.storage.flush();
+      const position = yield* self.storage.status();
+      return { orders: structuredClone(state.monitors), alerts: structuredClone(state.alerts),
+        acknowledged: position.acknowledged === position.seq };
+    }));
+  }
+  recordMerchantLoss(id: string, reason: Reason) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { records, state } = yield* self.refresh();
+      yield* checked(() => recordLoss(state, id, reason));
+      yield* self.save(records, state); yield* self.storage.flush();
+    }));
+  }
   private refundAdapters(): RefundAdapters {
     return this.adapters.refunds ?? fail("refund wallet is not configured", "unavailable");
   }
@@ -261,7 +287,8 @@ export class SalesStore {
   setRefundDestination(token: string, address: string) {
     const self = this;
     return self.queue.withPermit(Effect.gen(function* () {
-      const { records, state } = yield* self.load(), order = yield* checked(() => self.find(state, token));
+      const initial = yield* self.load(); yield* checked(() => self.find(initial.state, token));
+      const { records, state } = yield* self.refresh(), order = yield* checked(() => self.find(state, token));
       const adapters = yield* checked(() => self.refundAdapters());
       yield* checked(() => {
         if (typeof address !== "string" || !address || address.length > 256) fail("invalid refund address", "invalid");
@@ -275,6 +302,8 @@ export class SalesStore {
             allMembers(state).some(m => m.transaction?.outputs.some(o => o.role !== "buyer" && o.script === resolved.script)))
           fail("a refund never goes to a store payment or funding address");
         state.accounts.find(a => a.order === order.id)!.destination = { ...resolved };
+        advance(state, self.adapters.clock());
+        reconcile(state);
       });
       yield* self.save(records, state); yield* self.storage.flush(); return yield* self.view(state, order);
     }));
@@ -402,6 +431,9 @@ export class SalesStore {
       if (accepted) {
         const current = yield* self.load();
         current.state.refundSends.find(s => s.txid === tx.txid)!.result = "accepted";
+        yield* verified(() => {
+          advance(current.state, self.adapters.clock()); noteBroadcast(current.state, id, tx.txid); reconcile(current.state);
+        });
         yield* self.save(current.records, current.state);
       }
       const current = yield* self.refresh();

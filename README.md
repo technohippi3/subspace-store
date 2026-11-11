@@ -47,8 +47,10 @@ regtest coverage (`docs/spec/REFUND-PREPARATION.md`). First-attempt sends,
 lost replies and settlement/reorg accounting are now qualified separately
 (`docs/spec/REFUND-SENDING.md`). Family maxima, fee bumps and exclusive
 rebuilds now have separate coverage (`docs/spec/REFUND-FAMILIES.md`).
-Refund deadlines/general alerts, registry integration and full application
-recovery remain. The Python
+Cancellation/refund-due deadlines and durable deficit/loss reporting now
+have separate runtime coverage (`docs/spec/REFUND-OBLIGATIONS.md`). Excess
+deadline assessment, registry integration and full application recovery
+remain. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price
