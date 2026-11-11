@@ -1045,9 +1045,13 @@ T3). The refund address is fixed once a refund for the order is built
 service.
 
 Kinds. A cancellation refund returns the order's settled funds net of fee,
-after the cancellation is committed. An excess refund returns only funds above
-`price_reserve` and is allowed in any state, including `issuing`, broadcast and
-fulfilled.
+after the cancellation is committed. In the Python behavioral baseline, an
+excess refund returns only funds above `price_reserve` and is allowed in
+any state, including `issuing`, broadcast and fulfilled. The TypeScript
+public pilot applies K21 from `PILOT-SPEC.md`: an unconverted checkout is
+cancelled or refund due before returning its partial payment, and a
+subsequent purchase uses a new checkout. Converted orders keep the normal
+excess-refund rule. This does not amend the frozen Python baseline.
 
 Causes of refund due: not eligible, a late payment that lost the name, an
 outbid auction order, an `already_*_different_spk` outcome, underpayment when

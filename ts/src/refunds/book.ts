@@ -24,9 +24,10 @@ export function reserve(state: State, id: string, kind: RefundGroup["kind"], cau
   const order = state.orders.find(o => o.id === id) ?? fail("no such order", "not_found");
   const account = state.accounts.find(a => a.order === id)!;
   if (!["excess", "cancellation"].includes(kind) || !["buyer", "merchant"].includes(cause)) fail("invalid refund request", "invalid");
-  // Unconverted excess needs full outgoing-spend accounting before it can
-  // safely coexist with a later payment/conversion. That path is not enabled.
-  if (kind === "excess" ? !claims(order) : !["cancelled", "refund_due"].includes(order.status)) fail("refund is not eligible in this preparation path");
+  // The pilot closes an unconverted checkout before returning a partial
+  // payment. Its invoice stays refund-only; a purchase uses a new checkout.
+  if (kind === "excess" && !claims(order)) fail("not eligible for excess: use a cancellation refund after cancelling this checkout or once it is refund due");
+  if (kind === "cancellation" && !["cancelled", "refund_due"].includes(order.status)) fail("cancel this checkout before refunding its partial payment");
   if (!account.destination || account.ceiling === null) fail("refund destination or invoice is missing");
   const charged = available(state, id), policy = { ...state.refunds.policy, buyerFeeCeiling: account.ceiling };
   if (!charged || charged > policy.maximumRefund) fail("no refundable credit within the hot-wallet limit");

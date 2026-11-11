@@ -57,7 +57,10 @@ bumps and exclusive rebuilds (`REFUND-FAMILIES.md`). Cancellation/refund-due
 clocks and durable deficit/loss reporting now have runtime coverage
 (`REFUND-OBLIGATIONS.md`). Unsigned Core size/fee measurement is separately
 qualified (`REFUND-ESTIMATES.md`). Converted/issuing excess assessment and
-deadlines now connect them (`EXCESS-DEADLINES.md`). Unconverted accounting, registry callbacks and
+deadlines now connect them (`EXCESS-DEADLINES.md`). K21 keeps the first
+release's partial refunds cancel-first; continuing an invoice after a
+partial withdrawal is outside the pilot scope. Authenticated operator
+inspection is qualified separately (`OPERATOR-INSPECTION.md`). Registry write callbacks and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 

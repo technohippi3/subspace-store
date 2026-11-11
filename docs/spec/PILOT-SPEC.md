@@ -43,6 +43,15 @@ limits, not chosen deployment amounts. A refund deadline starts when all
 three prerequisites are first met; losing a prerequisite cannot reset it,
 and sending after the deadline does not clear the incident.
 
+The first release uses cancel-first for a partial refund (K21). This is
+the coordinator's choice under the workspace_owner's delegated judgment
+on 2026-11-11. An ongoing unconverted checkout is cancelled, or reaches
+refund due, before money is returned. That order stays refund-only after
+refund, restart or a later payment. A subsequent purchase uses a new
+checkout and destination. A continuing checkout after a partial withdrawal
+is outside the first-release scope. This avoids treating the same partial
+payment as both purchase funding and an irrevocable refund obligation.
+
 ## Named cases
 
 Fixture prices, fee rates and budgets below are test inputs only. Unless a
@@ -75,6 +84,7 @@ rolling 86,400 seconds, and the global admission cap is ten active holds.
 | K19 | a hold released after payment loss, then a new buyer holds the name | the original payment returns after a reorg | old hold never revives automatically; new owner preserved, old order refund due |
 
 | K20 | an order's original hold expires, a later hold converts, then the order is cancelled | quote again, cancel that unpaid hold, and restore | only the converted hold is exempt; the original unpaid hold and the new unpaid hold exhaust the ration across restore |
+| K21 | an ongoing checkout with a settled partial payment | request a refund, cancel and refund, restart, then pay the old and a new checkout | refuse a refund before cancellation/refund due; old invoice stays refund-only and retains its address/history; only the new invoice can qualify the purchase |
 
 The exemption belongs to each hold, not to all holds of an order that later
 converts. K7 also checks a late pay-first payment equal to its original

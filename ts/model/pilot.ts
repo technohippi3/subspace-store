@@ -160,6 +160,7 @@ export class Pilot {
   recordRefund(id: number, charged: number): void {
     whole(charged, 1);
     const order = this.mutable(id);
+    if (order.state === "quoted") throw Error("cancel the checkout before refunding a partial payment");
     const previous = this.data.refunded[id] ?? 0;
     const reserve = order.state === "cancelled" || order.state === "refund_due" ? 0 : order.price;
     if (charged + previous > this.sum(order, 6) - reserve) throw Error("refund not authorized");

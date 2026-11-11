@@ -15,6 +15,7 @@ import { ApplicationError } from "../src/application/records.ts";
 import { DatabaseSync } from "node:sqlite";
 import { refundPolicy } from "../test/production/application-fixture.ts";
 import { SalesStore } from "../src/application/store.ts";
+import { serveOperator } from "../src/application/operator-http.ts";
 import { object, hex, integer } from "../src/bitcoin/validation.ts";
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
@@ -101,6 +102,17 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     view = yield* store.order(order.token); assert.equal(view.confirmed_sats, 1_000); assert.equal(view.status, "quoted");
     yield* node.call("generatetoaddress", 2, minerAddress);
     view = yield* store.order(order.token); assert.equal(view.batchable_sats, 1_000); assert.equal(view.status, "converted");
+    const inspectionScope = yield* Scope.fork(parentScope), credential = "mock-operator-qualification".padEnd(48, "x");
+    const operator = yield* Scope.provide(inspectionScope)(serveOperator(store, Effect.succeed(credential)));
+    yield* Effect.promise(async () => {
+      const options = { headers: { Authorization: `Bearer ${credential}` } };
+      const observed = await fetch(operator.url + "/operator/observe", { ...options, method: "POST" }); assert.equal(observed.status, 200);
+      const response = await fetch(operator.url + "/operator/orders?status=converted", options); assert.equal(response.status, 200);
+      const data = object(await response.json()); assert(Array.isArray(data.orders));
+      const row = object(data.orders[0]); assert.equal(row.oid, "o1"); assert.equal(row.journaled_status, "converted");
+      assert.equal(row.batchable_sum, 1000); assert.equal(JSON.stringify(data).includes(order.token), false);
+    });
+    yield* Scope.close(inspectionScope, Exit.void);
     yield* node.call("invalidateblock", blocks[0]);
     view = yield* store.order(order.token); assert.equal(view.confirmed_sats, 0); assert.equal(view.status, "converted");
     assert.deepEqual(view.reconciling, ["issuance"]);
@@ -256,6 +268,25 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     assert.equal(recoveredRefund.refunded_sats, 30_000); assert.equal(recoveredRefund.reserved_refund_sats, 0);
     assert.equal(recoveredRefund.refund_groups[0]!.settled_txid, recovery.txid);
     feeEstimateOverride = null;
+    // K21: returning a partial payment closes that checkout. Late money
+    // remains attributable to it and cannot qualify a replacement checkout.
+    yield* store.listName("partial@space", 10_000);
+    const old = yield* store.request({ handle: "partial@space", script_pubkey: "5120" + "6".padStart(64, "0") });
+    const oldInvoice = yield* store.quote(old.token); assert(oldInvoice.address);
+    yield* buyer.call("sendtoaddress", oldInvoice.address, "0.00006000"); yield* node.call("generatetoaddress", 6, minerAddress);
+    assert.equal((yield* store.setRefundDestination(old.token, buyerAddress as string)).status, "quoted");
+    yield* Effect.promise(() => assert.rejects(run(store.prepareRefund("o4", "excess", "buyer")), /cancel/));
+    yield* store.cancel(old.token); const partialRefund = yield* store.prepareRefund("o4", "cancellation", "buyer");
+    yield* store.broadcastRefund(partialRefund.id); yield* node.call("generatetoaddress", 6, minerAddress);
+    assert.equal((yield* store.order(old.token)).refunded_sats, 6000);
+    yield* Scope.close(lifetime, Exit.void); lifetime = yield* Scope.fork(parentScope); store = yield* Scope.provide(lifetime)(open());
+    const fresh = yield* store.request({ handle: "partial@space", script_pubkey: "5120" + "6".padStart(64, "0") });
+    const freshInvoice = yield* store.quote(fresh.token); assert(freshInvoice.address); assert.notEqual(freshInvoice.address, oldInvoice.address);
+    yield* buyer.call("sendtoaddress", oldInvoice.address, "0.00010000"); yield* node.call("generatetoaddress", 6, minerAddress);
+    const late = yield* store.order(old.token); assert.equal(late.status, "cancelled"); assert.equal(late.refundable_sats, 10_000);
+    assert.equal((yield* store.order(fresh.token)).confirmed_sats, 0);
+    yield* buyer.call("sendtoaddress", freshInvoice.address, "0.00010000"); yield* node.call("generatetoaddress", 3, minerAddress);
+    assert.equal((yield* store.order(fresh.token)).status, "converted"); assert.equal((yield* store.order(old.token)).status, "cancelled");
     yield* store.listName("two@space", 1_000);
     const second = yield* store.request({ handle: "two@space", script_pubkey: "5120" + "2".padStart(64, "0") });
     const invoice = yield* store.quote(second.token); assert(invoice.address);
@@ -296,7 +327,8 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts",
       "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
       "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts", "ts/src/application/monitor.ts",
-      "ts/src/bitcoin/refund-estimate.ts", "ts/src/bitcoin/excess-fee.ts", "ts/src/application/assessments.ts"];
+      "ts/src/bitcoin/refund-estimate.ts", "ts/src/bitcoin/excess-fee.ts", "ts/src/application/assessments.ts",
+      "ts/src/application/http.ts", "ts/src/application/operator-http.ts"];
     writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
       files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
       checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -306,7 +338,9 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
         "refund-fee-bump-retains-inputs-and-buyer-output", "older-family-member-can-win-after-reorg", "rebuild-depends-on-settled-conflict",
         "conflict-ancestor-loss-invalidates-rebuild", "cancellation-deadline-after-earlier-excess-refund",
         "unsigned-fee-assessment-preserves-wallet-state", "unsigned-size-bounds-real-keypath-spend", "unsigned-fee-assessment-of-spent-receipt",
-        "excess-deadline-before-preparation-and-distinct-cancellation", "excess-deadline-with-fee-coins-locked"] }, null, 2), { mode: 0o600 });
+        "excess-deadline-before-preparation-and-distinct-cancellation", "excess-deadline-with-fee-coins-locked",
+        "authenticated-operator-inspection-with-core", "cancelled-partial-invoice-stays-refund-only",
+        "fresh-checkout-separates-late-old-payments"] }, null, 2), { mode: 0o600 });
     t.diagnostic(`Core 31.2 passed; retained artifacts: regtest/.run/${name}`);
   })));
   await stop();

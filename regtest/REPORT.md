@@ -1419,3 +1419,66 @@ e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin
 d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin/excess-fee.ts
 09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0  ts/src/application/assessments.ts
 ```
+
+
+## Operator inspection and cancel-first partial refunds, 2026-11-11
+
+Core 31.2 run `core-adapter-2026-11-11T19-01-52-893Z-08d4c4bd` passes
+28 checks bound to the 26 source digests below. It uses fresh isolated
+regtest wallets. The earlier payment, unsigned estimate, refund send and
+family/reorg scenarios remain in the same run. Application time is
+controlled; this is not a claim about production timing.
+
+An authenticated operator listener observes a real converted payment over
+HTTP and returns its acknowledged order status and batchable amount,
+without a buyer token. It runs on a separate loopback port and closes
+before the store lifetime ends. Default tests separately cover duplicate
+authorization headers, rotation, provider failure, response redaction,
+journal lag, unsupported writes and scoped port release.
+
+K21 chooses cancel-first for the first release. A settled 6,000-sat
+partial payment on a 10,000-sat invoice refuses excess preparation before
+cancellation. After cancellation it is returned by a real transaction.
+The store restarts, creates a new checkout for the same handle, and
+retains the old address and refund history. A later 10,000-sat payment
+to the old address stays refund-only; it contributes nothing to the new
+checkout. Only a payment to the new address converts that checkout.
+Continuing an invoice after a partial withdrawal is outside pilot scope.
+
+Local checks pass 273 Python tests and 205 TypeScript tests. Development
+coverage reports 259 fixed-price cases with no gaps and 40 deferred
+cases. The pilot production gate still refuses for 114 cases. Registry
+write callbacks, complete lifecycle views, full application recovery and
+buyer/host acceptance remain; this listener is not a complete runner
+interface and must not be configured as one. No deployment occurred.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+f64968a714d684b3c119d7287589b224fa107fc8218364aa088a7ef54f10c0f1  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+9fb2512bba7c820ebcab8c11ab7745fe63979bde2cbeed1c8f07e381574e0646  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a  ts/src/refunds/types.ts
+9023af566c4978d910bd776cb3a9038dc2002f4eeb17a82a751c6f8ff8556d2a  ts/src/refunds/book.ts
+9731e27e1907c2c54d03fe9878bb4b5ca157a0bd3ea70fbe630ec8ce35ebf5eb  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+eac4aa3cf8aeff83b5c6ffb9d00e5361b51e4c692bfd936b5e48ea24acb36f4f  ts/src/application/records.ts
+191be8361559658702eede3d20f01dc507516f17b6768ca0c1ea75e46bce6988  ts/regtest/core.test.ts
+7d10c5be62c77a6915c9b5212364c93203cbc90eb01e69b02ecb2939c5a8a5c1  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+32052a787beb10de9d8c2b0f97aa9734d6cad43402e4312ee72a29a5644d5c7f  ts/src/application/monitor.ts
+0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
+d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin/excess-fee.ts
+09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0  ts/src/application/assessments.ts
+767476ffe8c7461970b19404f1fde150001d3396c6c7e2f5e649dff79ca18052  ts/src/application/http.ts
+3c4644dd2baa65ffd5c801a9a6c53af4333a90c5dbaf3c7780b37e3ca9eba881  ts/src/application/operator-http.ts
+```

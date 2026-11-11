@@ -11,7 +11,9 @@ in `../docs/spec/REFUND-FAMILIES.md`. Cancellation/refund-due clocks and
 durable deficit/loss reporting are specified in `../docs/spec/REFUND-OBLIGATIONS.md`.
 Read-only unsigned Core template measurement follows in `../docs/spec/REFUND-ESTIMATES.md`.
 Converted/issuing excess clocks now use that assessment in `../docs/spec/EXCESS-DEADLINES.md`.
-Unconverted outgoing-spend accounting, registry callbacks and full application recovery are still to
+K21 keeps partial refunds cancel-first; a new purchase uses a new checkout.
+The separate operator inspection listener is covered in `../docs/spec/OPERATOR-INSPECTION.md`.
+Registry write callbacks and full application recovery are still to
 build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -213,7 +215,17 @@ spendable fee coins or allocate addresses. Actual signing still enforces
 funding, fee caps and the measured minimum. Unknown assessments are durable
 operator notices rather than claims that excess is too small.
 
-Next add unconverted outgoing-spend accounting, registry operations, complete order
+The first release closes an unconverted checkout before returning a partial
+payment. Its old address and financial history stay with that refund-only
+order. A new checkout has its own address; old payments cannot qualify it.
+Continuing the same checkout after a partial withdrawal is deferred.
+
+An authenticated operator inspection listener now exposes status, alerts,
+order summaries and explicit observation on a separate loopback port.
+Credentials are injected as an Effect and reevaluated without disk caching.
+No controller issuance or financial write endpoint is exposed yet.
+
+Next add registry write operations, complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

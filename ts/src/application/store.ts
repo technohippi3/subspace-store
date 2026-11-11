@@ -256,6 +256,38 @@ export class SalesStore {
         acknowledged: position.acknowledged === position.seq };
     }));
   }
+  private inspectedOrder(state: State, order: Order) {
+    const self = this;
+    return Effect.gen(function* () {
+      const record = yield* self.storage.acknowledged("sales_order", order.id);
+      const saved = record?.value as unknown as Order | undefined;
+      return { oid: order.id, name: order.handle, recipient_spk: order.recipient, status: order.status,
+        price: order.price, price_reserve: claims(order) ? order.price : 0,
+        dest_address: saved?.destination?.address ?? null, journaled_status: saved?.status ?? null,
+        confirmed_sum: total(state, order, 1), batchable_sum: total(state, order, 3), settled_sum: total(state, order, 6),
+        refunded_total: balance(state, order).refunded, reserved: balance(state, order).reserved,
+        reasons: [...(state.monitors.find(m => m.order === order.id)?.reasons ?? [])] };
+    });
+  }
+  inspectionOrders(status?: string) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      yield* checked(() => {
+        if (status !== undefined && !["requested", "quoted", "unpaid", "converted", "issuing", "ready", "fulfilled", "cancelled", "refund_due"].includes(status))
+          fail("invalid order status", "invalid");
+      });
+      const { state } = yield* self.load();
+      return { orders: yield* Effect.forEach(state.orders.filter(o => status === undefined || o.status === status), o => self.inspectedOrder(state, o)) };
+    }));
+  }
+  inspectionOrder(id: string) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { state } = yield* self.load();
+      const order = yield* checked(() => state.orders.find(o => o.id === id) ?? fail("no such order", "not_found"));
+      return yield* self.inspectedOrder(state, order);
+    }));
+  }
   recordMerchantLoss(id: string, reason: Reason) {
     const self = this;
     return self.queue.withPermit(Effect.gen(function* () {

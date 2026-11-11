@@ -52,8 +52,10 @@ have separate runtime coverage (`docs/spec/REFUND-OBLIGATIONS.md`). A
 read-only Core PSBT size/fee primitive now has separate qualification
 (`docs/spec/REFUND-ESTIMATES.md`). Converted/issuing excess assessment and
 deadlines now connect those components (`docs/spec/EXCESS-DEADLINES.md`).
-Unconverted outgoing-spend accounting, registry integration and full application recovery
-remain. The Python
+The first-release partial-refund flow is cancel-first (K21): an old invoice
+stays refund-only and a purchase uses a new checkout. A separate authenticated
+operator inspection listener now runs in tests (`docs/spec/OPERATOR-INSPECTION.md`).
+Registry write callbacks and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

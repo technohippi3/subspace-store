@@ -24,7 +24,7 @@ function parseRequest(raw: string): unknown {
   try { return JSON.parse(raw) as unknown; }
   catch { throw new ApplicationError({ code: "invalid", message: "invalid recipient request" }); }
 }
-async function body(request: IncomingMessage): Promise<string> {
+export async function body(request: IncomingMessage): Promise<string> {
   if (Number(request.headers["content-length"] ?? 0) > 65_536)
     throw new ApplicationError({ code: "invalid", message: "body too large" });
   const parts: Buffer[] = []; let length = 0;
@@ -36,7 +36,7 @@ async function body(request: IncomingMessage): Promise<string> {
   }
   return Buffer.concat(parts).toString("utf8");
 }
-function send(response: ServerResponse, code: number, value: unknown): void {
+export function send(response: ServerResponse, code: number, value: unknown): void {
   if (response.destroyed) return;
   const data = JSON.stringify(value);
   response.writeHead(code, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data),
@@ -94,7 +94,7 @@ export function serve(store: SalesStore, port = 0) {
   }, catch: () => new ApplicationError({ code: "unavailable", message: "HTTP listener unavailable" }) }),
   listener => Effect.promise(listener.close));
 }
-function responseFor(operation: Effect.Effect<{ code: number; value: unknown }, unknown>) {
+export function responseFor(operation: Effect.Effect<{ code: number; value: unknown }, unknown>) {
   return operation.pipe(Effect.match({ onSuccess: value => value,
     onFailure: error => ({ code: error instanceof ApplicationError ?
       ({ invalid: 400, refused: 409, unavailable: 503, not_found: 404 } as const)[error.code] : 503,
