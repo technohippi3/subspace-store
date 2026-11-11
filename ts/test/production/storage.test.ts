@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { Effect } from "effect";
 import { DurableStore, type StorageConfig } from "../../src/storage/store.ts";
-import { FileJournal } from "../../src/storage/journal.ts";
+import { FileJournal, type Journal } from "../../src/storage/journal.ts";
 import { entry, type Entry } from "../../src/storage/codec.ts";
 
 const project = fileURLToPath(new URL("../../", import.meta.url));
@@ -32,7 +32,7 @@ const name = (price: number) => ({ kind: "name", key: "one@space", value: { pric
 class FailingJournal extends FileJournal {
   down = false;
   lostAnswer = false;
-  override append(entry: Entry): void {
+  override append(entry: Entry): undefined {
     if (this.down) throw Error("simulated journal outage");
     super.append(entry);
     if (this.lostAnswer) throw Error("simulated lost acknowledgment");
@@ -286,4 +286,56 @@ test("H12: Effect failure and interruption release the store ownership scope", a
   controller.abort();
   await assert.rejects(running);
   await use(config, store => store.status());
+});
+
+
+test("Z9: adoption retries directory durability before acknowledging a crashed publication", async (t) => {
+  const config = fixture(t);
+  const script = `
+    import { Effect } from "effect";
+    import { readdirSync } from "node:fs";
+    import { DurableStore } from ${JSON.stringify(storeUrl)};
+    import { FileJournal } from ${JSON.stringify(journalUrl)};
+    const original = FileJournal.prototype.syncDirectory;
+    FileJournal.prototype.syncDirectory = function() {
+      if (readdirSync(this.directory).some(name => name.endsWith(".json"))) {
+        if (process.argv[3] === "crash") process.kill(process.pid, "SIGKILL");
+        throw Error("injected adoption sync failure");
+      }
+      return original.call(this);
+    };
+    const work = Effect.scoped(Effect.gen(function* () {
+      const store = yield* DurableStore.open({database:process.argv[1],journalDirectory:process.argv[2]});
+      yield* store.commit([{kind:"order",key:"o1",value:{address:"mock-address"}}]);
+    }));
+    Effect.runSync(work);
+  `;
+  const run = (mode: string) => spawnSync(process.execPath,
+    ["--input-type=module", "-e", script, config.database, config.journalDirectory, mode],
+    { cwd: project, encoding: "utf8", timeout: 10_000 });
+  assert.equal(run("crash").signal, "SIGKILL");
+  const failure = run("fail");
+  assert.equal(failure.status, 1);
+  assert.match(failure.stderr, /injected adoption sync failure/);
+  const before = new DatabaseSync(config.database, { readOnly: true });
+  assert.equal(before.prepare("select acknowledged from outbox where seq=1").get()?.acknowledged, 0);
+  before.close();
+  await use(config, store => Effect.gen(function* () {
+    assert.equal((yield* store.get("order", "o1"))?.acknowledged, true);
+    assert.equal((yield* store.status()).seq, 1);
+  }));
+});
+
+
+test("Z2: an asynchronous backend cannot manufacture a synchronous acknowledgment", async (t) => {
+  const config = fixture(t);
+  const wrongBackend = { read: () => [], append: async () => {} } as unknown as Journal;
+  await use({ ...config, makeJournal: () => wrongBackend }, store => Effect.gen(function* () {
+    assert.equal((yield* store.commit([name(1_000)])).acknowledged, false);
+    assert.equal((yield* store.get("name", "one@space"))?.acknowledged, false);
+    assert.equal((yield* store.status()).journalFailure, "journal backend must acknowledge synchronously");
+  }));
+  await use(config, store => Effect.gen(function* () {
+    assert.equal((yield* store.get("name", "one@space"))?.acknowledged, true);
+  }));
 });

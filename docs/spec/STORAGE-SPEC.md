@@ -32,7 +32,9 @@ preceding digest and SHA-256 digest. Individual records retain their latest
 sequence. A caller must not expose an address, final cancellation or send
 intent until the corresponding receipt is acknowledged. The component
 returns pending receipts during a journal outage; that is not authorization
-for any external effect. Operator diagnostics retain the journal failure.
+for any external effect. Operator diagnostics retain the journal failure. This backend interface is
+synchronous; a Promise-returning adapter is rejected, not mistaken for an
+acknowledgment. A future network backend requires an async Effect flow.
 
 The initial journal backend is an existing dedicated directory on storage
 that survives the host. Each entry is a separate immutable JSON object. A
@@ -47,7 +49,10 @@ integration; qualifying off-host deployment remains required.
 
 SQLite acknowledgments are a contiguous prefix. Startup reconciles saved
 outbox entries with the journal before retrying unacknowledged writes.
-A journal ahead of a coherent database snapshot is replayed; a lost answer
+Before startup adopts linked entries, it repeats the directory sync: a
+crash may have occurred between publication and that durability boundary.
+If the sync fails, no acknowledgment is adopted. A journal ahead of a
+coherent database snapshot is replayed; a lost answer
 after publication does not create a second entry. Projection replay is
 atomic. Schema version 1 is explicit; unknown schemas, including the Python
 database, are refused rather than implicitly migrated.
@@ -89,6 +94,8 @@ stage 2 work; the new storage tests do not claim the operator gate passed.
 | Z6 | a batch whose later record hits a SQLite constraint failure | commit the batch | records and outbox roll back together, journal unchanged |
 | Z7 | a Python-created SQLite backup behind the TypeScript journal | reopen the backup with the current journal | later state replayed, no second journal entry; Python snapshot reader reports the acknowledged position |
 | Z8 | restore killed during its replay transaction | inspect serving path, then retry restore | no partial serving database; retry completes and remains reconciliation-required |
+
+| Z9 | crash after linking a fsynced journal file but before directory sync | startup adoption first fails its directory sync, then retries successfully | failed sync adopts no acknowledgment; successful sync acknowledges the original entry once |
 
 H12 additionally runs against the TypeScript storage component: real
 Python and TypeScript owners contend in both directions, before journal

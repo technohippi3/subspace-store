@@ -43,7 +43,7 @@ temporary Python comparisons are not a permanent runtime dependency.
 The first implementation increment adds the TypeScript pilot model and
 K1–K19 cases, a 2,000-step generated trace, development/release coverage
 modes, a pilot-readiness workflow and the Python store ownership amendment
-H12. Stage 2 now has the Effect storage component and production Z1–Z8/H12
+H12. Stage 2 now has the Effect storage component and production Z1–Z9/H12
 tests for SQLite, journal acknowledgment, ownership and restore. It does
 not yet have a buyer HTTP service, chain adapter or domain persistence
 integration. The release gate therefore remains blocked; neither component

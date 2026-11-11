@@ -154,7 +154,13 @@ export class DurableStore {
   private flushSync(): boolean {
     for (const row of this.db.prepare("select seq,payload,acknowledged from outbox " +
       "where acknowledged=0 order by seq").all() as unknown as Saved[]) {
-      try { this.journal.append(decode(row.payload)); }
+      try {
+        const publication: unknown = this.journal.append(decode(row.payload));
+        if (publication !== undefined) {
+          if (publication instanceof Promise) void publication.catch(() => {});
+          throw Error("journal backend must acknowledge synchronously");
+        }
+      }
       catch (error) {
         this.journalFailure = error instanceof Error ? error.message : "journal unavailable";
         return false; // No acknowledgment; the outbox remains retryable.

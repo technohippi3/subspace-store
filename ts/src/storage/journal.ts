@@ -6,7 +6,8 @@ import { decode, type Entry } from "./codec.ts";
 
 export interface Journal {
   read(): readonly Entry[];
-  append(entry: Entry): void;
+  /** Return only after durable readback; an async adapter needs an async Effect flow. */
+  append(entry: Entry): undefined;
 }
 function filename(seq: number): string { return String(seq).padStart(16, "0") + ".json"; }
 
@@ -40,8 +41,14 @@ export class FileJournal implements Journal {
     }
     return entries;
   }
-  read(): readonly Entry[] { return this.scan(); }
-  append(value: Entry): void {
+  read(): readonly Entry[] {
+    const entries = this.scan();
+    // A crashed append may have linked a fully fsynced file but not synced
+    // its directory. Observation alone cannot acknowledge that publication.
+    this.syncDirectory();
+    return entries;
+  }
+  append(value: Entry): undefined {
     // Check the full envelope even for alternate backend callers.
     const encoded = JSON.stringify(value);
     decode(encoded);

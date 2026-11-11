@@ -94,7 +94,7 @@ database or performs an effect.
 `src/storage/` now provides Effect-scoped SQLite persistence, a transactional
 outbox, immutable journal objects, acknowledgment receipts, exclusive Linux
 ownership and atomic/resumable journal-only restore. Production cases
-Z1–Z8 and H12 exercise real SQLite, process death, Effect interruption,
+Z1–Z9 and H12 exercise real SQLite, process death, Effect interruption,
 journal outages, corruption and Python-created snapshots. The runner reads
 this storage schema's acknowledged position for coordinated snapshots.
 `../docs/spec/STORAGE-SPEC.md` defines the exact boundary and limitations.
