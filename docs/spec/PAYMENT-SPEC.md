@@ -107,6 +107,20 @@ what they authorize. Each is still to build where it differs from today:
   results. Never buyer-linked records, recovery material, credentials or
   private details of the infrastructure.
 
+Port handoff recorded at the workspace_owner's request (2026-11-11).
+`PORT-PLAN.md` records the implementation order, the independent TypeScript
+model, the public-pilot
+release gate and the work deferred until after it. The Python store and
+Python model used for the owner-only test purchase retain the behavior
+specified and implemented at `66db98c7bea395e7521039418d0ce6307ab67222`.
+Their tests remain checks of that baseline, even as later pilot cases
+change this document. Explicit safety fixes, beginning with process
+ownership, must be recorded with their tests; this is not a freeze on
+fixing defects. New pilot behavior belongs to the TypeScript model and
+store. The pilot still uses the Python controller and attended runner
+initially. Neither baseline tests nor TypeScript model coverage alone
+establish that the public pilot is ready.
+
 Draft 16 records those decisions. It also gathers what was added since
 draft 15: the sales pause and the exposure limit (S1 to S6), refund
 destinations, never a payment address in either direction (T1 to T4), and
@@ -114,7 +128,9 @@ interrupted broadcasts, always uncertain (A20 to A22, X11).
 
 Status: draft specification under review. Every rule below is a
 requirement until its cases are implemented and pass as executable tests.
-Nothing here has been built or tested, and a reviewed specification is not an
+Implemented behavior has model, service and regtest evidence described in
+`README.md`, `docs/SERVICE.md` and `regtest/REPORT.md`; the pilot changes
+identified above are still to build. A reviewed specification is not an
 implemented system. Rules marked "proposal" are commercial defaults that still
 need the owner's agreement; a default that changes merchant risk is always a
 proposal. This file is authoritative for payment, reservation and refund
@@ -156,8 +172,8 @@ a payment address is given out only once the order carrying it is
 acknowledged off-host, and a cancellation is reported final only then,
 to the operator and on the buyer's order link (J11, J12, H8 to H10). A
 second review found that a quote asked again skipped the recipient checks
-(V17). The cancellation reporting rule follows a reviewer's recommendation
-of 2026-11-08; the workspace_owner hasn't ruled on it (see the open points).
+(V17). The cancellation reporting rule followed a reviewer's recommendation
+of 2026-11-08 and was adopted in the further pilot decisions of 2026-11-10.
 Draft 15 adds the runner's recovery commands and the rule that a restore
 sends no new commitment until it is reconciled (A11 to A15), and that a
 payment wallet restored from an earlier backup never gives a new quote an
@@ -628,13 +644,15 @@ What this design leaves possible:
   payments they then withdraw or by asking for quotes, and stop all
   sales, which is what this design rules out. The owner sees pending
   payments, and can pause sales by hand.
-- The existing late-payment rule, for an order whose own hold ended, lets
-  any positive confirmed amount take a new hold when the name is free. A
+- The frozen Python baseline's late-payment rule, for an order whose own
+  hold ended, lets any positive confirmed amount take a new hold when the
+  name is free. A
   small confirmed payment can therefore take a name back for six blocks
   and more. Under this design that new hold counts against the name's
   ration. For public names in the pilot a late payment takes the name
-  only with the full price too (pilot decisions, 2026-11-10); until that
-  is built, the rule above stands.
+  only with the full price too (pilot decisions, 2026-11-10). That change
+  belongs to the TypeScript pilot model and store; the Python owner-only
+  test retains its baseline rule as set out in `PORT-PLAN.md`.
 - Two honest buyers can pay the same pay-first name before either
   confirms. The one who confirms second is refunded less the refund fee,
   and checkout says so before it shows the address (pilot decisions,
@@ -670,8 +688,9 @@ confirmed.
 Late payment. A payment that first reaches `confirmed` after the hold ended
 is evaluated once, then. If the name has no hold and no fulfillment
 reservation, and the current price is no higher than the quoted one, the
-order takes a new temporary hold at the quoted price and proceeds. Anything
-above the current price is excess. Otherwise the order becomes refund due.
+order takes a new temporary hold at the current price and proceeds (P12).
+Anything above the current price is excess. Otherwise the order becomes
+refund due.
 Late payers are never queued.
 
 Several outputs, underpayment and overpayment. All the order's outputs add
@@ -1456,15 +1475,20 @@ sales:
    one supported recovery method. Its next batch needs `subs` with the
    U1(b) capability or another reviewed recovery procedure.
 
-ZK eligibility, auctions, more clients, a universal installer and more
-recovery methods would wait until after the launch.
+The port handoff in `PORT-PLAN.md` adds the production coverage gate and
+places the essential seller commands before this launch gate. One native
+Linux/systemd installer and one recovery method are required. Open catalog,
+bulk import, space archiving, ZK eligibility, auctions, more clients,
+additional deployment packages and more recovery methods wait until after
+the launch.
 
 ## Executable cases
 
 Each case runs against a simulated chain and mempool with controllable reorgs
 of any depth, a simulated node that can lose responses, an off-host journal
-that can lag, and restarts at every durable step. Status for every case:
-requirement, not yet implemented. Amounts are in sats. Unless a case says
+that can lag, and restarts at every durable step. A case is a requirement;
+its executed tests establish the evidence for each implementation, as
+distinguished in `PORT-PLAN.md`. Amounts are in sats. Unless a case says
 otherwise, the price is 10,000 and the refund fee is 300.
 
 Issuance and refund sufficiency:

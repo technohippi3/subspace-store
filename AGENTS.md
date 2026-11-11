@@ -17,10 +17,27 @@ than it does. In particular:
 
 ## Specification and model
 
-- `docs/spec/` is authoritative. Change the specification and the model in
-  the same commit when a rule changes.
-- Every named case in a specification table gets a test called
-  `test_<ID>_<description>`. `tools/case_coverage.py` reports the gaps.
+- `docs/spec/` is authoritative. The Python owner-only test follows the
+  behavioral baseline at `66db98c7bea395e7521039418d0ce6307ab67222`, as
+  defined in `docs/spec/PORT-PLAN.md`. Do not silently backport public-pilot
+  rules to it. Record any subsequent safety fix and its tests explicitly.
+- Change a rule's specification and its governing model in the same commit.
+  Python baseline changes use `model/`; new public-pilot rules use the
+  independent TypeScript model planned under `ts/model/`. That model must
+  exist before those rule changes land. Do not reuse production reducers
+  inside it. A port-plan entry alone does not change either implementation.
+  Runtime-only lifecycle rules, such as process ownership, land with their
+  specification and integration tests; a simulated lock is not evidence
+  that operating-system ownership works.
+- Every new named case lands with its passing executable test. Python uses
+  `test_<ID>_<description>`; TypeScript will use the literal name
+  `test("<ID>: <description>", ...)` after the coverage checker supports it.
+  `tools/case_coverage.py` currently scans Python only. Extend its existing
+  unknown-ID rejection to TypeScript; do not add temporary case exemptions.
+- Keep baseline, TypeScript model and TypeScript production coverage
+  distinct. The planned `--release pilot` gate in `docs/spec/PORT-PLAN.md`
+  must fail on missing production coverage before a public pilot release.
+  It is not implemented yet; today's `--check` is not that release gate.
 - A case without a test is a requirement, not a verified rule.
 - Label model results as model results. Never report them as integration,
   regtest, mainnet or buyer-acceptance evidence.

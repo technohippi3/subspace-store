@@ -59,3 +59,179 @@ binary, configuring the host firewall and running the listener preflight
 are deployment preparation; these examples do none of them. See
 `docs/PRIVATE-PURCHASE.md`. The binding patch adds no authentication for
 other processes on the same host.
+
+## Planned installation and updates
+
+The contract below is part of `../docs/spec/PORT-PLAN.md`. The installer,
+updater, Alchemy driver and Infisical runtime retrieval described here are
+not built. Existing examples above describe the Python baseline, including
+its locally generated tokens; they are not an Infisical integration.
+
+The first supported package uses native Linux/systemd services and stable
+data paths separate from versioned release directories. It runs directly
+on the host as a standalone installer/update artifact; Alchemy only drives
+that same artifact. Application services use dedicated unprivileged users.
+Keep Bitcoin Core, spaced and subs native and pinned. Installation checks
+the actual host's systemd capabilities, storage, mounts and node readiness;
+disk capacity and sync time are measured, not inferred from a provider name.
+
+| Hosting path | Planned scope |
+| --- | --- |
+| An existing SSH-reachable Linux VPS | First package: native systemd and the standalone installer, with the same installation driven through a repository-local Alchemy resource. |
+| Provider-created VPS through Alchemy | Optional provisioning that supplies a compatible host to the installer. Qualify the provider path separately; a provider resource is not proof the application can safely update there. |
+| Railway, containers and Coolify | Later qualification. They must meet storage, resource, single-writer, snapshot and update requirements; they are not supported wallet-host deployment paths at the first pilot. Coolify may manage a separate storefront without privileged access to the wallet host. |
+
+The Alchemy existing-host resource pins the SSH host key before its first
+connection and reconciles the installed release and readiness idempotently.
+Its delete handler does nothing to the host or its data, including when the
+resource is removed from the program; test that behavior. Keep Alchemy
+state, host addresses and operational configuration outside this public
+repository and public outputs. Review their paths across Git history with
+`git log --all -- <path>`, not just the current tree. State is not a wallet
+backup or application journal. Moving a dashboard elsewhere does not remove
+its privileged access to a wallet host.
+
+Release artifacts carry a signed manifest of their digests and supported
+schema/upgrade versions. The installer verifies the signature against a
+previously trusted release key and checks the artifact digest before use.
+It does not obtain its trust solely from the same unverified download. The
+release signing secret is unavailable to the wallet host. Tests reject
+modified artifacts, incorrect digests and untrusted signers.
+
+An update first checks dependencies, credentials and recovery storage while
+the old service still runs. It pauses new admission, inspects outstanding
+holds and operations, and either proceeds safely or reports the specific
+blockers. A pause alone does not drain holds: late invoices still receive
+payments, six blocks have no fixed duration and a qualifying hold can last
+longer. Do not promise a fifteen-minute or six-block update bound.
+
+Maintenance must serialize every writer and send path. The store needs a
+lifetime ownership lock acquired before database/journal initialization or
+reconciliation. Stop new mutations and drain live calls, including direct
+refund broadcasts; the controller lock alone does not cover them. The
+updater must acquire the required ownership after old processes exit before
+migrating or starting replacements. Two versions must never write together.
+An interrupted broadcast remains uncertain until reconciled from evidence.
+
+Take a coordinated checkpoint of the subs directory and both databases,
+with journal positions. The maintenance owner also controls every restart
+mechanism for subs: unit restart policy, timers, health automation and any
+external supervisor. Subs must remain stopped throughout the copy, not
+merely have accepted a stop request. A normal unit restart policy is not a
+reason to omit this ownership check. Tests attempt a competing restart
+during the snapshot and verify that it cannot invalidate the copy.
+
+The replacement starts with admission closed and reconciles before it is
+ready. Readiness includes store readiness and controller reconciliation;
+an HTTP response or running PID is insufficient. Preserve the prior pause
+state and the monotonic pilot review count. A failed update stays paused
+with a useful diagnostic. An old release may be restarted only when its
+schema is compatible. Restoring a checkpoint must reconcile later journal
+and chain effects; it cannot undo a transaction already sent.
+
+Use this package for the one-time Python-to-TypeScript rehearsal. Preserve
+all historical payment addresses and their orders, names already issued,
+certificates, obligations, uncertain sends and identifier/journal lineage.
+Use compatible database reuse when simpler than importing. Fresh wallets
+do not make names already in subs or on the chain available again. Future
+releases test upgrade from the previous supported release; a general live
+migration framework is not needed.
+
+The store journal, controller journal and coordinated snapshots need one
+supported off-host recovery backend. A second disk on the same VM is not
+host-loss recovery. Quote addresses and final cancellations remain gated
+by durable journal acknowledgment. An object-store implementation therefore
+adds its latency and availability to checkout; during an outage, quoting
+pauses. Do not describe this journal as an asynchronous export.
+
+## Infisical and recovery credentials
+
+The host retrieves runtime secrets with its own read-only Infisical machine
+identity, limited to the installation, environment and required paths.
+Use a service-specific retrieval user and restrict the bootstrap credential
+to it through systemd credentials. Alchemy deploys references and retrieval
+configuration; application and wallet secret values must not enter its
+resource properties, state or outputs. Deployment credentials use a
+separate identity. Verify the state/log boundary as part of packaging.
+[Infisical Agent](https://infisical.com/docs/integrations/platforms/infisical-agent)
+supports host retrieval; the
+[Alchemy integration](https://alchemy.run/environments/infisical/)
+loads secrets into the deployment stack, which is a different path.
+
+Deliver fetched secrets as service-restricted runtime credential files,
+not command-line values, release files or logged environment dumps. On a
+VPS without a TPM, systemd credential encryption relies on a host key that
+root can read. It protects against accidental exposure, such as a copied
+encrypted credential without its host key; it does not protect the
+bootstrap secret from someone who already has root. Root can also access
+the running wallet. No stronger guarantee is implied by Infisical or
+systemd credential encryption.
+[Systemd credential documentation](https://systemd.io/CREDENTIALS/)
+describes the service isolation and host-key/TPM options.
+
+Infisical holds the operator and service bearer tokens, wallet passphrases
+where used, backup encryption material and external service credentials.
+Bitcoin Core and spaced cookies are generated locally at startup and stay
+local. Wallet databases and application records remain protected persistent
+data with encrypted backups, not values stored in a secrets service.
+
+The first package has no automatic persistent cache of fetched runtime
+secrets. The protected bootstrap credential necessarily persists; that is
+not a cache of the secrets it can fetch. Running services retain the
+credentials they loaded. A new start fetches the required values and fails
+closed if it cannot. Rotation is deliberate and coordinated with services,
+not an automatic restart that could interrupt a snapshot or hold.
+
+If the host reboots while Infisical is down, the store stays down. Payments
+can still arrive on the chain while it is unavailable. On recovery, keep
+admission paused and reconcile affected orders and names before offering
+them again. A missing observation does not establish that no payment was
+sent or that it was late. The hold-recovery cases below are a pilot gate.
+
+Keep an independently accessible offline copy of backup decryption material
+and any required wallet passphrases, outside both the host and the
+Infisical account. Do not encrypt that only copy with a key obtainable only
+from the lost account. The attended recovery procedure supplies required
+credentials through the same protected runtime mechanism, without fetching
+from Infisical; it is an explicit recovery path, not a silent cache fallback.
+It also documents access to recovery storage without the lost account;
+having the decryption key alone is insufficient if the backups cannot be read.
+Restore the registry token relationship consistently if service tokens are
+replaced. Rehearse this path on a replacement host. The four-hour recovery
+target is not established until that rehearsal passes.
+
+## Recovery evidence still to test
+
+Write named cases and executable tests before adopting mempool timing as a
+hold-recovery rule. Bind evidence to the expected transaction outputs and
+payment scripts. Test on the pinned Bitcoin Core 31.2 binary:
+
+1. A payment reaches Core before hold expiry while the store is down, and
+   remains in the mempool when the store returns. Compare its entry time
+   and height with the intended hold rule; do not substitute restart time.
+2. The payment confirms, is replaced, is evicted or disappears during the
+   same outage. Missing mempool evidence must not invent an on-time or late
+   observation or cause a second buyer to receive an already committed name.
+3. Core also restarts while the store is down. Exercise normal mempool-file
+   persistence and reload, and a crash or missing/stale mempool file. Test
+   entry time and entry height separately, including expiry or failure to
+   reaccept a saved transaction. Do not assume a preserved time proves a
+   preserved entry height.
+4. With a hold active, reboot the host while Infisical is unavailable and
+   let a payment arrive during the outage. Exercise ordinary recovery when
+   access returns and attended recovery from the independent material with
+   Infisical still unavailable. Verify payment attribution, no duplicate
+   issuance/refund, correct refund-fee responsibility and reconciliation
+   before admission reopens.
+
+Core 31.2's
+[RPC source](https://github.com/bitcoin/bitcoin/blob/v31.2/src/rpc/mempool.cpp)
+exposes local mempool entry time and height. Its
+[persistence source](https://github.com/bitcoin/bitcoin/blob/v31.2/src/node/mempool_persist.cpp)
+writes entry times and uses saved times when reaccepting transactions,
+subject to load options and acceptance. That source reading is not the
+recovery test. Once the transaction is absent from the mempool, this RPC
+cannot supply its entry metadata. No automatic hold extension based on
+inferred downtime is approved by this plan; ambiguous cases stay paused for
+attended reconciliation, with store-caused refunds following the merchant
+fee rule in the payment specification.

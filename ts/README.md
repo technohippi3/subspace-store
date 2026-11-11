@@ -14,6 +14,42 @@ and HTTP API, built on Effect around these machines, and the regtest
 service, checkout and recovery scenarios passing with it in place of the
 Python store.
 
+## Port handoff and pilot boundary
+
+`../docs/spec/PORT-PLAN.md` defines the work order and release gates. Its
+stages and the independent TypeScript model are planned, not implemented.
+The Python store and model remain the owner-only test baseline at
+`66db98c7bea395e7521039418d0ce6307ab67222`, plus explicitly recorded safety
+fixes. New pilot behavior belongs to the TypeScript model and store, so a
+baseline Python test is not evidence that a changed pilot rule works.
+
+Build the deterministic model under `model/` in this directory before new
+pilot rule changes land. It must not import production reducers. Each
+payment case lands together with its model test and the corresponding spec
+change; runtime lifecycle cases land with their integration tests.
+Extend case coverage to TypeScript first, using literal test names such as
+`test("P12: lowered price on late payment", ...)`. Keep independent-model
+tests and production tests identifiable separately. Fixed expected traces,
+invariants and fault-injection checks supplement the model; comparisons
+with the Python ledger remain for unchanged baseline rules only.
+
+The planned coverage option `--release pilot` must reject missing production
+tests for the shipped components. It does not exist yet. The current
+`--check` and replay suite cannot establish public-pilot readiness. The
+release requires the actual runtime's API, persistence and recovery tests,
+not only pure state-machine agreement.
+
+The native installer and updater precede the disposable-host cutover
+rehearsal. Essential seller commands then precede the public-pilot gate:
+setup, prices, reservation and withdrawal, global/per-space pause and
+diagnostics. The pilot ships this store with the Python controller and
+runner. Open catalog, bulk import and archiving follow the pilot; the
+remaining controller, runner, model and tooling ports then remove Python.
+The Python node/test-purchase track runs in parallel and includes a store
+ownership lock with a real two-process test before the purchase.
+
+## Current implementation
+
 Three pure state machines and the store-wide request and quote rules are
 ported so far, from `service/ledger.py`:
 
@@ -62,8 +98,9 @@ Domain rules of `service/ledger.py` still to port, each with its home:
    back with sales paused.
 
 Then the store layer around the machines (SQLite transactions, the
-journal, the HTTP API), and the controller, whose batch machine needs the
-interrupted-broadcast recovery decided in the specification first.
+journal, the HTTP API), with the new pilot behavior and gates above. The
+controller port follows the first pilot and must preserve the specified
+interrupted-broadcast recovery; the Python controller ships initially.
 
 It has no runtime dependencies. Its only development dependency is the
 compiler, pinned to TypeScript 7.0.2 (the native compiler) in
