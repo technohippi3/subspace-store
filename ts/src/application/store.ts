@@ -8,7 +8,7 @@ import { active, admission, grant, refresh, release, total } from "./sales.ts";
 
 export interface Adapters {
   readonly clock: () => number;
-  readonly snapshot: Effect.Effect<Snapshot, ApplicationError>;
+  readonly snapshot: (destinations: readonly Destination[]) => Effect.Effect<Snapshot, ApplicationError>;
   readonly newDestination: Effect.Effect<Destination, ApplicationError>;
 }
 export interface Config extends StorageConfig { readonly riskBudgetSats: number }
@@ -56,7 +56,8 @@ export class SalesStore {
     const self = this;
     return Effect.gen(function* () {
       const current = yield* self.load();
-      const snapshot = yield* self.adapters.snapshot;
+      const destinations = current.state.orders.flatMap(o => o.destination ? [{ ...o.destination }] : []);
+      const snapshot = yield* self.adapters.snapshot(destinations);
       yield* verified(() => refresh(current.state, self.adapters.clock(), snapshot));
       yield* self.save(current.records, current.state);
       return yield* self.load();

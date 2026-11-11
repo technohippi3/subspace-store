@@ -30,5 +30,10 @@ jobs:
       - name: Execute TypeScript model and production tests
         working-directory: ts
         run: npm test
+      - name: Fetch the checksum-pinned Bitcoin Core binary
+        run: regtest/fetch-bitcoin.sh
+      - name: Qualify payment observations against real Core in isolation
+        working-directory: ts
+        run: npm run test:core
       - name: Require production coverage for the pilot
         run: python3 tools/case_coverage.py --release pilot

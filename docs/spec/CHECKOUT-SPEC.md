@@ -64,9 +64,10 @@ binding pre-broadcast check remain required.
 ## Remaining boundaries
 
 The HTTP component currently serves `/requests`, private order reads,
-`/quote` and `/cancel`, on loopback only. There is no launcher, public
-checkout page, authenticated operator/registry API, Core adapter, refund
-builder or certificate delivery. The application refuses restored storage
+`/quote` and `/cancel`, on loopback only. `CORE-SPEC.md` now describes the
+separately qualified real Core payment adapter. There is no launcher, public
+checkout page, authenticated operator/registry API, refund builder or
+certificate delivery. The application refuses restored storage
 until controller/chain reconciliation is implemented. The generic storage
 restore component is not full application recovery. Future restore must
 retain ration and conversion history and start paused; existing model

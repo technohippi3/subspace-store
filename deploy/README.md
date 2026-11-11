@@ -202,6 +202,13 @@ target is not established until that rehearsal passes.
 
 ## Recovery evidence still to test
 
+The separate TypeScript Core adapter qualification in `../regtest/REPORT.md`
+now verifies ordinary mempool reload: entry time survives and entry height
+is reconstructed at the reloaded tip. Its missing-mempool test explicitly
+disables wallet rebroadcast, because a wallet can otherwise reannounce the
+payment. That qualification does not adopt a hold-recovery rule or establish
+the complete outage scenarios below.
+
 Write named cases and executable tests before adopting mempool timing as a
 hold-recovery rule. Bind evidence to the expected transaction outputs and
 payment scripts. Test on the pinned Bitcoin Core 31.2 binary:

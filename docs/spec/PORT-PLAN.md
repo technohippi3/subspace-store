@@ -48,7 +48,8 @@ tests for SQLite, journal acknowledgment, ownership and restore. It now
 also has the buyer JSON API and domain persistence boundary described in
 `CHECKOUT-SPEC.md`, tested with real SQLite/HTTP and simulated chain/wallet
 adapters. A 200-step trace compares supported sales behavior with the
-independent model. Real node integration, refunds, registry callbacks and
+independent model. The payment adapter now also has isolated Core 31.2
+regtest qualification (`CORE-SPEC.md`). Refunds, registry callbacks and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 

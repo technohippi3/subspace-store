@@ -41,7 +41,9 @@ gate (`docs/spec/PILOT-SPEC.md`). The Effect-based storage component now has
 production SQLite/journal/recovery tests (`docs/spec/STORAGE-SPEC.md`). A
 loopback buyer JSON API now connects requests, quotes and cancellations to
 that storage with injected chain/wallet adapters (`docs/spec/CHECKOUT-SPEC.md`).
-Real node integration, refunds and full application recovery remain. The Python
+The payment adapter now has isolated Bitcoin Core 31.2 regtest qualification
+(`docs/spec/CORE-SPEC.md`). Refunds, registry integration and full application
+recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

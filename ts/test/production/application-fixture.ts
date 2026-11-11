@@ -28,7 +28,7 @@ export function fixture(t: TestContext, budget = 1_000_000) {
   const node = { now: 0, tip: 10, outputs: [] as Output[], draws: 0, observations: 0,
     beforeDestination: null as (() => Promise<void>) | null };
   const adapters = { clock: () => node.now,
-    snapshot: Effect.sync(() => { node.observations++; return { tip: node.tip, outputs: structuredClone(node.outputs) }; }),
+    snapshot: () => Effect.sync(() => { node.observations++; return { tip: node.tip, outputs: structuredClone(node.outputs) }; }),
     newDestination: Effect.tryPromise({ try: async () => {
       const index = ++node.draws;
       await node.beforeDestination?.();

@@ -1,8 +1,9 @@
 # TypeScript port (in progress)
 
 The store is being ported to TypeScript. The domain code, Effect-based
-storage and loopback buyer JSON API run in tests. Real node integration,
-refunds, registry callbacks and full application recovery are still to
+storage and loopback buyer JSON API run in tests. The payment adapter now
+has isolated Core 31.2 regtest qualification. Refunds, registry callbacks
+and full application recovery are still to
 build. The Python service, controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -127,7 +128,16 @@ the supported sales rules. K20 fixes the model's per-hold conversion
 exemption; K4 also checks creation order independent of quote call order.
 Full recovery remains unverified wherever only a restart was tested.
 
-Next add the real chain adapter, refund/registry operations, complete order
+`src/bitcoin/` supplies loopback cookie-authenticated RPC, exact BTC parsing
+and complete wallet receipt observations. `../docs/spec/CORE-SPEC.md`
+defines readiness, stable-read guards and limitations. `npm run test:core`
+qualifies real Core 31.2 in isolation, separately from the default test
+suite's RPC stand-in. It retains artifacts under `regtest/.run/` and needs
+the pinned binary from `../regtest/fetch-bitcoin.sh`, plus unshare and ip.
+The application passes every historical payment destination to the adapter.
+This is payment-observation qualification, not complete stack acceptance.
+
+Next add refund/registry operations, complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

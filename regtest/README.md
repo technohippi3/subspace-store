@@ -33,6 +33,9 @@ wallets are made fresh for each run inside `.run/`.
 
 - `pins.env`: the pinned upstream versions and the Bitcoin Core checksum.
 - `fetch.sh`: clones and builds the pins into `.cache/` (not committed).
+- `fetch-bitcoin.sh`: fetches only the checksum-pinned Core binaries. The
+  TypeScript payment adapter's isolated `npm run test:core` uses them without
+  building the complete issuance stack; `../docs/spec/CORE-SPEC.md` gives its scope.
 - `in-netns.sh`: runs a command in the isolated namespace.
 - `run-id.sh`: makes a fresh run id. Run ids are never reused, and the
   harness never deletes a run directory.

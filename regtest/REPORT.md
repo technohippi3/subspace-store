@@ -1015,3 +1015,62 @@ Each message is kept with its root anchors and libveritas output.
 `verify-evidence.sh` verifies them all offline, and `evidence/README.md`
 says how. fp4's certificate isn't kept in the repository, because its
 handle label was a personal name and is part of the signed message.
+
+
+## TypeScript payment adapter, Core 31.2
+
+Local regtest run `core-adapter-2026-11-11T14-39-25-864Z-abb2449e` passed through
+`cd ts && npm run test:core`. It used a fresh data directory, generated
+regtest-only wallets and a loopback-only network namespace. No existing
+node or wallet was used. The retained `qualification.json` binds the source
+files below and records the completed checks; CI runs this same test and
+publishes only that credential-free qualification file.
+
+The TypeScript store allocated a real bech32m address, detected the payment
+in the mempool, counted it at one confirmation and converted at three.
+Invalidating its paying block preserved the fulfillment reservation and
+marked issuance reconciling. Re-mining the same transaction cleared that
+reason without counting another payment. Spending the original receipt did
+not remove it from historical receipts. A fee replacement on a second
+invoice still counted the payment once.
+
+A separate watch-only wallet imported the merchant's public descriptors.
+It owned a paid change address with no address-book label entry. Core's
+address-book receipt RPC omitted that address, while the adapter's full
+`listsinceblock` read with change included found its receipt. This qualifies
+the reader's independence from address-book entries; it is not full
+application or signing-wallet recovery.
+
+Normal node restart retained the pending transaction's original mempool
+entry time, even with the test node's clock advanced by 600 seconds. Entry
+height was reconstructed at the newer tip, not preserved. Restart with
+mempool persistence and wallet rebroadcast both disabled removed the
+payment from current observations; the store retained its detected-history
+marker and eventually released its unpaid hold. No automatic recovery rule
+based on mempool time or height was adopted.
+
+Earlier attempts found a two-second mining timeout
+(`Bitcoin RPC generatetoaddress failed (transport)`) and an incorrect test
+assumption that disabling mempool persistence alone would leave the mempool
+empty (`1000 !== 0`). The test now allows mining time and explicitly
+controls wallet rebroadcast for its absence case. Descriptor import also
+showed that external receiving addresses can regain an empty label entry;
+the missing-address-book regression therefore uses a genuinely unlabelled
+change address. All run directories, including failed ones, remain under
+`regtest/.run/` locally.
+
+This run did not issue through subs/spaced, deliver a certificate, execute
+the store's refund protocol, restore the complete host or use a buyer's
+client. It does not pass either public-pilot acceptance gate.
+
+Qualified SHA-256 source digests:
+
+```text
+17be795f1f023076d896a7b2acb3f639031b040f86a4c4eea0b81e530f5e7f50  ts/src/bitcoin/rpc.ts
+14d00f28153abafe8940f72abdb8aebc7031bb27eebacba8bcc1f06b30318548  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+7ef9b9f5072629566d2172383ff561e47ec5af9733b8cf7d00c3761a1b4c970f  ts/src/application/store.ts
+82a9f70dcd35f64892658e63006294e188ccc1b1a3e1866ad0e27f54e8986f0f  ts/src/application/sales.ts
+d7b29b627e0601e2747009e0f42eb5fa30a9118a191df1ca95d870ab284ecde3  ts/src/application/records.ts
+770091eae302dd6e4d5b24ae82879270ba1cf2bbf47964b8e6e75a5c3e998bbf  ts/regtest/core.test.ts
+```
