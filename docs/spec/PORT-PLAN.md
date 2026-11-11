@@ -1,8 +1,9 @@
 # TypeScript port and release handoff
 
-Recorded at the workspace_owner's request on 2026-11-11. This is a proposed
-implementation plan, not evidence that its deliverables exist. It does not
-authorize deployment, wallet actions or opening sales. Payment behavior is
+Recorded at the workspace_owner's request on 2026-11-11; implementation
+was then directed with “plan is clear? continue with pursuing it”. This
+plan's implementation status is recorded separately from its requirements.
+It does not authorize deployment, wallet actions or opening sales. Payment behavior is
 owned by `PAYMENT-SPEC.md`; the deployment contract is in
 `../../deploy/README.md`.
 
@@ -27,14 +28,23 @@ The new pilot rules govern the independent TypeScript model and TypeScript
 store. Keep an explicit mapping when a pilot case supersedes a baseline
 case, so both expectations retain a source. A safety fix to Python is
 allowed and must record its spec, tests and commit as an amendment to the
-baseline; do not silently backport pilot features. The first such planned
-fix is store process ownership. No amendment is implemented by this plan.
+baseline; do not silently backport pilot features. The first such
+fix is store process ownership, now implemented and specified as H12 in
+`PAYMENT-SPEC.md`, with real process tests in `tests/test_store_lock.py`.
 
 The public pilot uses the TypeScript store with the Python controller and
 attended runner. Those components retain the applicable controller rules
 and must pass the shipped combination's integration and recovery checks.
 The end state removes the project's Python implementation and tooling;
 temporary Python comparisons are not a permanent runtime dependency.
+
+## Implementation status
+
+The first implementation increment adds the TypeScript pilot model and
+K1–K19 cases, a 2,000-step generated trace, development/release coverage
+modes, a pilot-readiness workflow and the Python store ownership amendment
+H12. Stage 2's TypeScript store runtime remains unbuilt. The release gate
+must therefore fail; passing model tests does not open sales.
 
 ## Work order and gates
 
@@ -61,8 +71,8 @@ that time, not assumed from a short node-sync estimate.
 
 ## Case coverage and release enforcement
 
-The current `tools/case_coverage.py --check` scans Python names and rejects
-unknown IDs. Stage 1 extends that parser to literal TypeScript test names
+`tools/case_coverage.py --check` scans Python and TypeScript names and
+rejects unknown IDs. The TypeScript convention is literal test names
 of the form `test("P12: description", ...)`. It must retain unknown-ID
 rejection and distinguish tests of the independent model from tests of the
 production implementation. Test discovery alone does not prove a pass;
@@ -75,12 +85,12 @@ their implementation and integration tests. Until then, the acceptance
 tasks in this plan remain unverified work. Do not add skipped placeholders,
 temporary exemptions or another case-status system to keep CI green.
 
-Stage 1 must implement `python3 tools/case_coverage.py --release pilot`.
-That option does not exist today and must not be used as release evidence.
-It must reject unknown arguments, fail when any required pilot case lacks
-a production test of its shipped component, and run as a required release
-check with the relevant test suites. A TypeScript model test, a Python
-store test or baseline-vector agreement cannot satisfy a TypeScript-store
+`python3 tools/case_coverage.py --release pilot` is implemented and
+intentionally blocks the pilot today. It rejects unknown arguments and
+fails when any required pilot case lacks a production test of its shipped
+component. It runs in the pilot-readiness workflow after the relevant test
+suites. Future artifact publication must depend on this readiness result.
+A TypeScript model test, a Python store test or baseline-vector agreement cannot satisfy a TypeScript-store
 production requirement. Applicable Python controller/runner production
 tests do count while those components ship. Explicit supersession mappings
 identify replaced baseline cases; they do not excuse missing pilot rules.
@@ -94,14 +104,15 @@ the spec. Disagreements must be attributed to a specific rule change, not
 hidden by disabling comparisons wholesale. Model agreement is supplemental
 to cases, invariants, fault injection and regtest evidence.
 
-## Pilot behavior and seller operations still to specify as cases
+## Pilot behavior and remaining seller operations
 
-The payment-spec pilot decisions require cases for full-price late
+`PILOT-SPEC.md` supplies K1–K19 with independent model tests for full-price late
 reacquisition, pay-first admission and deterministic ties, the per-name
 rolling hold ration, the global hold limit, the durable pause after ten
 distinct conversions, buyer cancellation before issuance, the refund
-deadline, estimated fees and the buyer/merchant fee split. Add the missing
-refund-funding behavior as well. P12 already settles the lowered-price
+deadline, estimated fees, buyer/merchant fee split and subsequent refund
+funding policy. Actual wallet selection still needs runtime and regtest
+evidence. P12 already settles the lowered-price
 outcome; its prose correction is not a new policy.
 
 Use canonical `name@space` handles and an explicit space identity in the

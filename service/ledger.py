@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Optional
 
 from .journal import JournalDown
+from .locking import Ownership, OwnedConnection
 
 # Depth thresholds, in conventional confirmations (PAYMENT-SPEC.md, "Terms").
 CONFIRMED, BATCHABLE, SETTLED = 1, 3, 6
@@ -259,11 +260,26 @@ def _has_store(path):
 
 class Ledger:
     def __init__(self, db_path, chain, journal, policy=None, clock=time.time, private_purchase=None):
+        ownership = Ownership(db_path)
+        try:
+            self._open(db_path, chain, journal, policy, clock, private_purchase, ownership)
+        except BaseException:
+            if hasattr(self, "db"):
+                self.db.close()
+            ownership.close()
+            raise
+
+    def _open(self, db_path, chain, journal, policy, clock, private_purchase, ownership):
+        # CLI callers defer construction too: even journal mkdir/read waits
+        # until the process owns the store.
+        journal = journal() if callable(journal) else journal
         if journal.entries() and not _has_store(Path(db_path)):
             raise RestoreRequired(
                 f"no store database at {db_path}, but the off-host journal has entries: "
                 "restore it first (python3 -m service restore <config>)")
-        self.db = sqlite3.connect(str(db_path), isolation_level=None, check_same_thread=False)
+        self.db = sqlite3.connect(
+            str(db_path), isolation_level=None, check_same_thread=False,
+            factory=lambda *a, **kw: OwnedConnection(*a, ownership=ownership, **kw))
         self.db.row_factory = sqlite3.Row
         self.db.execute("pragma journal_mode = wal")
         self.db.execute("pragma synchronous = full")
@@ -1429,6 +1445,14 @@ def _database_files(path):
 
 
 def restore_from_journal(db_path, journal):
+    ownership = Ownership(db_path)
+    try:
+        return _restore_from_journal(db_path, journal() if callable(journal) else journal)
+    finally:
+        ownership.close()
+
+
+def _restore_from_journal(db_path, journal):
     """Rebuild the store's database from the off-host journal alone, into a
     path where no database exists. Builds beside the target and moves the
     result into place only once complete. Returns the record counts."""

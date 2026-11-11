@@ -1,0 +1,34 @@
+name: Pilot release readiness
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['pilot-*']
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Python baseline and shipped controller tests
+        run: python3 -m unittest discover -s tests -t .
+      - name: Install pinned TypeScript dependencies
+        working-directory: ts
+        run: npm ci --ignore-scripts
+      - name: Type check the model and production code
+        working-directory: ts
+        run: npm run check
+      - name: Execute TypeScript model and production tests
+        working-directory: ts
+        run: npm test
+      - name: Require production coverage for the pilot
+        run: python3 tools/case_coverage.py --release pilot

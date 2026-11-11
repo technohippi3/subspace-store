@@ -561,7 +561,7 @@ name. Public names have no identity to count, so they need an admission
 policy of their own. The design below is the one for them: the
 workspace_owner adopted it for the first pilot on 2026-11-10, with the
 values and changes in the pilot decisions at the top of this file. It
-isn't implemented, and no case covers it yet.
+is modeled in `PILOT-SPEC.md` (K1–K9, K18), but is not implemented in the production store.
 
 Hold admission for public names, with the exposure limit (draft
 2026-11-10, revised after review; adopted for the pilot with the changes at
@@ -1185,6 +1185,17 @@ no names and no orders, while the journal has entries refuses to serve and
 writes nothing. An empty store started over an existing journal would hand
 out order ids again and could sell held or reserved names twice.
 
+## Store process ownership (Python baseline safety amendment)
+
+H12 adds a lifetime ownership lock to the Python store without changing its
+payment rules. A start or restore must own the canonical database path
+before journal construction/access, database initialization or startup
+reconciliation. A second process refuses without modifying them. The lock
+file remains in place and only the operating system releases ownership on
+close or process death. Direct database close and failed startup release
+it too. Canonical path aliases must contend for the same lock. This does
+not replace the controller lock or the maintenance protocol for broadcasts.
+
 ## Checkout and the attended runner
 
 Status (2026-11-09): requirements for the regtest checkout milestone.
@@ -1711,6 +1722,7 @@ None is regtest evidence.
 | H9 | two requested orders; the journal looks up but acknowledges nothing | each is quoted; the journal recovers between the two, and the host is lost after the second; then a database from before the journaled status restarts | 503 and no address from `/quote`, and none on the order link, for each while unacknowledged; after the recovery the first quote returns its recorded address; after the loss the second order is `requested` with no address and its name available, the first keeps its address; the old database takes the acknowledged statuses from the journal |
 | H10 | two converted orders | one cancelled with the journal down, which then recovers; the other cancelled twice with it down; then the host is lost and restored | the first 202 "unconfirmed", its order link `converted` with the cancellation unconfirmed, then `cancelled` and final once the journal recovers, and still after the loss; the second 202 "unconfirmed" both times, without the cancelled status, its link `converted` and unconfirmed, and undone by the loss: converted with its fulfillment reservation, the link showing no cancellation; cancelled again after the restore, it is final on both |
 | H11 | a paid order and an unpaid quote, then a host loss and a restore with a payment wallet that gives out the unpaid quote's address, then the paid one's, then a fresh one; separately, a wallet that gives out only held addresses | a new order is quoted after the restore | the quote takes the fresh address after asking three times; no two orders share a destination, the held ones unchanged; one `destination_held` alert for the quote, with 2 skipped; with the second wallet, 409, the order still `requested` and the name available |
+| H12 | a live store owns its database, including through a canonical path alias | another process starts or restores; separately the owner closes, fails at startup or dies | second process refuses before database/journal access and changes neither; normal exit, failed startup, direct database close and process death release ownership; the lock file remains |
 
 Checkout and the attended runner ("Checkout and the attended runner").
 These are the service's and the runner's own rules. C1 to C11 are service

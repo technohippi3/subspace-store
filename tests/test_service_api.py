@@ -733,7 +733,7 @@ class Api(unittest.TestCase):
         self.lose_host()
         with self.assertRaises(RestoreRequired):
             self.start()
-        self.assertEqual(list(self.dir.glob("store.db*")), [])
+        self.assertEqual(list(self.dir.glob("store.db*")), [self.dir / "store.db.lock"])
         # A database with the schema but no names and no orders is empty too.
         empty = self.dir / "store.db"
         Ledger(empty, self.view, Journal(self.dir / "elsewhere"), Policy()).close()
@@ -741,7 +741,8 @@ class Api(unittest.TestCase):
         with self.assertRaises(RestoreRequired):
             self.start()
         self.assertEqual(empty.read_bytes(), image)
-        self.assertEqual(sorted(f.name for f in self.dir.glob("store.db*")), ["store.db"])
+        self.assertEqual(sorted(f.name for f in self.dir.glob("store.db*")),
+                         ["store.db", "store.db.lock"])
         empty.unlink()
         self.restore()
         self.start()
@@ -786,7 +787,7 @@ class Api(unittest.TestCase):
                 key = (o1 if what == "order without its name" else
                        records[-1]["key"] if records else "no records")
                 self.assertIn(key, str(e.exception))
-                self.assertEqual([f.name for f in d.iterdir()], ["offhost"])
+                self.assertEqual(sorted(f.name for f in d.iterdir()), ["offhost", "store.db.lock"])
         # A restore killed partway leaves no database at the target, so no
         # start can take a partial store for a whole one.
         self.stop()
@@ -795,7 +796,8 @@ class Api(unittest.TestCase):
         self.assertEqual(killed.returncode, 9)
         self.assertFalse((self.dir / "restored.db").exists())
         restore_from_journal(self.dir / "restored.db", Journal(self.dir / "offhost"))
-        self.assertEqual(sorted(f.name for f in self.dir.glob("restored.db*")), ["restored.db"])
+        self.assertEqual(sorted(f.name for f in self.dir.glob("restored.db*")),
+                         ["restored.db", "restored.db.lock"])
         self.start()
 
     def test_H6_a_restored_service_reconciles_refunds_before_serving(self):

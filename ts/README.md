@@ -16,28 +16,30 @@ Python store.
 
 ## Port handoff and pilot boundary
 
-`../docs/spec/PORT-PLAN.md` defines the work order and release gates. Its
-stages and the independent TypeScript model are planned, not implemented.
-The Python store and model remain the owner-only test baseline at
-`66db98c7bea395e7521039418d0ce6307ab67222`, plus explicitly recorded safety
-fixes. New pilot behavior belongs to the TypeScript model and store, so a
-baseline Python test is not evidence that a changed pilot rule works.
+`../docs/spec/PORT-PLAN.md` defines the work order and release gates.
+Stage 1 now has the independent model under `model/`, named model cases
+K1–K19 in `test/model/pilot.test.ts`, generated trace/recovery checks and
+coverage enforcement. `../docs/spec/PILOT-SPEC.md` states the exact scope
+and expected outcomes. The Python store and model retain the owner-only
+baseline at `66db98c`, plus the H12 process-ownership safety amendment.
 
-Build the deterministic model under `model/` in this directory before new
-pilot rule changes land. It must not import production reducers. Each
-payment case lands together with its model test and the corresponding spec
-change; runtime lifecycle cases land with their integration tests.
-Extend case coverage to TypeScript first, using literal test names such as
-`test("P12: lowered price on late payment", ...)`. Keep independent-model
-tests and production tests identifiable separately. Fixed expected traces,
-invariants and fault-injection checks supplement the model; comparisons
-with the Python ledger remain for unchanged baseline rules only.
+The pilot model imports no production reducers. It models the new payment
+admission, conversion-review, cancellation and refund-policy rules, with
+explicit time and chain observations. It is not a full replacement for the
+Python payment/controller model. These are model results only; real refund
+funding, journal boundaries and node behavior need production/regtest tests.
+Fixed traces and invariants supplement the model; baseline comparisons
+remain for unchanged rules. The 2,000-step seeded trace caught and now
+checks against a released hold reviving after a reorg (K19).
 
-The planned coverage option `--release pilot` must reject missing production
-tests for the shipped components. It does not exist yet. The current
-`--check` and replay suite cannot establish public-pilot readiness. The
-release requires the actual runtime's API, persistence and recovery tests,
-not only pure state-machine agreement.
+Case coverage accepts literal names such as
+`test("K1: rolling ration", () => { ... })`. The directory distinguishes
+model evidence from production tests in `test/production/`. The existing
+unnumbered production-reducer tests remain useful but do not supply named
+runtime coverage. The development gate accepts model evidence;
+`python3 ../tools/case_coverage.py --release pilot` requires named production
+coverage and currently fails. The pilot-readiness workflow runs both suites
+and this release gate on manual dispatch or a `pilot-*` tag.
 
 The native installer and updater precede the disposable-host cutover
 rehearsal. Essential seller commands then precede the public-pilot gate:
@@ -45,8 +47,8 @@ setup, prices, reservation and withdrawal, global/per-space pause and
 diagnostics. The pilot ships this store with the Python controller and
 runner. Open catalog, bulk import and archiving follow the pilot; the
 remaining controller, runner, model and tooling ports then remove Python.
-The Python node/test-purchase track runs in parallel and includes a store
-ownership lock with a real two-process test before the purchase.
+The Python node/test-purchase track runs in parallel. Its store ownership
+lock and real two-process H12 tests are now implemented locally.
 
 ## Current implementation
 
