@@ -15,11 +15,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SPEC_FILES = ('PAYMENT-SPEC.md', 'PRIVATE-PURCHASE.md', 'PILOT-SPEC.md', 'STORAGE-SPEC.md',
               'CHECKOUT-SPEC.md', 'CORE-SPEC.md', 'REFUND-PREPARATION.md', 'REFUND-SENDING.md',
               'REFUND-FAMILIES.md', 'REFUND-OBLIGATIONS.md', 'REFUND-ESTIMATES.md',
-              'EXCESS-DEADLINES.md', 'OPERATOR-INSPECTION.md', 'REGISTRY-ENTRY.md')
+              'EXCESS-DEADLINES.md', 'OPERATOR-INSPECTION.md', 'REGISTRY-ENTRY.md', 'ENTRY-RECOVERY.md')
 KINDS = ('python-model', 'python-store', 'python-controller', 'ts-model', 'ts-store')
 CONTROLLER_FILES = {'test_controller_host.py', 'test_controller_lock.py',
                     'test_runner.py', 'test_runner_recovery.py',
-                    'test_interrupted_broadcast.py'}
+                    'test_interrupted_broadcast.py', 'test_entry_recovery.py'}
 SERVICE_PREFIXES = 'VHCASTY'
 TS_LEXEMES = re.compile(r'//[^\n]*|/\*[\s\S]*?\*/|`(?:\\.|[^`\\])*`|'
                         r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
@@ -31,10 +31,21 @@ def ordered(cases):
     return sorted(cases, key=lambda c: (c[0], int(c[1:])))
 
 
-def spec_cases(root=ROOT):
+def spec_locations(root=ROOT):
     paths = [root / 'docs/spec' / name for name in SPEC_FILES]
-    return ordered({case for path in paths if path.exists()
-                    for case in re.findall(r'^\| ([A-Z]\d+) \|', path.read_text(), re.M)})
+    locations = {}
+    for path in paths:
+        if not path.exists():
+            continue
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            match = re.match(r'^\| ([A-Z]\d+) \|', line)
+            if match:
+                locations.setdefault(match[1], []).append(f'{path.name}:{number}')
+    return locations
+
+
+def spec_cases(root=ROOT):
+    return ordered(spec_locations(root))
 
 
 def deferred(case):
@@ -114,8 +125,12 @@ def main(argv=None, root=ROOT):
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--release', choices=['pilot'])
     args = parser.parse_args(argv)
-    spec = set(spec_cases(root))
+    locations = spec_locations(root)
+    spec = set(locations)
     found, errors = evidence(root)
+    for case in ordered(locations):
+        if len(locations[case]) > 1:
+            errors.append(f'duplicate spec case {case}: ' + ', '.join(locations[case]))
     tested = set().union(*found.values())
     unknown = tested - spec
     if unknown:

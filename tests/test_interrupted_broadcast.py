@@ -31,6 +31,23 @@ class Stopped(BaseException):
 
 
 class InterruptedBroadcast(unittest.TestCase):
+    def test_A26_a_previously_acknowledged_intent_does_not_bypass_a_live_journal_outage(self):
+        c = self.controller()
+        self.issuing(c, "b1")
+        c.capture_bytes = lambda bid: None
+        c._save("b1", intent=1, delegate_in="made-up-delegate:0", fee_rate=1)
+        self.journal.set_down(True)
+        with self.assertRaises(Refused):
+            c._send("b1")
+        self.assertEqual(c.batch("b1")["attempted"], 0)
+        self.assertEqual(self.broadcasts, [])
+        self.journal.set_down(False)
+        c._send("b1")
+        self.assertEqual(len(self.broadcasts), 1)
+        with self.assertRaises(Refused):
+            c._send("b1")
+        self.assertEqual(len(self.broadcasts), 1)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

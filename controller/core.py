@@ -19,7 +19,6 @@ Results from it are regtest results until it has run anywhere else.
 
 import hashlib
 import json
-import re
 import shutil
 import sqlite3
 import subprocess
@@ -30,18 +29,10 @@ from pathlib import Path
 from .journal import JournalDown
 from .locking import LockedConnection
 from .rpc import HttpError
+from .errors import Refused
+from .issuance import ANSWER_LIMIT, Issuance
 
 FINAL_D = 150
-TXID_RE = re.compile(r"[0-9a-f]{64}")
-# How much of an answer from subs is kept: bounded, so a large body can't
-# swell the journal, and said when cut.
-ANSWER_LIMIT = 2000
-
-
-def _bounded(text):
-    if len(text) <= ANSWER_LIMIT:
-        return text
-    return f"{text[:ANSWER_LIMIT]} [cut: {len(text)} characters in all]"
 ANCHOR_FINALITY = 144  # libveritas: newest anchor - commitment height
 PREPARING = ("frozen", "staged", "committed_local", "proved", "checkpointed")
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
@@ -56,7 +47,7 @@ create table if not exists batches (
   delegate_in text, fee_rate integer, txid text, mined_height integer,
   intent integer not null default 0, attempted integer not null default 0,
   supersedes text, answer text, raw text, recovery_paused integer not null default 0,
-  ancestors text
+  ancestors text, entry_key text
 );
 create table if not exists alerts (n integer primary key, kind text, bid text, detail text);
 create table if not exists recoveries (
@@ -67,17 +58,13 @@ create table if not exists recoveries (
 
 # Columns added since the first released schema (commit 5226810), added to an
 # existing database when it is opened: table -> {column: declaration}.
-MIGRATIONS = {"batches": {"ancestors": "text"},
+MIGRATIONS = {"batches": {"ancestors": "text", "entry_key": "text"},
               "recoveries": {"snapshot": "text", "subs_at": "real", "replayed_at": "real",
                              "reconciled_at": "real", "ready_at": "real"}}
 
 RESTORE_REQUIRED = ("restore required: the controller's journal holds batches this database "
                     "doesn't, or a restore hasn't finished replaying and reconciling them; "
                     "run restore")
-
-
-class Refused(Exception):
-    pass
 
 
 def label(handle):
@@ -124,7 +111,7 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller:
+class Controller(Issuance):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
@@ -540,76 +527,7 @@ class Controller:
                 "store_journal": manifest["store_journal"],
                 "controller_journal": manifest["controller_journal"]}
 
-    # 8. Issue
-
-    def issue(self, bid, fee_rate=1):
-        """The binding check, the serialized `issuing` step, both journals, and
-        one `/broadcast`. Returns the batch that went on (a rebuilt one if a
-        member failed)."""
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] != "checkpointed":
-            raise Refused("not checkpointed")
-        failing = self.failing(bid)
-        if failing:
-            return self.rebuild(bid, failing)
-        delegate = self.live_delegate(b["space"])
-        acked_members = self.registry.mark_issuing(b["members"])
-        self._save(bid, journal=False, state="issuing", intent=1,
-                   delegate_in=delegate["outpoint"], fee_rate=fee_rate)
-        self._journal(bid)
-        self._send(bid)
-        return bid
-
-    def _issuance_acknowledged(self, b):
-        acked = self.acknowledged(b["bid"])
-        if not acked or not acked["intent"]:
-            return False
-        if (acked["root"], acked["delegate_in"], acked["members"]) != \
-                (b["root"], b["delegate_in"], b["members"]):
-            return False
-        return all(self.registry.acknowledged_status(m) == "issuing" for m in b["members"])
-
-    def _send(self, bid):
-        b = self.batch(bid)
-        # The only path to the network for a commitment, checked immediately
-        # before the call.
-        if not self._issuance_acknowledged(b):
-            raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
-        self._save(bid, journal=False, attempted=1)
-        try:
-            # The body as it came, so that whatever subs answered is kept.
-            body = self.subs.post(f"/spaces/{b['space']}/broadcast",
-                                  {"fee_rate": b["fee_rate"]}, timeout=600, raw=True)
-        except HttpError as e:
-            # subs answered with an error. The wallet send may still have
-            # happened (subs stores the txid only after the send returns), so
-            # an error without a txid is not proof that nothing was sent.
-            self._uncertain(bid, _bounded(f"HTTP {e.status}: {e.body}"),
-                            "error answer without txid")
-            return
-        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
-            self._uncertain(bid, f"no answer: {type(e).__name__}", "no answer")
-            return
-        except Exception as e:  # noqa: BLE001 - a truncated read, a protocol error
-            # The call was made and no usable answer came back, whatever the
-            # failure: uncertain, and never sent again.
-            self._uncertain(bid, _bounded(f"no usable answer: {type(e).__name__}: {e}"),
-                            "no usable answer")
-            return
-        text = body.decode("utf-8", errors="replace") if isinstance(body, bytes) else str(body)
-        try:
-            answer = json.loads(text) if text else None
-        except ValueError:
-            answer = None
-        txid = answer.get("txid") if isinstance(answer, dict) else None
-        if not (isinstance(txid, str) and TXID_RE.fullmatch(txid)):
-            # An answer without a transaction id is no answer (A20).
-            self._uncertain(bid, _bounded(f"answer without a txid: {text}"),
-                            "answer without txid")
-            return
-        self._save(bid, state="broadcast", txid=txid, answer=_bounded(text))
-        self.capture_bytes(bid)
+    # Entry and send methods are inherited from controller.issuance.Issuance.
 
     def _atomically(self, *statements):
         """Several writes to this database in one SQLite transaction."""
@@ -657,6 +575,7 @@ class Controller:
           without another alert."""
         if self.recovery_state() is not None:
             return
+        self._settle_checkpointed_entries()
         for r in self.db.execute("select bid from batches where state in "
                                  "('issuing', 'broadcast_uncertain') order by rowid").fetchall():
             b, acked = self.batch(r["bid"]), self.acknowledged(r["bid"])
@@ -687,31 +606,14 @@ class Controller:
              ("database_behind_journal", row["bid"],
               f"held here as an older state; took the journal's {acked['state']}")))
 
-    def resume(self, bid):
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] != "issuing":
-            raise Refused("nothing to resume")
-        if b["attempted"]:
-            raise Refused("the broadcast was attempted: the outcome is uncertain")
-        failing = self.failing(bid, recheck_issuing=True)
-        if failing:
-            return self.rebuild_unsent(bid, failing)
-        delegate = self.live_delegate(b["space"])
-        # Journal the members' marks again, then the intent, then send.
-        for m in b["members"]:
-            self.registry.journal_ok(m)
-        self._save(bid, journal=False, intent=1, delegate_in=delegate["outpoint"])
-        self._journal(bid)
-        self._send(bid)
-        return bid
-
     def retry_broadcast(self, bid):
         raise Refused("never repeat a broadcast whose outcome is unknown")
 
     def rollback_local(self, bid):
         self.require_restored()
         b = self.batch(bid)
+        if getattr(self.registry, "bound_entries", False) and b.get("entry_key"):
+            raise Refused("reconcile the issuance entry before any local rollback")
         if b["state"] not in PREPARING or b["intent"] or b["attempted"]:
             raise Refused("never roll back a commitment that may have escaped")
         self.subs.post(f"/spaces/{b['space']}/rollback-local")
@@ -1088,6 +990,8 @@ class Controller:
             raise
 
     def _reconcile(self):
+        if getattr(self.registry, "bound_entries", False):
+            raise Refused("TypeScript whole-host reconciliation is not implemented; locks retained")
         log = []
         orders = {r["oid"]: r["status"] for r in self.registry.db.execute("select oid, status from orders")}
         for b in self.batches():

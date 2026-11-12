@@ -18,6 +18,15 @@ function batch(request: import("node:http").IncomingMessage) {
     return (JSON.parse(raw) as { oids: string[] }).oids;
   }, catch: () => new ApplicationError({ code: "invalid", message: "invalid batch request" }) });
 }
+function bound(request: import("node:http").IncomingMessage) {
+  return Effect.tryPromise({ try: async () => {
+    const raw = await body(request), id = '"o[1-9][0-9]{0,15}"';
+    const array = `\\[\\s*(?:${id}(?:\\s*,\\s*${id})*)?\\s*\\]`;
+    const field = `"(?:entry|root|oids)"\\s*:\\s*(?:"[0-9a-f]{1,64}"|${array})`;
+    if (!new RegExp(`^\\s*\\{\\s*${field}\\s*,\\s*${field}\\s*,\\s*${field}\\s*\\}\\s*$`).test(raw)) throw Error("invalid body");
+    return JSON.parse(raw) as unknown;
+  }, catch: () => new ApplicationError({ code: "invalid", message: "invalid issuance entry request" }) });
+}
 /** Operator role only. The controller still owns roots, binding evidence,
  * broadcast intents, sends and recovery. No financial send is exposed. */
 export function serveOperator(store: SalesStore, token: OperatorToken, port = 0) {
@@ -37,7 +46,8 @@ export function serveOperator(store: SalesStore, token: OperatorToken, port = 0)
     if (request.method === "GET" && path === "/operator/status") return { code: 200, value: yield* store.operatorStatus() };
     if (request.method === "GET" && path === "/operator/alerts") return { code: 200, value: { alerts: (yield* store.operatorStatus()).alerts } };
     if (request.method === "POST") {
-      if (path === "/operator/issuing") return { code: 200, value: yield* store.registry.markIssuing(yield* batch(request)) };
+      if (path === "/operator/issuance-entries") return { code: 200, value: yield* store.registry.entries.enter(yield* bound(request)) };
+      if (path === "/operator/issuance-entries/lookup") return { code: 200, value: yield* store.registry.entries.find(yield* bound(request)) };
       if (path === "/operator/pending") return { code: 200, value: yield* store.registry.setPending(yield* batch(request)) };
       if (order?.[2]) {
         yield* empty(request);

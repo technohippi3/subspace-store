@@ -9,6 +9,10 @@ recovery transitions, commitment callbacks, certificates, cancellation by
 operator ID and refund-write routes remain unimplemented. No signing or
 broadcasting route is exposed here.
 
+`ENTRY-RECOVERY.md` now requires bound entry identities for HTTP issuance
+and qualifies lost-response/restart handling. The former anonymous
+issuing route is not served.
+
 ## Authentication and lifetime
 
 The caller injects an Effect that retrieves the operator bearer credential.

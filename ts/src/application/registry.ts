@@ -4,6 +4,7 @@ import type { DurableStore, StorageError } from "../storage/store.ts";
 import { checked, fail, type ApplicationError, type Record, type State } from "./records.ts";
 import { entryOk, members, orderById, orderIds } from "./entry.ts";
 import { reconcile } from "./monitor.ts";
+import { BoundEntries } from "./bound-entries.ts";
 
 type Result<A> = Effect.Effect<A, ApplicationError | StorageError>;
 interface Loaded { records: readonly Record[]; state: State }
@@ -17,8 +18,9 @@ export interface RegistryContext {
 /** Uses the application's existing queue and owner. It neither sends nor
  * establishes root/delegate/finality evidence; those belong to the controller. */
 export class IssuanceRegistry {
+  readonly entries: BoundEntries;
   private readonly context: RegistryContext;
-  constructor(context: RegistryContext) { this.context = context; }
+  constructor(context: RegistryContext) { this.context = context; this.entries = new BoundEntries(context); }
   entry(id: string) {
     const c = this.context;
     return c.queue.withPermit(Effect.gen(function* () {

@@ -21,6 +21,14 @@ the cookie files they write at start-up, and the store's tokens are files
 it creates with mode 0600 on its first start. The configurations name
 those files and never contain their contents.
 
+The runner protocol is explicit. The Python owner-only baseline defaults
+to `store.implementation: "python"`; the TypeScript pilot uses
+`"typescript"`. Unknown values refuse before setup. There is no server
+probe or failure fallback, and the TypeScript server rejects anonymous
+issuing marks. `docs/spec/ENTRY-RECOVERY.md` defines its bound-entry
+protocol. That partial interface still lacks safe release, delivery and
+whole-host recovery; these examples do not make it deployable for sales.
+
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,
   with the commands in `subs.stop_command` and `subs.start_command`. The

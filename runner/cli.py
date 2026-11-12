@@ -485,7 +485,7 @@ def build(config, ask=None):
     except ConfigError as e:
         raise SystemExit(str(e)) from e
     from controller import host
-    from .store import Store
+    from .store import configured_store
 
     try:
         host.check(config)
@@ -494,7 +494,7 @@ def build(config, ask=None):
     except (host.ConfigError, ConfigError) as e:
         raise SystemExit(f"configuration: {e}")
     s = config["store"]
-    store = Store(s["url"], s["operator_token_file"], s["db"], s["journal_dir"])
+    store = configured_store(s)
     try:
         controller, publisher = host.build(config, store)
     except host.ConfigError as e:

@@ -5,11 +5,12 @@ real loopback store. Subs is a recording stand-in, not a Bitcoin broadcaster.
 """
 import json
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from controller.core import Controller, Refused
-from runner.store import Store
+from runner.store import TypeScriptStore
 
 
 class SendGate:
@@ -18,10 +19,11 @@ class SendGate:
 
     def __init__(self, registry, controller_ack):
         self.registry, self.controller_ack = registry, controller_ack
+        self.journal = SimpleNamespace(down=lambda: not controller_ack)
         self.sent = 0
-        self.row = dict(bid="b1", space="@space", root="mock-root",
+        self.row = dict(bid="b1", space="@space", root="a" * 64, entry_key="1" * 32,
                         delegate_in="mock-delegate", members=["o1"], intent=1,
-                        fee_rate=1, attempted=0)
+                        fee_rate=1, attempted=0, state="issuing")
         self.subs = self
 
     def batch(self, _):
@@ -42,13 +44,13 @@ class SendGate:
 
 
 mode, url, token, database, journal = sys.argv[1:]
-store = Store(url, token, database, journal)
+store = TypeScriptStore(url, token, database, journal)
 if mode == "inspect":
     assert store.converted_orders() == ["o1"]
     assert store.order("o1")["name"] == "n0@space"
     assert store.batch_entry_ok("o1")
     store.set_pending(["o1"])
-    assert store.mark_issuing(["o1"]) == ["o1"]
+    assert store.entry_status(dict(entry_key="1" * 32, root="a" * 64, members=["o1"]), create=True)["acknowledged"]
     assert store.issuing_recheck_ok("o1")
     assert store.acknowledged_status("o1") == "issuing"
     assert store.journal.position() > 0

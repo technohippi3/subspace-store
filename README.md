@@ -56,7 +56,9 @@ The first-release partial-refund flow is cancel-first (K21): an old invoice
 stays refund-only and a purchase uses a new checkout. A separate authenticated
 operator inspection listener now runs in tests (`docs/spec/OPERATOR-INSPECTION.md`).
 Atomic issuing marks, live journal guards and frozen pending sets now have
-separate qualification (`docs/spec/REGISTRY-ENTRY.md`). Commitment callbacks,
+separate qualification (`docs/spec/REGISTRY-ENTRY.md`). Bound entry identities
+now recover interrupted HTTP replies and preserve uncertain sends across
+restart (`docs/spec/ENTRY-RECOVERY.md`). Commitment callbacks,
 certificate delivery and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 

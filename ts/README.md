@@ -14,9 +14,12 @@ Converted/issuing excess clocks now use that assessment in `../docs/spec/EXCESS-
 K21 keeps partial refunds cancel-first; a new purchase uses a new checkout.
 The separate operator inspection listener is covered in `../docs/spec/OPERATOR-INSPECTION.md`.
 Atomic issuing marks, live journal guards and frozen pending sets follow in
-`../docs/spec/REGISTRY-ENTRY.md`. Commitment callbacks, certificate delivery
-and full application recovery are still to
-build. The Python service, controller and runner remain the
+`../docs/spec/REGISTRY-ENTRY.md`. Entry retry, normal-process restart
+and older-controller-database handling now follow `../docs/spec/ENTRY-RECOVERY.md`;
+the HTTP controller protocol requires an exact entry/root/member binding.
+Safe bound-entry release/rebuild, commitment callbacks, certificate
+delivery and full application recovery remain. The Python service,
+controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
 This port follows the workspace_owner's direction: TypeScript, Effect and
@@ -234,7 +237,14 @@ set. The actual Python runner/client and controller send gate are tested
 over HTTP with a recording subs stand-in. No real commitment send is
 claimed by that test. Eligibility proofs and quotas remain unimplemented.
 
-Next add commitment callbacks, certificate delivery, recovery transitions and complete order
+The runner explicitly selects `store.implementation: "typescript"` for
+the bound-entry protocol. Its entry ID is journaled before store contact.
+Lost responses recover that same entry; attempted commitment sends remain
+uncertain and are never repeated. An older controller database adopts its
+newer journal identity, conservatively treating a newer issuing intent as
+uncertain. The former anonymous issuing HTTP route is absent.
+
+Next add safe bound-entry release/rebuild, commitment callbacks, certificate delivery, recovery transitions and complete order
 views and application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

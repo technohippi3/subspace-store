@@ -1556,3 +1556,87 @@ d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin
 227fc72491795cb4cd3b193860048635706f09f36d54b5d632c2f29e8d855310  ts/src/application/entry.ts
 0ffb6e6409161684bf8bd1a1cd554fa036b4d1563077383f081d01accdb721ed  ts/src/application/registry.ts
 ```
+
+
+## Bound entry identity and interrupted responses, 2026-11-12
+
+Core 31.2 run `core-adapter-2026-11-12T04-33-10-912Z-78d548f8` passes
+34 checks bound to the 32 source digests below. It uses fresh isolated
+regtest wallets and controlled application time. Its entry root is a
+public mock identity: this is payment/registry qualification, not evidence
+that the store verifies a Spaces commitment root on chain.
+
+Two real paid orders enter through the authenticated bound-entry API.
+Repeating the same entry returns the same receipt; a different root for
+that identity refuses. A real payment reorg blocks the issuing recheck
+without releasing the locks; reconsidering the block restores it. Store
+restart retains the exact ID/root/member association. Earlier payment,
+refund, family, fee, pending-set and cancel-first scenarios remain.
+
+The default suite separately runs the shipped Python controller/client
+against a real TypeScript HTTP listener, SQLite and journals, with a
+recording subs stand-in. Entry replies are dropped before forwarding and
+after store commit. Process exits occur after entry, intent, attempted
+flag and stand-in send. Exact entry retries create one upstream binding;
+attempted outcomes remain uncertain and are never called again. An older
+controller database adopts its newer journal identity, treating a newer
+issuing intent conservatively as uncertain; conflicting identity refuses.
+No actual Spaces commitment is broadcast by those tests.
+
+The controller journals a stable entry ID before entry lookup/creation.
+The TypeScript HTTP API rejects anonymous issuing marks. Runner protocol
+selection is explicit, and malformed/mismatched replies never fall back.
+The controller send guard also refuses a live journal outage despite a
+previous acknowledgment, and rejects a second private send call. Issuance
+methods were extracted from the large controller module while keeping
+its existing public imports; the new controller field is nullable.
+The frozen Python store's payment rules are unchanged.
+
+An independent deterministic entry model tests identity, retry and atomic
+ownership. It makes no HTTP/journal/chain claims. The coverage checker now
+rejects duplicate spec definitions so a passing old case cannot silently
+cover another rule. Final local checks pass 277 Python tests and 224
+TypeScript tests, pinned installation, type checking and whitespace.
+Development coverage reports 277 fixed-price cases with no gaps and 40
+deferred cases; TypeScript model/store coverage is 38/128 and Python
+controller coverage is 26. The pilot production gate still refuses for
+112 cases. Safe entry release/rebuild, commitment/finality/certificate
+callbacks and whole-application recovery remain. None of these results
+opens sales or qualifies whole-host recovery.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+f64968a714d684b3c119d7287589b224fa107fc8218364aa088a7ef54f10c0f1  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+9fb2512bba7c820ebcab8c11ab7745fe63979bde2cbeed1c8f07e381574e0646  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a  ts/src/refunds/types.ts
+9023af566c4978d910bd776cb3a9038dc2002f4eeb17a82a751c6f8ff8556d2a  ts/src/refunds/book.ts
+67e320f37429030a3d33d2c319cafd656e6d96d8354234fe032ea5c7947a18f3  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+85fad46f13f52260b8f4bf01676c34ff468b579c1e190bb894d6ee4294f8102c  ts/src/application/records.ts
+7811ea62259d9db2937f722baf0ed5c12ae0e7038f8b2e8209a154ca1bfb1ddd  ts/regtest/core.test.ts
+7d10c5be62c77a6915c9b5212364c93203cbc90eb01e69b02ecb2939c5a8a5c1  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+a232f7d62cf57390b4b5b617c85d4427240a887e13cad987aca3dac3095b6f52  ts/src/application/monitor.ts
+0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
+d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin/excess-fee.ts
+09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0  ts/src/application/assessments.ts
+767476ffe8c7461970b19404f1fde150001d3396c6c7e2f5e649dff79ca18052  ts/src/application/http.ts
+d32fca31fa8afda1cf9a8155d9ccd99891290330b744a6e27759a7464c974709  ts/src/application/operator-http.ts
+205663367370e64521a8aad08d442ee1b9a5c3afa50837bf32660dd05b5996e1  ts/src/application/authenticated-http.ts
+8cd0b89fbf629272935bfff87fbfdb91701dd2cfe8caa63b02338387e475378c  ts/src/application/pending-http.ts
+227fc72491795cb4cd3b193860048635706f09f36d54b5d632c2f29e8d855310  ts/src/application/entry.ts
+4b5a13349eb2b125e6b94d2d544f7df2ca8e06bc991d8bbd00306f97f7367617  ts/src/application/registry.ts
+394c5367498567633739fe020ac320db3c9f3206502c22468696d38699062c48  ts/src/application/bound-entries.ts
+c848237a3e79f623158b00beb1daac4983f98f4fe7d0e468bfd6f6609cc6087a  ts/src/application/bound-records.ts
+```

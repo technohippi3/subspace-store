@@ -49,6 +49,8 @@ class _SnapshotJournal(Journal):
 
 
 class Store:
+    bound_entries = False
+
     def __init__(self, url, token_file, db_path, journal_dir):
         self.url = url
         self.token_file = Path(token_file)
@@ -154,3 +156,31 @@ class Store:
     def deliver_certificate(self, oid, message):
         return self.op("POST", f"/operator/orders/{oid}/certificate",
                        {"message_b64": base64.b64encode(message).decode()})
+
+
+class TypeScriptStore(Store):
+    """Explicit TypeScript pilot protocol; never probes or falls back to the
+    Python store's anonymous issuing marks."""
+    bound_entries = True
+
+    def entry_status(self, batch, create=False):
+        payload = {"entry": batch.get("entry_key"), "root": batch["root"],
+                   "oids": sorted(batch["members"])}
+        path = "/operator/issuance-entries" + ("" if create else "/lookup")
+        result = self.op("POST", path, payload)
+        if not create and isinstance(result, dict) and set(result) == {"found"} and result["found"] is False:
+            return result
+        fields = {"found", "entry", "root", "oids", "acknowledged", "batchable"}
+        if not isinstance(result, dict) or set(result) != fields or result["found"] is not True or \
+                any(result[k] != payload[k] for k in ("entry", "root", "oids")) or \
+                not isinstance(result["acknowledged"], bool) or not isinstance(result["batchable"], bool):
+            raise Refused("invalid or mismatched issuance entry response; not sent")
+        return result
+
+
+def configured_store(config):
+    mode = config.get("implementation", "python")
+    if mode not in ("python", "typescript"):
+        raise Refused("unsupported store implementation")
+    cls = TypeScriptStore if mode == "typescript" else Store
+    return cls(config["url"], config["operator_token_file"], config["db"], config["journal_dir"])

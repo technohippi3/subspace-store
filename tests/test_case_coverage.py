@@ -38,6 +38,15 @@ class Coverage(unittest.TestCase):
         self.write('ts/test/production/store.test.ts', 'test("P1: runtime", async () => {});')
         self.assertEqual(self.run_gate('--release', 'pilot')[0], 0)
 
+    def test_duplicate_spec_definitions_fail_despite_a_passing_named_test(self):
+        self.write('docs/spec/ENTRY-RECOVERY.md', '| A1 | unrelated new rule |\n')
+        for arguments in ((), ('--check',), ('--release', 'pilot')):
+            result, text = self.run_gate(*arguments)
+            self.assertEqual(result, 1)
+            self.assertIn('duplicate spec case A1', text)
+            self.assertIn('PAYMENT-SPEC.md:2', text)
+            self.assertIn('ENTRY-RECOVERY.md:1', text)
+
     def test_unknown_typescript_ids_and_arguments_fail(self):
         self.write('ts/test/model/pilot.test.ts', 'test("K99: unknown", () => {});')
         result, text = self.run_gate('--check')

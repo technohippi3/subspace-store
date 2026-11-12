@@ -8,7 +8,8 @@ is `deploy/runner.example.json`; `docs/SERVICE.md` describes it.
 
     {
       "network": "regtest",
-      "store": {"url", "operator_token_file", "db", "journal_dir"},
+      "store": {"url", "operator_token_file", "db", "journal_dir",
+                "implementation": "python" | "typescript" (optional)},
       "controller": {"dir", "journal_dir", "journal_name", "operator_wallet",
                      "snapshot_dir" (optional)},
       "bitcoind": {"url", "cookie_file"},
@@ -32,6 +33,9 @@ U1(b) route (`controller.core.Capabilities`). Nothing probes for it: the
 operator states it, and the controller refuses the attach when it is false.
 
 Which networks may run is the runner's decision, not this module's.
+The implementation defaults to the Python owner-only baseline. The
+TypeScript pilot requires an explicit selection; no server is probed to
+guess the protocol, and an error never chooses another one.
 """
 
 import subprocess
@@ -146,6 +150,8 @@ def check(config):
         if not _value_ok(kind, section[path[-1]]):
             raise ConfigError(f"{'.'.join(path)} must be {WHAT[kind]}")
     capabilities(config)
+    if config["store"].get("implementation", "python") not in ("python", "typescript"):
+        raise ConfigError("store.implementation must be python or typescript")
 
 
 def clients(config):

@@ -65,7 +65,9 @@ release's partial refunds cancel-first; continuing an invoice after a
 partial withdrawal is outside the pilot scope. Authenticated operator
 inspection is qualified separately (`OPERATOR-INSPECTION.md`). Atomic issuing
 marks, live journal confirmation and frozen pending sets now have separate
-qualification (`REGISTRY-ENTRY.md`). Commitment callbacks, certificates and
+qualification (`REGISTRY-ENTRY.md`). Interrupted entry responses and
+normal-process restart are qualified separately (`ENTRY-RECOVERY.md`).
+Safe bound-entry release/rebuild, commitment callbacks, certificates and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 

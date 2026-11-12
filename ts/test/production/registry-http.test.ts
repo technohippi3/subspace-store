@@ -32,14 +32,17 @@ test("O9: operator entry and subs pending have separate authenticated routes and
       for (const path of ["/pending", "/pending?space=%40space&space=%40space", "/pending?other=%40space", "/pending?space=space"])
         assert.equal((await call(registry.url, path, subs)).status, 400);
       for (const payload of ['{}', '{"oids":["o1"],"oids":["o1"]}', '{"oids":["o1"],"extra":true}', '{"oids":["o1","o1"]}'])
-        assert.equal((await call(op.url, "/operator/issuing", operator, payload)).status, 400);
+        assert.equal((await call(op.url, "/operator/pending", operator, payload)).status, 400);
+      assert.equal((await call(op.url, "/operator/issuing", operator, '{"oids":["o1"]}')).status, 404);
       assert.deepEqual((await call(op.url, "/operator/orders?status=converted", operator)).value, { orders: ["o1"] });
       assert.equal((await call(op.url, "/operator/orders/o1/batch-entry", operator, '{"ignore":true}')).status, 400);
       assert.equal((await call(op.url, "/operator/pending", operator, '{"oids":["o1"]}')).status, 200);
       const pending = await call(registry.url, "/pending?space=%40space", subs);
       assert.deepEqual(pending.value, { handles: [{ handle: "n0@space", script_pubkey: "5120" + "1".padStart(64, "0") }] });
-      const issuing = await call(op.url, "/operator/issuing", operator, '{"oids":["o1"]}');
-      assert.deepEqual(issuing.value, { acknowledged: ["o1"] });
+      const issuing = await call(op.url, "/operator/issuance-entries", operator,
+        JSON.stringify({ entry: "1".repeat(32), root: "a".repeat(64), oids: ["o1"] }));
+      assert.equal(issuing.status, 200);
+      assert.deepEqual(issuing.value, { found: true, entry: "1".repeat(32), root: "a".repeat(64), oids: ["o1"], acknowledged: true, batchable: true });
       for (const path of ["/ack", "/committed", "/operator/issuing"])
         assert.equal((await call(registry.url, path, subs, "{}")).status, 404);
     });

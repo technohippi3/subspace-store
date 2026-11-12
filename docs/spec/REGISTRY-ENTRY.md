@@ -34,10 +34,11 @@ before returning an acknowledged status to the controller's send gate.
 That is a runner safety amendment, not a change to the frozen Python
 store's payment rules. Both controller intent and current store locks
 must be confirmed before a send. This qualification uses a recording subs
-stand-in; it is not evidence of a real commitment broadcast. A lost HTTP
-answer during entry still needs controller reconciliation. It must never
-be treated as proof that no local lock was written, nor automatically
-release an issuing order. That recovery path remains unqualified.
+stand-in; it is not evidence of a real commitment broadcast. Bound entry
+identity and interrupted responses are now qualified separately in
+`ENTRY-RECOVERY.md`. No unknown response proves that a lock was absent,
+nor automatically releases an issuing order. Safe release/rebuild and
+whole-application recovery remain unqualified.
 
 ## Recipients and pending visibility
 
@@ -72,7 +73,7 @@ route. The earlier inspection-only summary-list shape was not released.
 | Method and path | Behavior |
 | --- | --- |
 | `POST /operator/orders/<oid>/batch-entry` | Fresh observation; return `batch_entry` and `issuing_recheck`. Empty body or `{}` only. |
-| `POST /operator/issuing` | Exactly `{"oids":[...]}`; atomically mark all passing members and return currently acknowledged IDs. |
+| Bound entry creation | `ENTRY-RECOVERY.md` replaces the earlier anonymous issuing HTTP route with an exact entry/root/member binding. |
 | `POST /operator/orders/<oid>/journal` | Flush pending entries and confirm the current order against its live journal receipt. Empty body or `{}` only. |
 | `POST /operator/pending` | Exactly `{"oids":[...]}`; select or clear the frozen set and report acknowledgment. |
 
