@@ -1,5 +1,6 @@
 """Python controller transport boundary; no local mirror authorizes writes."""
 import base64
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -7,6 +8,8 @@ import subprocess
 import os
 import selectors
 import signal
+import sqlite3
+import tempfile
 import time
 
 try:
@@ -18,6 +21,12 @@ except ImportError:
 
 JOURNAL_PAGE_ENTRIES = 8192
 JOURNAL_PAGE_BYTES = 16 * 1024 * 1024
+STORE_COPY_ATTEMPTS = 8
+STORE_COPY_SECONDS = 30
+
+
+class StoreAcknowledgmentsPending(JournalDown):
+    """A valid copied outbox has a locally unacknowledged suffix."""
 
 
 class RecoveryBackend:
@@ -186,8 +195,17 @@ def acknowledged_store_position(connection, backend, *, exact_head=True, positio
     if not meta or meta[0] != 1:
         raise JournalDown("unsupported store schema")
     expected = connection.execute("select seq,payload,acknowledged from outbox order by seq").fetchall()
-    if len(expected) > 1_000_000 or any(row[0] != i + 1 or row[2] != 1 for i, row in enumerate(expected)) or position is not None and position != len(expected):
+    if len(expected) > 1_000_000 or any(row[0] != i + 1 or type(row[2]) is not int or row[2] not in (0, 1)
+                                      for i, row in enumerate(expected)) or position is not None and position != len(expected):
         raise JournalDown("store journal acknowledgments are not a complete prefix")
+    pending = False
+    for row in expected:
+        if row[2] == 0:
+            pending = True
+        elif pending:
+            raise JournalDown("store journal acknowledgment markers have a hole")
+    if pending:
+        raise StoreAcknowledgmentsPending("store journal acknowledgments are not a complete prefix")
     after, size, head = 0, 0, None
     while True:
         page = backend.request({"op": "journal-read", "stream": "store", "after": after, "limit": JOURNAL_PAGE_ENTRIES})
@@ -211,6 +229,44 @@ def acknowledged_store_position(connection, backend, *, exact_head=True, positio
             return 0
         if not page["entries"]:
             raise JournalDown("store remote journal prefix incomplete")
+
+
+def copy_acknowledged_store(connection, backend, destination):
+    """Select a fresh complete local copy, then prove its exact remote prefix."""
+    destination = Path(destination)
+    attempts = Path(tempfile.mkdtemp(prefix="store-copies-", dir=destination.parent.parent))
+    deadline = time.monotonic() + STORE_COPY_SECONDS
+
+    def progress(*_):
+        if time.monotonic() >= deadline:
+            raise JournalDown("store checkpoint copy deadline exceeded")
+
+    for attempt in range(STORE_COPY_ATTEMPTS):
+        progress()
+        candidate = attempts / f"{attempt + 1:03d}.db"
+        candidate.touch(mode=0o600, exist_ok=False)
+        out = sqlite3.connect(candidate)
+        try:
+            connection.backup(out, pages=256, progress=progress, sleep=0.05)
+            out.execute("pragma journal_mode=delete")
+        finally:
+            out.close()
+        candidate.chmod(0o600)
+        progress()
+        try:
+            with closing(sqlite3.connect(candidate.resolve().as_uri() + "?mode=ro", uri=True)) as copied:
+                position = acknowledged_store_position(copied, backend, exact_head=False)
+        except StoreAcknowledgmentsPending:
+            if attempt + 1 == STORE_COPY_ATTEMPTS:
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise JournalDown("store checkpoint copy deadline exceeded") from None
+            time.sleep(min(0.1 * 2 ** attempt, 1.0, remaining))
+            continue
+        os.replace(candidate, destination)
+        return position
+    raise JournalDown("store checkpoint copy attempts exhausted")
 
 
 def acknowledged_controller_position(connection, backend, *, position=None):

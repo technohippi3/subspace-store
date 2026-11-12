@@ -64,6 +64,22 @@ prefix while the running store records later unrelated observations; it
 claims only the copied prefix. Exclusive offline maintenance additionally
 requires equal live heads because all its writers are stopped.
 
+An ordinary live checkpoint can copy the local-commit to remote-acknowledgment
+window. Only a structurally valid contiguous outbox with an acknowledged prefix
+and pending suffix qualifies for a fresh copy. The controller selects at most
+eight new SQLite backups within a thirty-second copy-selection deadline. The
+pending-copy backoff starts at one hundred milliseconds, doubles and caps at
+one second so ordinary SSH acknowledgment latency can finish. Backup progress checks
+the same deadline. Every failed private copy remains outside the upload payload.
+It never truncates an outbox, changes an acknowledgment marker or keeps a
+projection while claiming an earlier prefix. The selected copy still requires
+the complete exact-byte remote proof; a later unrelated remote head is allowed
+only under the existing ordinary-checkpoint rule. Schema, sequence, marker-hole,
+remote, payload or controller-projection errors refuse immediately. Continued
+pending acknowledgment refuses without upload, subs restart or batch promotion.
+The copy-selection budget does not replace existing remote transport/replay
+bounds or establish an overall checkpoint latency guarantee.
+
 The controller numbers snapshots from the live remote inventory. Local
 checkpoint staging is private and disposable; it is never a recovery
 catalogue or acknowledgement. After copied-file validation the controller
@@ -105,3 +121,4 @@ client/helper and OpenSSH qualifications remain separately identified.
 | O158 | Store-owned reconciliation requires identical explicit backend references in its temporary parent/child maintenance view; missing or differing references refuse. |
 | O159 | Version 1 retains its original FileJournal history and rejects an implicit backend protocol change. |
 | O181 | Actual concurrent helper processes and OpenSSH store/controller clients serialize transient lock contention; a two-second held-lock timeout returns storage-busy before publication and leaves original history unchanged. |
+| O182 | A real live SQLite acknowledgment advances after an initial pending snapshot copy; only a fresh complete copy with exact remote proof uploads. Persistent pending suffix, malformed markers, remote failure and mismatched bytes retain stopped subs and proved state without upload or local repair. |

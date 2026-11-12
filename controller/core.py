@@ -513,6 +513,10 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
         subs_dir = Path(self.subs_process.data_dir)
         shutil.copytree(subs_dir, dest / "subs")
         for name, conn in (("registry.db", self.registry.db), ("controller.db", self.db)):
+            if backend and name == "registry.db":
+                from .recovery_backend import copy_acknowledged_store
+                store_position = copy_acknowledged_store(conn, backend, dest / name)
+                continue
             out = sqlite3.connect(dest / name)
             conn.backup(out)
             if backend:
@@ -521,9 +525,7 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
                 out.execute("pragma journal_mode=delete")
             out.close()
         if backend:
-            from .recovery_backend import acknowledged_store_position, acknowledged_controller_position
-            with sqlite3.connect((dest / "registry.db").resolve().as_uri() + "?mode=ro", uri=True) as db:
-                store_position = acknowledged_store_position(db, backend, exact_head=False)
+            from .recovery_backend import acknowledged_controller_position
             with sqlite3.connect((dest / "controller.db").resolve().as_uri() + "?mode=ro", uri=True) as db:
                 controller_position = acknowledged_controller_position(db, backend)
         else:

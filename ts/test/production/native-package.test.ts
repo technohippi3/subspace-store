@@ -67,6 +67,9 @@ test('O148: actual SSH restores encrypted history after fixture seller deletion 
 test('O181: concurrent store and controller SSH requests wait within the helper lock deadline and preserve exact history',async()=>{
   await qualifyBackend();await qualifySsh();
 });
+test('O182: live checkpoint copies retry only pending local acknowledgments and preserve the exact remote prefix',async()=>{
+  await run('python3',['-m','unittest','tests.test_recovery_backend','-v'],repository);
+});
 test('O149: actual current application restores ten thousand validated orders over encrypted SSH within one minute',async()=>{
   await prepare();await run('python3',[join(deployment,'replay/replay.py'),'--source-root',repository],deployment,600000);
 });

@@ -6,8 +6,11 @@ prefix checks. They do not claim SSH, chain or systemd qualification.
 import base64
 import hashlib
 import json
+import select
 import shutil
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,7 +22,7 @@ from controller.core import Controller, Clients
 from controller.errors import Refused
 from controller.journal import JournalDown
 from controller.recovery_backend import (RemoteJournal, acknowledged_store_position,
-    acknowledged_controller_position, reference)
+    acknowledged_controller_position, reference, StoreAcknowledgmentsPending)
 from runner.cli import Runner, NotConfirmed
 from runner.recovery_bridge import RecoveryStore
 from runner.store import TypeScriptStore
@@ -154,6 +157,137 @@ class RecoveryBackendCases(unittest.TestCase):
         manifest = json.loads(self.backend.snapshots["001-b1"]["manifest.json"])
         self.assertEqual((manifest["store_journal"], manifest["controller_journal"]), (1, 1))
         self.assertFalse((self.root / "must-not-create-local-mirror").exists())
+
+    def test_live_checkpoint_takes_fresh_copy_after_actual_sqlite_acknowledgment(self):
+        source = self.root / "store.db"
+        with sqlite3.connect(source) as db:
+            db.execute("update outbox set acknowledged=0")
+            db.execute("create table checkpoint_projection(value text)")
+            db.execute("insert into checkpoint_projection values('keep committed projection')")
+        self.backend.streams["store"].append(b"later unrelated acknowledged record")
+        # A read-only observer signals the real completed-copy classification.
+        # The separate writer never opens an in-progress backup or controls
+        # the checkpoint's return values; it commits only the live marker.
+        signal = self.root / "pending-copy-observed"
+        code = """
+import sqlite3,sys,time
+from pathlib import Path
+source,signal=Path(sys.argv[1]),Path(sys.argv[2])
+print('ready',flush=True)
+deadline=time.monotonic()+10
+while time.monotonic()<deadline:
+    if signal.exists():
+        # A normal remote acknowledgment may span several SSH requests.
+        time.sleep(1)
+        with sqlite3.connect(source) as db:
+            assert db.execute('select acknowledged from outbox where seq=1').fetchone()==(0,)
+            db.execute('update outbox set acknowledged=1 where seq=1')
+        print('acknowledged')
+        raise SystemExit(0)
+    time.sleep(0.005)
+raise SystemExit('pending checkpoint copy was never observed')
+"""
+        process = subprocess.Popen([sys.executable, "-c", code, str(source), str(signal)],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        def observed(connection, backend, **options):
+            try:
+                return acknowledged_store_position(connection, backend, **options)
+            except StoreAcknowledgmentsPending:
+                self.assertEqual(connection.execute("select seq,payload,acknowledged from outbox").fetchall(),
+                                 [(1, "acknowledged-store-record", 0)])
+                signal.touch()
+                raise
+        try:
+            self.assertTrue(select.select([process.stdout], [], [], 10)[0], "SQLite writer did not start")
+            self.assertEqual(process.stdout.readline(), "ready\n")
+            with patch("controller.recovery_backend.acknowledged_store_position", side_effect=observed):
+                result = self.c.checkpoint("b1")
+            output, errors = process.communicate(timeout=10)
+            self.assertEqual((process.returncode, output, errors), (0, "acknowledged\n", ""))
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate()
+        self.assertEqual(self.c.batch("b1")["state"], "checkpointed")
+        self.assertTrue(self.subs.running)
+        self.assertEqual(result["store_journal"], 1)
+        self.assertEqual(len(self.backend.streams["store"]), 2)
+        with self.assertRaises(JournalDown):
+            self.store.journal.position()
+        with sqlite3.connect(Path(result["dir"]) / "registry.db") as copied:
+            self.assertEqual(copied.execute("select seq,payload,acknowledged from outbox").fetchall(),
+                             [(1, "acknowledged-store-record", 1)])
+            self.assertEqual(copied.execute("select value from checkpoint_projection").fetchone(),
+                             ("keep committed projection",))
+        pending = list((self.root / "staging").glob("checkpoint-*/store-copies-*/001.db"))
+        self.assertEqual(len(pending), 1)
+        with sqlite3.connect(pending[0]) as copied:
+            self.assertEqual(copied.execute("select acknowledged from outbox").fetchall(), [(0,)])
+        self.assertEqual(set(self.backend.snapshots["001-b1"]),
+                         {"registry.db", "controller.db", "manifest.json", "subs/state"})
+
+    def test_persistent_pending_copy_exhausts_eight_attempts_without_repair_or_upload(self):
+        with sqlite3.connect(self.root / "store.db") as db:
+            db.execute("update outbox set acknowledged=0")
+        with self.assertRaises(StoreAcknowledgmentsPending):
+            self.c.checkpoint("b1")
+        copies = list((self.root / "staging").glob("checkpoint-*/store-copies-*/*.db"))
+        self.assertEqual(len(copies), 8)
+        for candidate in [self.root / "store.db", *copies]:
+            with sqlite3.connect(candidate) as db:
+                self.assertEqual(db.execute("select seq,payload,acknowledged from outbox").fetchall(),
+                                 [(1, "acknowledged-store-record", 0)])
+        self.assertEqual(self.c.batch("b1")["state"], "proved")
+        self.assertFalse(self.subs.running)
+        self.assertEqual(self.backend.snapshots, {})
+        self.assertEqual(self.subs.posts, [])
+
+    def test_actual_backup_progress_deadline_preserves_failed_copy_and_stopped_subs(self):
+        with patch("controller.recovery_backend.time.monotonic", side_effect=[0, 0, 31]):
+            with self.assertRaisesRegex(JournalDown, "copy deadline exceeded"):
+                self.c.checkpoint("b1")
+        copies = list((self.root / "staging").glob("checkpoint-*/store-copies-*/*.db"))
+        self.assertEqual(len(copies), 1)
+        self.assertEqual(copies[0].stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.c.batch("b1")["state"], "proved")
+        self.assertFalse(self.subs.running)
+        self.assertEqual(self.backend.snapshots, {})
+        self.assertEqual(self.subs.posts, [])
+
+    def test_invalid_or_remote_checkpoint_proof_never_enters_pending_copy_retry(self):
+        original = self.backend.request
+        for failure in ("gap", "flag", "hole", "bytes", "remote", "controller"):
+            with self.subTest(failure=failure):
+                with sqlite3.connect(self.root / "store.db") as db:
+                    db.execute("delete from outbox")
+                    db.execute("insert into outbox values(1,'acknowledged-store-record',1)")
+                    if failure == "gap":
+                        db.execute("update outbox set seq=2")
+                    elif failure == "flag":
+                        db.execute("update outbox set acknowledged=2")
+                    elif failure == "hole":
+                        db.execute("update outbox set acknowledged=0")
+                        db.execute("insert into outbox values(2,'later',1)")
+                    elif failure == "bytes":
+                        db.execute("update outbox set payload='unacknowledged replacement'")
+                self.c.db.execute("update batches set digest=?", ("wrong" if failure == "controller" else "fixture-digest",))
+                before = set((self.root / "staging").glob("checkpoint-*/store-copies-*"))
+                def request(value):
+                    if failure == "remote" and value.get("stream") == "store":
+                        raise JournalDown("remote unavailable")
+                    return original(value)
+                with patch.object(self.backend, "request", side_effect=request):
+                    with self.assertRaises(JournalDown) as error:
+                        self.c.checkpoint("b1")
+                self.assertNotIsInstance(error.exception, StoreAcknowledgmentsPending)
+                after = set((self.root / "staging").glob("checkpoint-*/store-copies-*"))
+                self.assertEqual(len(after - before), 1)
+                self.assertEqual(len(list((after - before).pop().glob("*.db"))),
+                                 0 if failure == "controller" else 1)
+                self.assertEqual(self.c.batch("b1")["state"], "proved")
+                self.assertFalse(self.subs.running)
+                self.assertEqual(self.backend.snapshots, {})
+                self.assertEqual(self.subs.posts, [])
 
     def test_restore_requires_remote_materialization_and_preserves_unknown_quarantine(self):
         self.c.checkpoint("b1")
