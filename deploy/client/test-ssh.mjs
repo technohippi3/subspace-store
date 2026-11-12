@@ -5,7 +5,9 @@ import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
+import { promisify } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { createServer } from 'node:net';
 import { RecoveryClient, sha } from './transport.mjs';
@@ -81,15 +83,49 @@ test('actual OpenSSH pins the host, preserves encrypted recovery after seller lo
     'from controller.recovery_backend import RecoveryBackend,RemoteJournal',
     'backend=RecoveryBackend(sys.argv[2],sys.argv[3],sys.argv[4])',
     'journal=RemoteJournal(backend)',
-    'assert journal.append("fixture-python",value="fixture") == 2',
-    'assert len(journal.entries()) == 2',
-    'assert journal.position() == 2',
+    'expected=int(sys.argv[5])',
+    'assert journal.append("fixture-python",value="fixture") == expected',
+    'assert len(journal.entries()) == expected',
+    'assert journal.position() == expected',
     'print(json.dumps({"ok":True,"sequence":journal.position()}))',
   ].join('\n');
   const applicationSource=process.env.SUBSPACE_PACKAGE_APPLICATION_SOURCE || join(here,'../..');
-  const pythonResult = spawnSync('/usr/bin/python3', ['-c', python, applicationSource, configFile, join(here, 'client.mjs'), process.execPath],
+  const pythonResult = spawnSync('/usr/bin/python3', ['-c', python, applicationSource, configFile, join(here, 'client.mjs'), process.execPath, '2'],
     { timeout: 30_000, encoding: 'utf8' });
   assert.equal(pythonResult.status, 0, pythonResult.stderr); assert.equal(JSON.parse(pythonResult.stdout).sequence, 2);
+
+  // Hold the real remote protocol lock while both shipped client boundaries
+  // arrive. Neither may mistake ordinary concurrency for a lost append.
+  const holder = spawn('docker', ['exec', '-i', name, 'python3', '-c',
+    'import fcntl,sys; f=open("/recovery/.protocol.lock","rb"); fcntl.flock(f,fcntl.LOCK_EX); print("held",flush=True); sys.stdin.buffer.read(1)'],
+    { stdio: ['pipe', 'pipe', 'pipe'] });
+  const holderExit = once(holder, 'exit');
+  try {
+    assert.equal((await once(holder.stdout, 'data'))[0].toString().trim(), 'held');
+    const read = promisify(execFile)(process.execPath, [join(here, 'client.mjs'), '--config', configFile],
+      { timeout: 15_000, encoding: 'utf8' });
+    read.child.stdin.end(JSON.stringify({ op: 'journal-read', stream: 'store', after: 0, limit: 1 }));
+    const append = promisify(execFile)('/usr/bin/python3', ['-c', python, applicationSource,
+      configFile, join(here, 'client.mjs'), process.execPath, '3'], { timeout: 15_000, encoding: 'utf8' });
+    // Install rejection observers before waiting on the barrier.
+    const outcomes = Promise.allSettled([read, append]);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    assert.equal(read.child.exitCode, null);
+    assert.equal(append.child.exitCode, null);
+    holder.stdin.end('x');
+    const results = await outcomes;
+    for (const result of results) assert.equal(result.status, 'fulfilled', result.reason?.message);
+    const storeResult = JSON.parse(results[0].value.stdout);
+    assert.equal(storeResult.ok, true);
+    assert.equal(storeResult.head, 1);
+    assert.deepEqual(Buffer.from(storeResult.entries[0].data, 'base64'), journalBytes);
+    assert.equal(JSON.parse(results[1].value.stdout).sequence, 3);
+    assert.equal(journalRead(client, 'controller', 0).head, 3);
+  } finally {
+    if (!holder.stdin.destroyed && !holder.stdin.writableEnded) holder.stdin.end('x');
+    const [status] = await holderExit;
+    assert.equal(status, 0);
+  }
   const seller = join(fixture, 'seller'); mkdirSync(seller, { mode: 0o700 });
   const files = { 'registry.db': Buffer.from('fixture application history'), 'controller.db': Buffer.from('fixture controller history') };
   const manifest = { label: 'fixture', store_journal: 1, controller_journal: 1, files: {} };

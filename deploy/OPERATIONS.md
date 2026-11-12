@@ -1,12 +1,23 @@
 # Native operator commands
 
 The first profile uses an existing Ubuntu 24.04 amd64/systemd 255 host with
-Python 3.12 and OpenSSL 3. Core, spaced, the selected wallets, prover and relay
+Python 3.12 and OpenSSL 3. Core 31.2, spaced, the selected wallets, prover and relay
 must already be ready. The installer owns the store, subs and HTTPS services.
 Use the exact candidate's acceptance record and `NATIVE-PACKAGE.md` alongside
 these commands. Paid admission remains subject to the buyer and operator gates.
 
+The target host must provide Python 3.12 at `/usr/bin/python3` and OpenSSL 3
+at `/usr/bin/openssl` before invoking the bootstrap installer. The payload
+provides Node 24.14.0.
+
 ## Prepare the artifact and host
+
+Launch the existing Core and spaced processes with `umask 077`, or retain
+`UMask=0077` in their existing systemd units, on every start. Set
+`core.cookiePath` and `spaced.cookiePath` to their current native-generated
+cookie files. Verify after every upstream start that both cookies are regular,
+single-link files with mode 0600, accessible to the root installer, with no
+symlink at either configured file path. Keep cookie values in those protected files.
 
 Keep signing keys, native input profiles, wallet backups and deployment state
 outside the public checkout. The native input profile must bind all ten binaries
@@ -68,6 +79,14 @@ operations block maintenance and are reported; there is no fixed drain timer.
 A compatible rollback uses that command with `--rollback` and the earlier
 verified artifact. Both its compatibility epochs and signed whitelist must match.
 Current databases and wallet history survive the rollback.
+
+Treat an upstream restart or cookie rotation as attended maintenance. Pause
+admission and inspect reported blockers before a planned restart. Once Core,
+spaced and both selected wallets are current at the same tip, verify both new
+cookies and use the paused recovery command below to refresh the managed store
+and subs credential copies. Their existing LoadCredential copies stay unchanged
+until those units start again. Complete blocker review and fresh readiness
+checks before explicitly resuming admission.
 
 After restoring original wallet identities and completing rescans, run:
 

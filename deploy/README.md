@@ -3,14 +3,17 @@
 `NATIVE-PACKAGE.md` documents the implemented standalone native installer,
 updater, Alchemy existing-host driver, scoped Infisical retrieval and encrypted
 SSH recovery backend. Its first profile uses existing ready Core and spaced
-wallets. Complete installed-application acceptance is recorded separately from
-source and platform tests. The older example files below are not generated
-installation profiles. `OPERATIONS.md` gives the native operator commands.
+wallets. The supported candidate profile is Ubuntu 24.04 x86_64/systemd 255.
+The installed version 2 VM fixture exercises actual HTTPS, scoped secret retrieval,
+encrypted SSH, update and service recovery with recorded upstream RPC facts.
+Same-payload real-native/browser and owner-client acceptance require their
+separate receipts. Candidate signatures are test-only; no production activation is
+claimed. `OPERATIONS.md` gives the native operator commands.
 
-These files are examples of how the store and its operator tools would be
-configured on a host. Nothing in this repository installs them, and
-nothing has run from them yet. The project authorizes no production
-deployment, so they name regtest. Every path is a placeholder.
+The JSON files and user units below are legacy regtest examples with placeholder
+paths. They are not generated installation profiles. The native profile
+builder and installer are implemented under `native/`; use their generated
+configuration for the installed candidate. No example authorizes a deployment.
 
 - `store.example.json` configures the store service,
   `python3 -m service <config>`. Its keys are described in
@@ -42,9 +45,9 @@ issuing marks. `docs/spec/ENTRY-RECOVERY.md` defines its bound-entry
 protocol, extended by `docs/spec/ENTRY-RELEASE.md` with permanent closure
 and one-use broadcast permission. Server and controller must update together;
 older pre-release receipt shapes fail closed. Known-unsent release is
-resumable. Bound delivery now has a real local-stack sale; whole-host
-TypeScript recovery remains incomplete. These
-examples do not make it deployable for sales.
+resumable. Bound delivery has real local-stack evidence, and known-history
+TypeScript host-loss fixtures exist. The final same-payload native recovery
+and operator acceptance gate remains separate. These examples do not open sales.
 
 `docs/spec/COMMITMENT-TRACKING.md` adds revisioned observations tied to
 the exact armed entry and a matching Core tip. Receipt acknowledgment
@@ -70,17 +73,20 @@ attended runner commands. Preparation requires `--cause buyer` or
 both `--txid` and `--confirm`. The same group is recovered after a lost
 preparation reply. A changed transaction requires renewed review, and
 runtime polling never signs or sends. The real regtest stack now qualifies
-one cancellation refund into the buyer's wallet. Maintenance coordination
-and whole-host TypeScript recovery remain separate installer/recovery work.
+one cancellation refund into the buyer's wallet. The native installer now
+implements maintenance and recovery coordination. Its recorded-RPC VM result
+and the remaining actual native-stack recovery gate are distinct evidence.
 
-`docs/spec/APPLICATION-RESTORE.md` adds regtest-only operator commands:
+`docs/spec/APPLICATION-RESTORE.md` defines the raw operator commands below.
+Version 1 is regtest-only; version 2 requires the explicit installation network
+and wallet binding in `docs/spec/NETWORK-READINESS.md`:
 `node ts/src/main.ts restore <config>` replays a journal into a fresh database,
 and `node ts/src/main.ts recover <config>` inspects fresh chain facts without
 serving or sending. Stop and fence the old instance first. Exit 0 means its
 receipt is acknowledged; it still reports controller reconciliation required.
 Exit 2 means journal acknowledgment is pending. These commands preserve
 quarantine and do not replace wallet backups, coordinated subs/controller
-restore or the eventual installer. `node ts/src/main.ts reconcile <config>
+restore or the installed recovery choreography. `node ts/src/main.ts reconcile <config>
 <runner-config>` now checks known bound history, restores controller/subs
 when needed, and confirms both journals before paused startup. Unknown sends
 and unsupported tree states retain quarantine. See
@@ -91,7 +97,8 @@ fixture. Restore original wallet backups and rescan before reconciliation.
 After paused startup, configure subs with the replacement runtime's injected
 registry credential and test its health connection before enabling admission.
 An old snapshot's stored bearer token is not the replacement secret source.
-This attended step and the fixture do not implement Infisical or the installer.
+Those earlier fixture receipts do not themselves qualify the native package's
+separate Infisical retrieval and installer implementation.
 
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,
@@ -100,8 +107,9 @@ Five of the requirements are not obvious from the files:
   does. The controller then copies nothing unless a connection to `subs`
   is refused, and waits until it answers again before work resumes.
 - `subs.capabilities.attach_txid` must say truthfully whether the `subs`
-  binary has the U1(b) route of `regtest/upstream/`. The pinned `subs`
-  doesn't. Without it, a later commitment restored without its `txid`
+  binary has the U1(b) route of `regtest/upstream/`. The unmodified pinned
+  upstream binary does not; the native package's reviewed combined build does.
+  Without it, a later commitment restored without its `txid`
   blocks the next batch on that space, so the operator gate needs that
   capability or another reviewed recovery procedure
   (`docs/spec/CONTROLLER-DESIGN.md`, "What this requires").
@@ -123,14 +131,14 @@ Five of the requirements are not obvious from the files:
 The test operator's machine and its network confinement are described in
 `docs/BUYER-GATE.md`, not here.
 
-The pinned `subs` API binds to every IPv4 interface (R7), regardless of
-the loopback URLs in the runner configuration. For the private purchase,
-`regtest/build-private.sh` builds a separate `subs-private` with the
-loopback patch, U1(b) and explicit relay seeds. Selecting that reviewed
-binary, configuring the host firewall and running the listener preflight
-are deployment preparation; these examples do none of them. See
-`docs/PRIVATE-PURCHASE.md`. The binding patch adds no authentication for
-other processes on the same host.
+The unmodified pinned `subs` API binds to every IPv4 interface (R7), regardless
+of configured loopback URLs. The native package requires the reviewed combined
+build with loopback, U1(b) and explicit relay-seed patches, bound by its build
+manifest. `regtest/build-private.sh` remains the older private-purchase recipe.
+The installer preflight checks actual listeners; the legacy examples alone
+provide neither that check nor host firewall setup. See
+`docs/PRIVATE-PURCHASE.md`. Loopback binding adds no authentication for other
+processes on the same host.
 
 ## Installation and updates contract
 
@@ -273,7 +281,7 @@ Restore the registry token relationship consistently if service tokens are
 replaced. Rehearse this path on a replacement host. The four-hour recovery
 target is not established until that rehearsal passes.
 
-## Recovery evidence still to test
+## Hold-recovery requirements and evidence boundary
 
 The separate TypeScript Core adapter qualification in `../regtest/REPORT.md`
 now verifies ordinary mempool reload: entry time survives and entry height

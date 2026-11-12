@@ -45,6 +45,17 @@ temporary Python comparisons are not a permanent runtime dependency.
 
 ## Implementation status
 
+The pilot production gate requires coverage for every applicable case. The
+native package, generated host profile, Infisical retrieval, encrypted SSH
+recovery and Alchemy existing-host driver
+are implemented. The installed version 2 VM fixture exercises actual systemd
+255, HTTPS, secret retrieval, update and service recovery using recorded
+upstream RPC facts. The first profile is Ubuntu 24.04 x86_64. Development
+candidates use test signing trust without production activation. Same-payload
+real-native/browser receipts and the identified owner client/phone buyer gate
+remain separate acceptance requirements. The paragraphs below describe
+component evidence; they do not supersede the work-order gates.
+
 The first implementation increment adds the TypeScript pilot model and
 K1–K20 cases, a 2,000-step generated trace, development/release coverage
 modes, a pilot-readiness workflow and the Python store ownership amendment
@@ -91,14 +102,16 @@ and quarantine is journaled. `RECONCILIATION.md` now defines offline
 controller/subs reconciliation and journal-bound completion for known
 histories, allowing only paused startup. The full-stack fixture restores
 application/controller/subs paths and issues again while Core/wallets stay
-live; wallet/whole-host recovery qualification remains.
+live; that fixture does not qualify wallet or whole-host recovery.
 `HOST-RECOVERY.md` extends the qualification procedure with fresh seller-node
 and wallet paths from onboarding backups. Known mined history is its scope;
 the complete multi-space in-flight recovery gate remains separate.
 The TypeScript browser checkout now has production C1–C12 coverage through
 the same commands as JSON (`CHECKOUT-SPEC.md`). Real-stack browser sale/refund
-qualification, Nacho acceptance, remaining sale/refund scenarios, remaining
-supersession and application recovery remain. `NETWORK-READINESS.md` adds
+qualification against the final signed inventory and identified Nacho
+buyer acceptance remain. Required sale/refund, supersession and recovery
+cases now have shipped-component production coverage; this does not turn
+recorded adapters into native-chain or deployed-stack acceptance. `NETWORK-READINESS.md` adds
 explicit production network and durable payment wallet identity, authenticated
 paused bootstrap and a separate TypeScript public pilot runner path. Its component tests do not establish mainnet transactions.
 The source production-coverage gate now passes. Native export, scoped QR
@@ -109,8 +122,9 @@ establish the signed package, buyer-client or operator acceptance gates.
 selection shared by startup, maintenance and host-loss recovery. Production
 composition tests check complete decrypted prefixes, checkpoint acknowledgement
 before restart, fresh snapshot materialization and matching parent/child
-references. The final installed package still needs its separate actual SSH,
-systemd and restored-service qualification.
+references. The installed version 2 VM fixture now exercises actual SSH, systemd and
+restored-service ownership with recorded upstream RPC facts. The separate
+real-native same-payload recovery and operator gate remain required.
 
 The seller CLI and repeatable policy operations now follow
 `SELLER-OPERATIONS.md`, including explicit request limits and funded owner
@@ -120,8 +134,9 @@ finality, cancellation, journal and deficit coverage with explicit pilot
 applicability in `PILOT-SPEC.md`. They also expose and fix B5's durable
 rebuild throttle and L8's missing-byte incident. Payment allocation now
 records H11/T3's durable warning when the wallet repeats a retained
-destination. Restore coverage and signed package acceptance remain open;
-passing source tests do not establish phone or deployed acceptance.
+destination. Required restore cases now execute in production coverage.
+Final signed-package/native acceptance and owner phone acceptance remain
+open; passing source tests do not establish those gates.
 
 ## Work order and gates
 
@@ -188,9 +203,10 @@ reacquisition, pay-first admission and deterministic ties, the per-name
 rolling hold ration, the global hold limit, the durable pause after ten
 distinct conversions, buyer cancellation before issuance, the refund
 deadline, estimated fees, buyer/merchant fee split and subsequent refund
-funding policy. Actual wallet selection still needs runtime and regtest
-evidence. P12 already settles the lowered-price
-outcome; its prose correction is not a new policy.
+funding policy. The shipped refund planner and wallet selection have
+production and isolated Core regtest evidence; final same-payload acceptance
+remains separate. P12 already settles the lowered-price outcome; its prose
+correction is not a new policy.
 
 Use canonical `name@space` handles and an explicit space identity in the
 TypeScript design. Avoid changing the running Python schema just to prepare

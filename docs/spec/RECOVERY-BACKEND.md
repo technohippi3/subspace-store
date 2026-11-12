@@ -40,6 +40,16 @@ Read, head and immutable retry acknowledgments require durable remote
 publication before the client returns. An unavailable remote refuses startup,
 quotes and normal or refund sends through the existing live journal guards.
 
+The restricted helper serializes store and controller operations with one
+installation-wide operating-system lock. A request may wait at most two seconds
+for that lock, retrying nonblocking acquisition at intervals no longer than ten
+milliseconds. No identity publication, stream read or mutation occurs before
+ownership. Transient concurrent polling therefore waits for its current owner;
+continued contention returns `storage-busy` without publishing the request.
+This bounded wait grants no acknowledgment, local fallback or permission to
+advance an unresolved controller append. The caller retains its existing
+operation timeout and exact-byte immutable retry rules.
+
 The runner's store snapshot reader compares the SQLite outbox's complete
 acknowledged sequence and exact payload bytes with the decrypted remote store
 prefix. Its normal live position additionally requires equal heads. A
@@ -94,3 +104,4 @@ client/helper and OpenSSH qualifications remain separately identified.
 | O157 | Actual host-loss runner restore requires fresh remote materialization, preserves ambiguous stages and unknown-arm quarantine, and cannot invoke a send. |
 | O158 | Store-owned reconciliation requires identical explicit backend references in its temporary parent/child maintenance view; missing or differing references refuse. |
 | O159 | Version 1 retains its original FileJournal history and rejects an implicit backend protocol change. |
+| O181 | Actual concurrent helper processes and OpenSSH store/controller clients serialize transient lock contention; a two-second held-lock timeout returns storage-busy before publication and leaves original history unchanged. |

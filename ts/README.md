@@ -1,8 +1,12 @@
-# TypeScript port (in progress)
+# TypeScript pilot store
 
-The store is being ported to TypeScript. The domain code, Effect-based
-storage and loopback buyer JSON API run in tests. The payment adapter now
-has isolated Core 31.2 regtest qualification. Refund destinations,
+This is the pilot store, with the Python controller and attended runner
+retained for issuance. Its domain code, Effect-based storage, browser checkout
+and loopback APIs have source production
+coverage. The installer and seller CLI are implemented. Each candidate requires
+same-payload real-native/browser and owner-client acceptance; see the root
+`../README.md` and `../deploy/NATIVE-PACKAGE.md` for the evidence boundary.
+The payment adapter has isolated Core 31.2 regtest qualification. Refund destinations,
 durable reservations and explicit-input signed refund preparation now run
 in tests (`../docs/spec/REFUND-PREPARATION.md`). First-attempt sends and
 settlement/reorg accounting are now qualified in `../docs/spec/REFUND-SENDING.md`.
@@ -45,12 +49,13 @@ Browser checkout now serves a public catalog, exact recipient-request forms,
 private orders, journal-gated BIP21 invoices, payment uncertainty,
 cancellation/refund destinations and progress, and certificate downloads.
 Production C1–C12 tests exercise real HTTP/SQLite/journals with simulated
-adapters; `../docs/spec/CHECKOUT-SPEC.md` and `PILOT-SPEC.md` define the
-transport and exact baseline-to-pilot mappings. Real-stack browser
-qualification, Nacho acceptance, remaining sale/refund scenarios, other
-supersession paths and full application recovery remain. The Python service,
-controller and runner remain the
-complete implementation, and `docs/spec/` stays authoritative.
+adapters; `../docs/spec/CHECKOUT-SPEC.md` and `../docs/spec/PILOT-SPEC.md` define the
+transport and exact baseline-to-pilot mappings. All required pilot cases
+now have shipped-component production coverage. Final same-payload native
+sale/refund/browser/recovery acceptance and the identified Nacho phone gate
+remain separate. The Python store is the retained owner-only baseline; the
+pilot ships this TypeScript store with the Python controller and runner.
+`../docs/spec/` stays authoritative.
 
 This port follows the workspace_owner's direction: TypeScript, Effect and
 explicit state machines, deployed through Alchemy to a general Linux host
@@ -86,8 +91,9 @@ model evidence from production tests in `test/production/`. The existing
 unnumbered production-reducer tests remain useful but do not supply named
 runtime coverage. The development gate accepts model evidence;
 `python3 ../tools/case_coverage.py --release pilot` requires named production
-coverage and currently fails. The pilot-readiness workflow runs both suites
-and this release gate on manual dispatch or a `pilot-*` tag.
+coverage for every required pilot case. The corresponding
+suites must also execute successfully. The pilot-readiness workflow runs
+both suites and this release gate on manual dispatch or a `pilot-*` tag.
 
 The native installer and updater precede the disposable-host cutover
 rehearsal. Essential seller commands then precede the public-pilot gate:
@@ -100,18 +106,20 @@ lock and real two-process H12 tests are now implemented locally.
 
 ## Current implementation
 
-`node src/main.ts <config.json>` starts the regtest-only runtime. See
-`../deploy/typescript-regtest.example.json` for its explicit configuration.
-It requires existing fixture wallets, a dedicated journal directory and
-private, distinct injected role-token files. New stores start paused.
-Separate loopback ports serve buyer JSON, operator and subs pending routes.
-The operator can journal listing-price and global-pause changes; this is
-the narrow API for the harness and future seller CLI. Runtime polling
-observes payments and advances existing deadlines through node outages;
-it never broadcasts refunds. Live status supplies the shipped runner's
-network/block checks. SIGINT/SIGTERM close the Effect scope and ownership.
-This is a developer/regtest command, not the installer or update protocol.
-Infisical retrieval and Alchemy integration remain planned installer work.
+`node src/main.ts <config.json>` is the raw runtime entrypoint. Version 1
+configuration is regtest-only; version 2 binds explicit `main` or `regtest`
+installation and wallet identity, ownership and recovery references. Existing
+wallets and distinct injected role-token files are required. New stores start
+paused. `../deploy/typescript-regtest.example.json` is a legacy developer
+example; installed operators use the native profile's generated configuration.
+Separate loopback ports serve buyers, operators and subs pending routes.
+`node src/seller.ts <config.json> ...` uses the authenticated operator API for
+seller setup and repeatable policy changes. Runtime polling observes payments
+and deadlines but never broadcasts refunds. Live status supplies the runner's
+network/block checks; shutdown closes the Effect scope and ownership.
+`../deploy/OPERATIONS.md` describes the installed wrappers. Native installation,
+updates, Infisical retrieval and the Alchemy existing-host driver are implemented;
+the raw entrypoint does not replace their maintenance/recovery choreography.
 
 `src/refunds/` holds production fee policy, strict records and reservation
 accounting, separately from `model/refunds.ts`. `src/bitcoin/refunds.ts`
@@ -152,9 +160,10 @@ authorizing an independent payment. Only the latest previously attempted
 member is retried per group. Views expose per-member positions, group
 maximum and settled charges, without raw transactions or proofs.
 
-The direct-ancestor funding planner is deliberately conservative. Full
-recovery remains. Unconverted excess refunds and the
-T3 skipped-script operator alert remain unsupported. Core qualification now
+The direct-ancestor funding planner is deliberately conservative. Unconverted
+checkouts use K21's cancel-first flow. Retained payment-destination repeats
+produce the durable H11/T3 warning. Final same-payload recovery acceptance
+remains separate. Core qualification now
 includes application sends, a lost reply and store restart, settlement
 changes and deep reorg/re-mining, as well as proven change funding. These
 use fresh isolated regtest wallets and do not pass public-pilot acceptance.
@@ -216,25 +225,26 @@ ticked during a Core outage through operator inspection and runtime polling,
 without signing or sending. Converted/issuing excess clocks now admit
 the inclusive estimated fee-plus-546 minimum and retain unknown-assessment
 notices, earlier observation times and existing deadlines through failures.
-Unconverted accounting and controller HTTP/whole-host
-recovery remain.
-Restored metadata requires reconciliation before the application can reopen
-admission. The backend is an existing filesystem directory that must live
-off-host for actual host-loss recovery; no object-store adapter is claimed.
+Unconverted refunds use cancel-first, and controller HTTP/restore behavior has
+cross-component production coverage. Restored metadata requires reconciliation
+before the application can reopen admission. The native version 2 profile uses
+one encrypted POSIX/SSH recovery backend for both journals and snapshots with
+no local fallback. Direct legacy fixtures retain file mode; a directory on the
+seller host alone does not qualify host-loss recovery. No object-store adapter
+is claimed.
 
-## Not yet ported
+## Remaining qualification and deferred work
 
-Domain rules of `service/ledger.py` still to port, each with its home:
+Source coverage is complete for the required pilot cases. Final acceptance
+requires the same signed payload's real-native browser sale/refund and
+operator recovery evidence, plus the identified owner client's phone gate.
+The installed version 2 VM result uses actual systemd, TLS, secret retrieval and
+SSH with recorded upstream RPC facts; it is not a native-chain purchase.
 
-1. Qualify browser checkout and remaining Spaces-stack sales/refund scenarios.
-2. Remaining registry recovery and alternative/unknown-transaction supersession.
-   Pending selection, bound entry, commitment observation, certificate acceptance
-   and explicit known-transaction delegate-conflict proof now exist. Generating
-   a rollback, repairing the Spaces tree and resolving conflicts remain manual.
-3. Complete operator recovery acceptance with simultaneous in-flight states.
-   Journal-only restore and offline reconciliation permit paused startup for
-   known histories. A separate fixture replaces Core and both wallets from
-   onboarding backups. Unknown sends and unsupported tree repair remain manual.
+Unknown sends, unproven supersession and unsupported tree repair retain paused,
+attended recovery states. Automatic rollback construction and tree repair are
+not supplied by a passing source coverage check. Porting the Python controller,
+runner and tooling follows the pilot; their shipped guards remain mandatory.
 
 `src/application/` now has strict records, serialized Effect commands,
 public request validation, journal-gated addresses/cancellations and
@@ -301,19 +311,25 @@ acceptance now have their own protocol specifications. Certificate bytes
 are reconstructible local cache; their binding and invalidation are journaled.
 Bound delivery callbacks now retain first delivery and fulfilled ownership
 across certificate loss, with explicit recovery incidents.
-Next complete additional Spaces-stack/browser qualification, remaining supersession/recovery and
-wallet/whole-host recovery, then run the production gates above. The
-controller port follows the first pilot and must preserve the specified
-interrupted-broadcast recovery; the Python controller ships initially.
+Complete final same-payload native/browser and buyer/operator acceptance before
+activation. The controller port follows the first pilot and must preserve the
+specified interrupted-broadcast recovery; the Python controller ships initially.
 
 The runtime dependency is Effect 4.1.4. Development dependencies are
 TypeScript 7.0.2 and full Node types, pinned in `package-lock.json`.
 `.node-version` and CI pin Node 24.14.0; Linux util-linux `/usr/bin/flock`
 is required. Node's SQLite API is marked active development, so runtime
-upgrades need qualification through these tests. No native npm addon or
-source build is required.
+upgrades need qualification through these tests. The JavaScript runtime needs
+no native npm addon. Native export tools and their tests have the separate
+pinned Rust build below.
 
-From this directory:
+The default suite includes unconditional native-package VM/SSH fixtures.
+Follow `../.github/workflows/model.yml` for Docker, QEMU, OpenSSH and image
+verification prerequisites, and first run from the repository root:
+
+    python3 tools/build_native_export.py --fetch
+
+This uses the pinned Rust 1.94.1 toolchain. Then, from this directory:
 
     npm ci --ignore-scripts
     npm run check

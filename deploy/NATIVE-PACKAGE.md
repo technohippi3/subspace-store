@@ -13,6 +13,8 @@ must already be ready and scanned. The profile also requires explicit prover
 and relay endpoints. The complete payload contains their pinned native tools;
 it does not create, import, unlock or fund wallets. Node indexing and storage
 readiness are measured on the actual host before application maintenance.
+The target host must supply `/usr/bin/python3` 3.12 and `/usr/bin/openssl`
+major version 3 before running the installer or its signature and TLS checks.
 
 `native/profile.py` generates the installation, runtime, runner, secret-source
 and per-role recovery configurations from explicit inputs. It never chooses a
@@ -98,10 +100,19 @@ old output. There is no persistent fetched-value cache or implicit fallback.
 Attended recovery requires explicitly selecting the attended source and
 supplying protected temporary role files. No real credential is created here.
 
+Core and spaced must create their original cookies privately on every start.
+Retain `umask 077` in their launch environment, or `UMask=0077` in their
+existing systemd units. The configured original cookie files must be current,
+regular, single-link mode-0600 files, accessible to the root installer, with no
+symlink at either configured file path. Verify replacement cookies after each
+upstream restart before installation or recovery.
+
 Core and spaced cookies enter service units through explicit external
 LoadCredential references. Copies are per start. Native cookie rotation
-therefore fails RPC checks until a controlled fresh application start; it
-does not trigger an automatic restart around holds or sends. Offline
+therefore fails RPC checks until a controlled fresh store/subs start; it
+does not trigger an automatic restart around holds or sends. Keep admission
+paused, establish current node and wallet readiness, and follow the attended
+recovery procedure in `OPERATIONS.md` to refresh those copies. Offline
 maintenance obtains its own fresh role references and bounded cookie copies.
 It never reads a stopped service's private credential mount.
 
@@ -166,30 +177,35 @@ controller receipts verify the decrypted prefix and exact copied batch
 projection. Remote snapshot lists and fresh materialization remain authority
 after host loss.
 
-## Evidence and remaining composition
+## Candidate acceptance evidence
 
-`evidence/package-platform-rehearsal.json` records the actual installer,
-systemd 255, HTTPS, scoped secret API, encrypted OpenSSH, normal product
-Controller.snapshot with competing restart, same-artifact Alchemy adoption,
-declaration removal/destroy, update, secret outage, fail-paused behavior and
-compatible rollback. That rehearsal deliberately uses recording application
-and native-node receipts. It is platform evidence, not a financial domain
-qualification. The recorded full run passed in 74.461 seconds.
+The unconditional TypeScript production suite executes fresh release, helper,
+OpenSSH, Alchemy and systemd fixtures. Its installed-host checks exercise actual
+systemd 255, HTTPS, scoped secret retrieval, encrypted storage, writer exclusion,
+update and rollback. Their upstream RPC facts are recorded. A passing platform
+receipt does not establish a real financial-chain or buyer-client result.
 
-`evidence/O149-10000-application-replay.json` records actual cold production
-restoreApplication over encrypted pinned SSH, fresh SQLite, quarantine commit
-and live full-prefix confirmation. It restored 10,000 orders, 8,000 payment
-destinations, 6,000 cancellations, 1,995 unpaid invoices and five conversions
-from 24,002 production-codec entries in 49.065 seconds. This is generated
-validated application history, not a real funded history. Its source commit
-is recorded; it must be repeated on the final integrated source.
+Each complete candidate must retain an acceptance index bound to its source
+commit, independently trusted manifest signature, archive hash and exact file
+inventory. Keep the actual installed-application receipt, independent native
+sale/refund and host-recovery receipts, browser screenshots and decoded QR
+checks with that index. The local candidate/evidence directories are ignored
+operator artifacts; this checkout contains no saved deploy/evidence receipts.
+Source test discovery or an older candidate's receipt cannot satisfy a new
+candidate's acceptance gate.
 
-The six O153 production maintenance cases and typecheck passed in the isolated
-capture. The parent integrates them into the authoritative product. Actual
-v2 store/bootstrap, credential, journal and HTTPS composition in the guest and
-the final native full-stack rehearsal must use the same complete signed
-payload after the backend and native build inputs are sealed. Neither that
-composition nor a production deployment is claimed by the platform receipt.
+O149 executes a fresh representative 10,000-order production application restore
+from encrypted OpenSSH into fresh SQLite, then measures a complete live-prefix
+guard separately. Its generated validated history is not funded production
+history. Retain its measured restore/guard timings and source hashes; the
+under-one-minute recovery requirement does not establish request latency.
+
+The same complete signed payload must pass installed version 2 bootstrap,
+credentials, both journals, HTTPS, maintenance and service recovery, plus the
+separate native-chain/browser scenarios. Nacho file/QR import, signed records,
+transfer and independent client recovery require the identified owner build and
+[device test](../docs/NACHO-TEST.md). Neither fixture RPCs nor native decoding
+establish that phone acceptance or authorize production deployment.
 
 ## Official source evidence
 

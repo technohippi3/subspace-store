@@ -64,6 +64,9 @@ test('O145: exact scoped host secret retrieval refuses stale fallback and select
 test('O146: pinned SSH and actual Alchemy removal preserve the existing host',async()=>{await qualifySsh();await qualifyPlatform();});
 test('O147: immutable encrypted journals and snapshots acknowledge only bounded durable exact bytes',async()=>{await qualifyBackend();});
 test('O148: actual SSH restores encrypted history after fixture seller deletion and refuses an outage',async()=>{await qualifySsh();});
+test('O181: concurrent store and controller SSH requests wait within the helper lock deadline and preserve exact history',async()=>{
+  await qualifyBackend();await qualifySsh();
+});
 test('O149: actual current application restores ten thousand validated orders over encrypted SSH within one minute',async()=>{
   await prepare();await run('python3',[join(deployment,'replay/replay.py'),'--source-root',repository],deployment,600000);
 });

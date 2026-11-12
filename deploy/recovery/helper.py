@@ -12,10 +12,25 @@ import json
 import os
 import stat
 import sys
+import time
 
 from storage import (MAX_OBJECT, MAX_REQUEST, MAX_PAGE, SAFE_ID, Refused, decode,
                      digest, directory, entries, exact, filename, integer,
                      open_root, publish, read, require)
+
+
+def acquire_protocol_lock(lock):
+    """Serialize ordinary store/controller overlap within a fixed deadline."""
+    deadline = time.monotonic() + 2
+    while True:
+        require(time.monotonic() < deadline, "storage-busy")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            remaining = deadline - time.monotonic()
+            require(remaining > 0, "storage-busy")
+            time.sleep(min(0.01, remaining))
 
 
 def unique(pairs):
@@ -227,7 +242,7 @@ def main():
         info = os.fstat(lock)
         require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and
                 info.st_uid == os.geteuid() and info.st_mode & 0o077 == 0, "unsafe-object")
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        acquire_protocol_lock(lock)
         publish(root, ".installation", (args.installation + "\n").encode("ascii"))
         response = {"ok": True, "installation": args.installation,
                     **dispatch(root, request, args.installation)}

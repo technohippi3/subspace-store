@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -140,8 +141,46 @@ class HelperTests(unittest.TestCase):
         self.request("probe")
         with (self.root / ".protocol.lock").open("rb") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self.append(1, accepted=False)
+            began = time.monotonic()
+            self.assertEqual(self.append(1, accepted=False)["code"], "storage-busy")
+            self.assertGreaterEqual(time.monotonic() - began, 1.9)
+            self.assertLess(time.monotonic() - began, 5)
+            self.assertFalse((self.root / "store").exists())
         self.append(1)
+
+    def test_transient_contention_serializes_both_streams_before_publication(self):
+        self.request("probe")
+        with (self.root / ".protocol.lock").open("rb") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            children = []
+            try:
+                for stream in ("store", "controller"):
+                    data = ("original-" + stream).encode()
+                    request = {"version": 1, "op": "journal-append", "stream": stream,
+                               "sequence": 1, "sha256": sha(data),
+                               "data": base64.b64encode(data).decode()}
+                    process = subprocess.Popen(self.command, stdin=subprocess.PIPE,
+                                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    process.stdin.write(json.dumps(request).encode())
+                    process.stdin.close()
+                    process.stdin = None
+                    children.append((process, stream, data))
+                time.sleep(0.3)
+                for process, stream, _ in children:
+                    self.assertIsNone(process.poll(), stream)
+                    self.assertFalse((self.root / stream).exists())
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                for process, stream, data in children:
+                    output, errors = process.communicate(timeout=5)
+                    self.assertEqual(process.returncode, 0, output)
+                    self.assertEqual(errors, b"")
+                    self.assertTrue(json.loads(output)["ok"])
+                    self.assertEqual((self.root / stream / storage.filename(1)).read_bytes(), data)
+            finally:
+                for process, _, _ in children:
+                    if process.poll() is None:
+                        process.kill()
+                    process.communicate()
 
     def test_no_delete_overwrite_or_arbitrary_path_operation(self):
         self.append(1)

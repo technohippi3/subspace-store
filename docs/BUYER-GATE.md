@@ -276,6 +276,19 @@ document carrying base64 certificates, is a candidate format for the import
 in M8, not the verifier's input. Which formats Nacho accepts is still open
 (client question 2).
 
+Current format note, 2026-11-12. The store's supported native export profiles
+are `certificate.spacecert` (SCRT CertificateChain v1) and
+`certificate.spacemsg` (libveritas 0.4.4 Message); the original
+`certificate.message` download remains. The export JSON manifest is metadata,
+not a mobile import certificate. The historical public Nacho decoder at
+`32a1d438438de959ab7ce2b83d789d48057d373d` expects a different JSON schema and
+is incompatible with these native artifacts. Neither that schema nor the
+base64 JSON from `/certs/:handle` has a reviewed conversion for the
+workspace_owner's installed client. Its exact build/platform and accepted import formats must still
+be established. [NACHO-TEST.md](NACHO-TEST.md) describes the device handoff;
+all gate steps, transaction-plan requirements and authorizations below remain
+in force.
+
 M6 (operator). Publish both handles with one explicit call to
 `/spaces/:space/publish`, by label, and read back each handle's
 `publish_status`; both must be `final`, not `temp`. Then look both up on a
