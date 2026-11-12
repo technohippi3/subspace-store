@@ -196,6 +196,37 @@ class RecoveryBackendCases(unittest.TestCase):
         with self.assertRaisesRegex(NotConfirmed, "offline recovery cannot prepare, sign or send"):
             runner.issue("b1", 1, "b1")
 
+    def test_bounded_large_pages_preserve_all_entries_and_refuse_excess_count_and_bytes(self):
+        from controller.recovery_backend import JOURNAL_PAGE_ENTRIES, JOURNAL_PAGE_BYTES
+        rows = [json.dumps({"seq": i + 1, "kind": "fixture"}).encode()
+                for i in range(JOURNAL_PAGE_ENTRIES + 1)]
+        self.backend.streams["controller"] = rows
+        self.backend.operations.clear()
+        self.assertEqual(len(RemoteJournal(self.backend).entries()), len(rows))
+        reads = [r for r in self.backend.operations if r.get("op") == "journal-read" and r.get("stream") == "controller"]
+        self.assertEqual([r["after"] for r in reads], [0, JOURNAL_PAGE_ENTRIES])
+        self.assertTrue(all(r["limit"] == JOURNAL_PAGE_ENTRIES for r in reads))
+        original = self.backend.request
+        def excess(request):
+            value = original(dict(request, limit=len(rows)))
+            return value
+        with patch.object(self.backend, "request", side_effect=excess):
+            with self.assertRaises(JournalDown):
+                RemoteJournal(self.backend).entries()
+        self.backend.streams["controller"] = [json.dumps({"seq": 1, "kind": "fixture", "value": "x" * JOURNAL_PAGE_BYTES}).encode()]
+        with self.assertRaises(JournalDown):
+            RemoteJournal(self.backend).entries()
+        self.backend.streams["store"] = rows
+        db = sqlite3.connect(":memory:")
+        self.addCleanup(db.close)
+        db.executescript("create table store_meta(id integer, version integer); insert into store_meta values(1,1);"
+                        "create table outbox(seq integer,payload text,acknowledged integer)")
+        db.executemany("insert into outbox values(?,?,1)", [(i + 1, raw.decode()) for i, raw in enumerate(rows)])
+        self.assertEqual(acknowledged_store_position(db, self.backend), len(rows))
+        with patch.object(self.backend, "request", side_effect=excess):
+            with self.assertRaises(JournalDown):
+                acknowledged_store_position(db, self.backend)
+
     def test_config_is_explicit_lazy_and_has_no_local_fallback(self):
         cfg = host_config(self.root, version=2, store__implementation="typescript",
             controller__snapshot_dir=str(self.root / "explicit-staging"))

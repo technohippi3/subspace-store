@@ -31,6 +31,11 @@ sequence, codec hash chain and store identity. The controller journal validates
 its full decrypted sequence and raw hashes. Replay is bounded to one million
 entries and 512 MiB; a head change during full replay refuses. Previously read
 entries are bookkeeping for append retries, never an authorization cache.
+A page contains at most 8192 entries and 16 MiB of decoded records; byte
+limits can return an earlier nonempty page. This batches transport without
+caching or reducing full-prefix proof. The complete native profile pins the
+matching client and helper. An older helper with a smaller request limit
+refuses; no compatibility error selects a local fallback.
 Read, head and immutable retry acknowledgments require durable remote
 publication before the client returns. An unavailable remote refuses startup,
 quotes and normal or refund sends through the existing live journal guards.

@@ -1,0 +1,261 @@
+{
+  "run": "payment-outage-2026-11-12T15-34-06-632Z-8a06c3a1",
+  "fixtureSha256": "ff127f23e31cdce58b06354fd5394ba0eebb59fed128b106f51bc5f2fbe0d973",
+  "node": "v24.14.0",
+  "indexEvidence": {
+    "synced": true,
+    "best_block_height": 117
+  },
+  "base": "ed21b3509a333838d8d655fa11c3dff65427652a",
+  "network": "isolated regtest",
+  "core": "31.2.0",
+  "sourceFiles": 1590,
+  "binarySha256": "61d4cdbbc831d5349734c12e749fa435dc818792ff58663a7c1ffbd4695f05bd",
+  "semanticClock": {
+    "base": 1794507646,
+    "final": 1794515046,
+    "coreMocktime": true,
+    "elapsedWalltimeClaim": false
+  },
+  "walletbroadcast": false,
+  "mempoolExpiryHours": 1,
+  "snapshotAttempts": 24,
+  "snapshotSuccesses": 24,
+  "allocations": 6,
+  "checks": [
+    "saved mempool preserves Core entry time and reconstructs entry height at reload",
+    "unobserved on-time Core mempool receipt does not invent an on-time application hold extension",
+    "confirmed downtime receipt attributes once through the existing late-acquisition rule while globally paused",
+    "RBF replacement retains first durable application observation and credits only the active outpoint",
+    "actual Core mocktime expiry evicts old unconfirmed transactions after a fresh fixture submission",
+    "evicted and never-observed histories remain unknown; previously detected history stays detected without duplicate prompts",
+    "missing saved mempool plus walletbroadcast=0 does not silently rebroadcast wallet transactions",
+    "missing application credentials refuse actual runtime startup before observations, persistence or listeners",
+    "actual checkout HTML hides the payment prompt for an unknown never-observed invoice",
+    "independent fixture recovery credential restoration permits read-only discovery, preserves pause/quarantine and cannot allocate or send",
+    "journal-only recovery prevents reopening the older serving database before controller reconciliation",
+    "all application startup/observe/recovery phases use no wallet mutation or broadcast RPC",
+    "actual Core txindex is synced at the final chain tip",
+    "all 1590 frozen source files and pinned Core binary remain unchanged"
+  ],
+  "groups": {
+    "surviving": {
+      "original": {
+        "time": 1794507746,
+        "height": 107
+      },
+      "reloaded": {
+        "time": 1794507746,
+        "height": 112
+      },
+      "semanticQuote": 1794507646,
+      "semanticRestart": 1794508547,
+      "originalExpiry": 1794508546,
+      "status": "unpaid",
+      "detectedSats": 1000,
+      "firstApplicationSeenHeight": null,
+      "paymentRequestOpen": false
+    },
+    "confirmed": {
+      "original": {
+        "time": 1794507746,
+        "height": 107
+      },
+      "block": {
+        "height": 108,
+        "time": 1794507846
+      },
+      "semanticRestart": 1794508547,
+      "status": "converted",
+      "confirmations": 5,
+      "batchableSats": 1000,
+      "originalGrant": {
+        "at": 1794507646,
+        "until": 1794508546,
+        "seenHeight": null,
+        "acquiredHeight": null,
+        "released": true,
+        "converted": false
+      },
+      "lateAcquisitionGrant": {
+        "at": 1794508547,
+        "until": 1794509447,
+        "seenHeight": null,
+        "acquiredHeight": 112,
+        "released": false,
+        "converted": true
+      }
+    },
+    "replaced": {
+      "original": {
+        "time": 1794507746,
+        "height": 107
+      },
+      "replacement": {
+        "time": 1794507846,
+        "height": 107
+      },
+      "reloadedReplacement": {
+        "time": 1794507846,
+        "height": 112
+      },
+      "status": "quoted",
+      "detectedSats": 1000,
+      "activePayments": 1,
+      "retainedPayments": 2,
+      "grant": {
+        "at": 1794507646,
+        "until": 1794508546,
+        "seenHeight": 107,
+        "acquiredHeight": null,
+        "released": false,
+        "converted": false
+      }
+    },
+    "missing": {
+      "previouslyObservedEntry": {
+        "time": 1794507746,
+        "height": 107
+      },
+      "neverObservedEntry": {
+        "time": 1794507846,
+        "height": 107
+      },
+      "evictedTxid": "0e86ce0bdb58ab257a568ca5da284eca37cce99e9195a6080d35524aede3592e",
+      "previouslyObservedTxid": "b3f5a23dac287b0f4f1595e28477da949ee9c442932072a14f926b972bbe0485",
+      "triggerTxid": "c14adabb2f89087656d51527ff08d3b5fed66358870024ce89b0dfa04eea91e9",
+      "semanticRestart": 1794514847,
+      "views": [
+        {
+          "status": "unpaid",
+          "paymentHistory": "detected",
+          "detectedSats": 0,
+          "paymentRequestOpen": false,
+          "addressHidden": false
+        },
+        {
+          "status": "unpaid",
+          "paymentHistory": "unknown",
+          "detectedSats": 0,
+          "paymentRequestOpen": false,
+          "addressHidden": true
+        },
+        {
+          "status": "unpaid",
+          "paymentHistory": "unknown",
+          "detectedSats": 0,
+          "paymentRequestOpen": false,
+          "addressHidden": true
+        }
+      ],
+      "grants": [
+        [
+          {
+            "at": 1794507646,
+            "until": 1794508546,
+            "seenHeight": 107,
+            "acquiredHeight": null,
+            "released": true,
+            "converted": false
+          }
+        ],
+        [
+          {
+            "at": 1794507646,
+            "until": 1794508546,
+            "seenHeight": null,
+            "acquiredHeight": null,
+            "released": true,
+            "converted": false
+          }
+        ],
+        [
+          {
+            "at": 1794507646,
+            "until": 1794508546,
+            "seenHeight": null,
+            "acquiredHeight": null,
+            "released": true,
+            "converted": false
+          }
+        ]
+      ]
+    },
+    "credentials": {
+      "runtimeRpcCallsBeforeRefusal": 0,
+      "restoredUnknownInvoices": 1,
+      "ready": false,
+      "paused": true,
+      "deniedAllocationCalls": 0
+    }
+  },
+  "rpcMethodsByPhase": {
+    "fixture": [
+      "bumpfee",
+      "createwallet",
+      "generateblock",
+      "generatetoaddress",
+      "getaddressinfo",
+      "getbalances",
+      "getblockchaininfo",
+      "getblockhash",
+      "getblockheader",
+      "getindexinfo",
+      "getmempoolentry",
+      "getmempoolinfo",
+      "getnetworkinfo",
+      "getnewaddress",
+      "getrawmempool",
+      "gettransaction",
+      "getwalletinfo",
+      "listdescriptors",
+      "listsinceblock",
+      "listwallets",
+      "loadwallet",
+      "savemempool",
+      "sendmany",
+      "sendrawtransaction",
+      "sendtoaddress",
+      "setmocktime",
+      "stop"
+    ],
+    "observation-before-outage": [
+      "getaddressinfo",
+      "getblockchaininfo",
+      "getblockhash",
+      "getmempoolentry",
+      "getmempoolinfo",
+      "getnetworkinfo",
+      "gettransaction",
+      "getwalletinfo",
+      "listdescriptors",
+      "listsinceblock"
+    ],
+    "startup": [
+      "getaddressinfo",
+      "getblockchaininfo",
+      "getblockhash",
+      "getblockheader",
+      "getmempoolentry",
+      "getmempoolinfo",
+      "getnetworkinfo",
+      "gettransaction",
+      "getwalletinfo",
+      "listdescriptors",
+      "listsinceblock"
+    ],
+    "recovery": [
+      "getaddressinfo",
+      "getblockchaininfo",
+      "getblockhash",
+      "getblockheader",
+      "getmempoolentry",
+      "getmempoolinfo",
+      "getnetworkinfo",
+      "gettransaction",
+      "getwalletinfo",
+      "listdescriptors",
+      "listsinceblock"
+    ]
+  }
+}

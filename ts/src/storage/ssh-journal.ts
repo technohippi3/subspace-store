@@ -1,3 +1,6 @@
+/** Bounded count; byte limits may yield an earlier nonempty page. */
+export const JOURNAL_PAGE_ENTRIES = 8192;
+export const JOURNAL_PAGE_BYTES = 16 * 1024 * 1024;
 export interface RecoveryBackendReference { readonly version:1; readonly node:string; readonly client:string; readonly config:string }
 export function backendReference(value:unknown):RecoveryBackendReference {
   const invalid=()=>{throw Error("invalid recovery backend reference");};
@@ -42,12 +45,14 @@ export class SshJournal implements Journal {
   read(): readonly Entry[] {
     const entries: Entry[] = []; let after = 0, bytes = 0, head:number|undefined;
     while (true) {
-      const page = this.command.request<{ entries: { sequence: number; sha256: string; data: string }[]; head: number }>({ op: 'journal-read', stream: 'store', after, limit: 1024 });
-      if (!Array.isArray(page.entries) || page.entries.length>1024 || !Number.isSafeInteger(page.head) || page.head < after || page.head > 1_000_000 || head!==undefined&&page.head!==head) throw Error('journal prefix invalid');
+      const page = this.command.request<{ entries: { sequence: number; sha256: string; data: string }[]; head: number }>({ op: 'journal-read', stream: 'store', after, limit: JOURNAL_PAGE_ENTRIES });
+      if (!Array.isArray(page.entries) || page.entries.length>JOURNAL_PAGE_ENTRIES || !Number.isSafeInteger(page.head) || page.head < after || page.head > 1_000_000 || head!==undefined&&page.head!==head) throw Error('journal prefix invalid');
       head=page.head;
+      let pageBytes = 0;
       for (const item of page.entries) {
-        const raw = Buffer.from(item.data, 'base64'); bytes += raw.length;
-        if (raw.toString('base64')!==item.data || bytes > 512 * 1024 * 1024 || entries.length >= 1_000_000 || item.sequence !== after + 1 ||
+        if (typeof item.data !== "string") throw Error("journal record invalid");
+        const raw = Buffer.from(item.data, 'base64'); bytes += raw.length; pageBytes += raw.length;
+        if (raw.toString('base64')!==item.data || pageBytes > JOURNAL_PAGE_BYTES || bytes > 512 * 1024 * 1024 || entries.length >= 1_000_000 || item.sequence !== after + 1 ||
           typeof item.sha256 !== 'string' || createHash('sha256').update(raw).digest('hex') !== item.sha256) throw Error('journal replay bounds or digest invalid');
         const entry = decode(raw.toString()); const previous = entries.at(-1);
         if (entry.seq !== after + 1 || entry.previous !== (previous?.hash ?? null) || previous && entry.store !== previous.store) throw Error('journal lineage invalid');

@@ -11,7 +11,8 @@ import {startRuntime} from "../../src/runtime/server.ts";
 import {recoveryCommand} from "../../src/runtime/recovery.ts";
 import {controllerRecovery} from "../../src/runtime/reconciliation.ts";
 import {confirmControllerReceipt} from "../../src/runtime/remote-controller-proof.ts";
-import {RecoveryCommand,SshJournal,backendReference,sameBackend} from "../../src/storage/ssh-journal.ts";
+import {RecoveryCommand,SshJournal,backendReference,sameBackend,JOURNAL_PAGE_ENTRIES,JOURNAL_PAGE_BYTES} from "../../src/storage/ssh-journal.ts";
+import {entry,type Entry} from "../../src/storage/codec.ts";
 import {FileJournal} from "../../src/storage/journal.ts";
 import {GENESIS,descriptorFingerprint} from "../../src/bitcoin/identity.ts";
 import {proofHash} from "../../src/application/reconciliation-records.ts";
@@ -86,4 +87,30 @@ test("O159: legacy version 1 keeps its original local journal protocol and canno
  assert.throws(()=>configuration({...f.config,recoveryBackend:reference(f.root)}));
  assert.deepEqual(new FileJournal(f.config.journalDirectory).read().slice(0,history.length),history);
  assert(!f.calls.some(c=>/send|sign|newaddress/.test(c.method)));
+});
+
+
+test("remote journal larger pages preserve complete lineage and support earlier byte-bounded pagination",(t)=>{
+ const rows:Entry[]=[];
+ for(let i=0;i<JOURNAL_PAGE_ENTRIES+1;i++)rows.push(entry("00000000-0000-4000-8000-000000000001",i+1,rows.at(-1)?.hash??null,[{kind:"fixture",key:String(i),value:i}]));
+ for(const pageSize of [JOURNAL_PAGE_ENTRIES,5000]){
+  const positions:number[]=[];
+  const command=new ControlledCommand(r=>{t.assert.equal(r.limit,JOURNAL_PAGE_ENTRIES);const after=Number(r.after);positions.push(after);return{head:rows.length,entries:rows.slice(after,after+pageSize).map((e,i)=>item(Buffer.from(JSON.stringify(e)),after+i+1))};});
+  t.assert.deepEqual(new SshJournal(command).read(),rows);t.assert.deepEqual(positions,[0,pageSize]);
+ }
+ const statement={fixture:"final full prefix"},hash=proofHash(statement);
+ const controllerRows=rows.map((_,i)=>item(Buffer.from(JSON.stringify(i===rows.length-1?{seq:i+1,kind:"store_reconciliation",statement,proofHash:hash}:{seq:i+1,kind:"fixture"})),i+1));
+ const positions:number[]=[];
+ const command=new ControlledCommand(r=>{if(r.op==="journal-head")return{sequence:rows.length,sha256:controllerRows.at(-1)!.sha256};t.assert.equal(r.limit,JOURNAL_PAGE_ENTRIES);const after=Number(r.after);positions.push(after);return{head:rows.length,entries:controllerRows.slice(after,after+JOURNAL_PAGE_ENTRIES)};});
+ confirmControllerReceipt(command,{position:rows.length,proofHash:hash},proofHash);t.assert.deepEqual(positions,[0,JOURNAL_PAGE_ENTRIES]);
+ const tooMany=new ControlledCommand(()=>({head:rows.length,entries:rows.map((e,i)=>item(Buffer.from(JSON.stringify(e)),i+1))}));
+ t.assert.throws(()=>new SshJournal(tooMany).read(),/prefix/);
+ t.assert.throws(()=>confirmControllerReceipt(tooMany,{position:rows.length,proofHash:hash},proofHash),/proof/);
+});
+
+test("remote journal decoded-page bounds reject an oversized valid record before accepting its prefix",(t)=>{
+ const value=entry("00000000-0000-4000-8000-000000000001",1,null,[{kind:"fixture",key:"large",value:"x".repeat(JOURNAL_PAGE_BYTES)}]);
+ const raw=Buffer.from(JSON.stringify(value)),command=new ControlledCommand(()=>({head:1,entries:[item(raw,1)]}));
+ t.assert.throws(()=>new SshJournal(command).read(),/bounds/);
+ t.assert.throws(()=>confirmControllerReceipt(command,{position:1,proofHash:"0".repeat(64)},proofHash),/proof/);
 });

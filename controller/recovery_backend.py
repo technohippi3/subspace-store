@@ -16,6 +16,10 @@ except ImportError:
         pass
 
 
+JOURNAL_PAGE_ENTRIES = 8192
+JOURNAL_PAGE_BYTES = 16 * 1024 * 1024
+
+
 class RecoveryBackend:
     def __init__(self, config, client, node):
         self.command = [str(node), str(client), "--config", str(config)]
@@ -108,15 +112,17 @@ class RemoteJournal:
     def entries(self):
         result, after, size, head = [], 0, 0, None
         while True:
-            page = self.backend.request({"op": "journal-read", "stream": self.stream, "after": after, "limit": 1024})
+            page = self.backend.request({"op": "journal-read", "stream": self.stream, "after": after, "limit": JOURNAL_PAGE_ENTRIES})
             current = page.get("head")
-            if type(current) is not int or not 0 <= current <= 1_000_000 or head is not None and current != head or not isinstance(page.get("entries"), list) or len(page["entries"]) > 1024:
+            if type(current) is not int or not 0 <= current <= 1_000_000 or head is not None and current != head or not isinstance(page.get("entries"), list) or len(page["entries"]) > JOURNAL_PAGE_ENTRIES:
                 raise JournalDown("journal prefix changed or exceeds replay bounds")
             head = current
+            page_size = 0
             for item in page["entries"]:
                 raw = base64.b64decode(item["data"], validate=True)
                 size += len(raw)
-                if size > 512 * 1024 * 1024 or len(result) >= 1_000_000 or item["sequence"] != after + 1 or hashlib.sha256(raw).hexdigest() != item["sha256"]:
+                page_size += len(raw)
+                if page_size > JOURNAL_PAGE_BYTES or size > 512 * 1024 * 1024 or len(result) >= 1_000_000 or item["sequence"] != after + 1 or hashlib.sha256(raw).hexdigest() != item["sha256"]:
                     raise JournalDown("journal replay bounds or digest mismatch")
                 value = json.loads(raw)
                 if value.get("seq") != item["sequence"]:
@@ -184,15 +190,17 @@ def acknowledged_store_position(connection, backend, *, exact_head=True, positio
         raise JournalDown("store journal acknowledgments are not a complete prefix")
     after, size, head = 0, 0, None
     while True:
-        page = backend.request({"op": "journal-read", "stream": "store", "after": after, "limit": 1024})
+        page = backend.request({"op": "journal-read", "stream": "store", "after": after, "limit": JOURNAL_PAGE_ENTRIES})
         current = page.get("head")
-        if type(current) is not int or current < len(expected) or exact_head and current != len(expected) or head is not None and current < head:
+        if type(current) is not int or not len(expected) <= current <= 1_000_000 or not isinstance(page.get("entries"), list) or len(page["entries"]) > JOURNAL_PAGE_ENTRIES or exact_head and current != len(expected) or head is not None and current < head:
             raise JournalDown("store remote journal prefix differs from database")
         head = current
+        page_size = 0
         for item in page["entries"]:
             raw = base64.b64decode(item["data"], validate=True)
             size += len(raw)
-            if size > 512 * 1024 * 1024 or item["sequence"] != after + 1 or hashlib.sha256(raw).hexdigest() != item["sha256"]:
+            page_size += len(raw)
+            if page_size > JOURNAL_PAGE_BYTES or size > 512 * 1024 * 1024 or item["sequence"] != after + 1 or hashlib.sha256(raw).hexdigest() != item["sha256"]:
                 raise JournalDown("store remote journal bytes differ from acknowledged database")
             if after < len(expected) and raw != expected[after][1].encode():
                 raise JournalDown("store remote journal bytes differ from acknowledged database")
