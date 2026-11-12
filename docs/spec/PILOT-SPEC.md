@@ -214,3 +214,38 @@ the valid current-recipient part of V17 still audit current conflicts,
 retain their orders, alert once and refuse unsafe entry or payment
 instructions. Any future historical import needs a separate specification
 and atomic interruption qualification, as C12 already requires.
+
+
+## Strict TypeScript recovery applicability
+
+The H, S and J11–J12 recovery cases exercise the shipped strict application
+format through real SQLite/journal replay and paused controller completion.
+The Python baseline and its historical SQL formats remain unchanged. A fresh
+TypeScript store always contains mandatory global records, so S6 means no
+listings or orders rather than a single physical settings row. H3 refuses a
+missing or uninitialized database over a live journal; a recognized older
+snapshot with valid store identity catches up instead of discarding history.
+
+H2 has the stronger durable preparation boundary: an unacknowledged refund
+reservation cannot reach signing. Host loss drops that unacknowledged group,
+undoes an unconfirmed cancellation and rediscovers chain payments. H1 compares
+its exact signed initial attempt in the group plus send history; H7 additionally
+generates nonempty replacement-attempt history and checks an independent
+financial and sales oracle through journal-only restores.
+
+H5 refuses malformed current records before publication, cleans only its own
+new disposable staging inode and preserves preexisting ambiguous recovery
+material. Valid interrupted same-journal replay resumes. Existing targets,
+including dangling symlinks and sidecars, are never overwritten; foreign stage
+and WAL/SHM bytes and permissions remain unchanged. `APPLICATION-RESTORE.md`
+defines the provenance and inspection boundary. Unsupported or corrupt old
+Python SQL is not imported or silently upgraded.
+
+H9 and J11 preserve every acknowledged destination and its order attribution.
+The supported journal-only restore follows C12: an invoice without durable
+payment detection becomes unknown and never asks the buyer to pay again.
+Preserving its destination is not permission to repeat payment instructions.
+An unacknowledged invoice disappears back to its acknowledged requested state;
+a request that never reached the journal disappears entirely. H10 and J12 keep
+final cancellation only after acknowledgment. Every completed restore stays
+paused until explicit operator action, independently of any old pause setting.

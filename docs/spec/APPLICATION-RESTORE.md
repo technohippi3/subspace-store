@@ -14,8 +14,9 @@ histories, preserving the global pause.
 Stop and fence the old store before restoring. Restore into a fresh local
 database path with the original off-host journal and the recorded financial
 configuration. This is recovery of an installation's history, not a way to
-start another seller with the same wallet or journal. The current commands
-accept only the existing strict regtest runtime configuration.
+start another seller with the same wallet or journal. `NETWORK-READINESS.md` binds the explicit network, payment-wallet identity and
+installation maintenance fence for these commands. Version 1 remains regtest
+only; version 2 accepts its explicitly configured supported network.
 
 ```text
 node ts/src/main.ts restore <config.json>
@@ -26,11 +27,32 @@ node ts/src/main.ts recover <config.json>
 It refuses an existing target or database sidecar, an empty/malformed
 journal, unknown records/fields, invalid relationships and mismatched
 financial configuration. Complete replay and application validation happen
-in the working database before atomic publication. An invalid working file
-is retained as evidence, but never becomes the target. The source database,
+in the working database before atomic publication. A deterministic failure
+removes only a newly created staging inode that this invocation still owns,
+after SQLite closes and no ambiguous sidecars remain. An existing or ambiguous
+working file remains evidence and never becomes the target. The source database,
 wallets and certificate cache are not inputs. Sequence, store identity,
 order-link hashes, addresses, refunds, signed bytes, arms, closures,
 commitments, supersession proofs and first fulfillment remain in history.
+
+The target and all target sidecars must be absent, including dangling symlinks.
+A preexisting `.restoring` path and every sidecar must be regular single-link
+files owned by root or the effective user and must not allow group/other writes.
+Open source descriptors with no-follow and nonblocking flags. Prove the strict
+schema, restore marker, store UUID and exact outbox/journal prefix from a private
+copy of the source database and WAL/journal. SQLite opens only that inspection
+copy until provenance is established, so even a foreign WAL/SHM stays unchanged.
+Recheck source inode, device, mode, size and timestamps after inspection, and
+inode/device again when opening the proved stage for replay. Restoration still
+requires a protected parent directory and fencing all prior writers; it is not
+an isolation boundary against another process with the same filesystem rights.
+
+A valid same-journal stage interrupted during replay or before publication can
+resume. A symlink, foreign store, unsupported schema, corrupt stage or orphan
+sidecar refuses without cleanup or replacement of that preexisting evidence.
+An interruption before a stage has enough provenance to establish ownership
+therefore requires inspection. It cannot be mistaken for a serving target.
+The command creates no migration or automatic arbitrary-file repair path.
 
 After publication, one ordinary changed-record transaction records recovery
 quarantine, the global sales pause and an empty pending selection. It
@@ -139,3 +161,19 @@ buyer-client recovery or authorization to deploy or sell.
 | O85 | ordinary/missing database, journal outage or incoherent/unavailable Core | recover | refuse current readiness and preserve quarantine/evidence |
 | O86 | normalization append unavailable after publication | restore and later recover | exit pending with unacknowledged receipt; subsequent command acknowledges the same transition without sending |
 | O87 | older coherent database or stale live writer | encounter journaled quarantine or newer/conflicting head | old startup refuses; clearing a local bit is insufficient; live permissions and new address allocation withhold |
+
+
+## Generated recovery comparison
+
+H7 executes the independent `ts/model/recovery-generated.ts` oracle using the
+separately written Seller, RefundFamilies, refundPlan and Deficits models.
+Three seeded sequences compare 102 operations and 15 journal-only host losses,
+including six refund groups, three signed replacement attempts, three owner
+authorizations, twelve generated deficit alerts and three cancelled operations
+that were never acknowledged. Names, orders, holds, prices, recipient bindings,
+payment destinations/history, buyer cancellation finality, refund family
+balances, signed bytes, fee splits, sends, authorizations and alerts are checked.
+Every restore also compares complete retained financial and authorization
+records before and after replay. The oracle imports no production reducers.
+These are model twins with recording adapters and real SQLite/journals, not
+Bitcoin or Spaces recovery acceptance.

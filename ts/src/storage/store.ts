@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
-import { chmodSync, closeSync, existsSync, fsyncSync, linkSync, openSync, unlinkSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { chmodSync, closeSync, existsSync, fsyncSync, linkSync, openSync, unlinkSync, lstatSync, fstatSync, constants, copyFileSync, mkdtempSync, rmSync, type Stats } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, resolve, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Data, Effect } from "effect";
 import { decode, entry, validateChanges, type Change, type Entry, type Json } from "./codec.ts";
@@ -30,6 +31,65 @@ export interface StorageConfig {
 export interface Receipt { readonly seq: number; readonly acknowledged: boolean }
 export interface RecordValue { readonly value: Json; readonly seq: number; readonly acknowledged: boolean }
 interface Saved { seq: number; payload: string; acknowledged: number }
+
+/** Validate exact outbox/journal lineage before any projection write. */
+function historyPrefix(local: Saved[], history: readonly Entry[], identity: string, restoring: boolean): Entry[] {
+  if (restoring && local.length > history.length) throw Error("restore working file exceeds journal history");
+  const decoded = local.map(row => decode(row.payload));
+  let previous: Entry | undefined;
+  let pending = false;
+  for (let i = 0; i < Math.max(local.length, history.length); i++) {
+    const row = local[i], remote = history[i], saved = decoded[i];
+    const value = saved ?? remote;
+    if (!value || value.seq !== i + 1 || value.store !== identity ||
+        value.previous !== (previous?.hash ?? null) || (row && row.seq !== value.seq))
+      throw Error("database/journal sequence or identity mismatch");
+    if (row && row.acknowledged !== 0 && row.acknowledged !== 1) throw Error("invalid acknowledgment marker");
+    if (row?.acknowledged === 0) pending = true;
+    else if (row && pending) throw Error("database acknowledgments are not a prefix");
+    if (saved && remote && saved.hash !== remote.hash) throw Error("database and journal disagree");
+    if (!remote && row?.acknowledged === 1) throw Error("acknowledged history is missing from journal");
+    previous = value;
+  }
+  return decoded;
+}
+function stageIdentity(path: string, history: readonly Entry[]): Stats {
+  // SQLite may recover WAL/SHM even while inspecting. Prove lineage from an
+  // isolated copy, so an untrusted preexisting stage is never opened by SQLite.
+  const held = new Map<string, { fd:number; info:Stats }>();
+  let inspection: string | undefined;
+  try {
+    for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+      const named=lstatSync(path+suffix,{throwIfNoEntry:false});
+      if (!named) { if (!suffix) throw Error("restore working path disappeared"); continue; }
+      const fd=openSync(path+suffix,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+      const info=fstatSync(fd); held.set(suffix,{fd,info});
+      if (!info.isFile() || info.nlink!==1 || (info.mode&0o022)!==0 || ![0,process.geteuid!()].includes(info.uid) || named.dev!==info.dev || named.ino!==info.ino)
+        throw Error("unsafe restore working path or sidecar");
+    }
+    inspection=mkdtempSync(join(tmpdir(),"subspace-restore-inspection-"));
+    const copy=join(inspection,"stage.db");
+    for (const [suffix,value] of held) if (suffix!=="-shm") copyFileSync(`/proc/self/fd/${value.fd}`,copy+suffix);
+    const stage=new DatabaseSync(copy);
+    try {
+      const tables=stage.prepare("select name from sqlite_master where type='table' order by name").all().map(row=>row.name);
+      if (tables.join()!=="outbox,records,store_meta") throw Error("unrecognized restore working schema");
+      const meta=stage.prepare("select version,store,restored from store_meta where id=1").get();
+      if (!meta || meta.version!==1 || meta.restored!==1 || meta.store!==history[0]!.store) throw Error("restore working identity differs from journal");
+      historyPrefix(stage.prepare("select seq,payload,acknowledged from outbox order by seq").all() as unknown as Saved[],history,meta.store as string,true);
+    } finally { stage.close(); }
+    for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+      const named=lstatSync(path+suffix,{throwIfNoEntry:false}),original=held.get(suffix)?.info;
+      if (original ? !named || named.dev!==original.dev || named.ino!==original.ino || named.size!==original.size || named.mode!==original.mode || named.mtimeMs!==original.mtimeMs || named.ctimeMs!==original.ctimeMs : !!named)
+        throw Error("restore working path or sidecar changed");
+    }
+    return held.get("")!.info;
+  } finally {
+    for (const value of held.values()) closeSync(value.fd);
+    if (inspection) rmSync(inspection,{recursive:true});
+  }
+}
+
 const schema = `
   create table store_meta (id integer primary key check(id=1), version integer not null,
                           store text not null, restored integer not null);
@@ -57,18 +117,33 @@ export class DurableStore {
     return Effect.acquireRelease(attempt("open", () => {
       const release = ownDatabase(config.database);
       let db: DatabaseSync | undefined;
+      let createdStage: {path:string;dev:number;ino:number;fd:number} | undefined;
+      let published = false;
+      let previousStage: Stats | undefined;
       try {
         const journal = config.makeJournal?.() ?? new FileJournal(config.journalDirectory);
         const history = journal.read().map(value => decode(JSON.stringify(value)));
         const existing = existsSync(config.database);
         if (config.requireRestore && !existing) throw Error("recovery requires an existing restored database");
-        if (config.restore && ["", "-wal", "-shm", "-journal"].some(suffix => existsSync(config.database + suffix)))
+        if (config.restore && ["", "-wal", "-shm", "-journal"].some(suffix => lstatSync(config.database + suffix, { throwIfNoEntry:false }) !== undefined))
           throw Error("restore never overwrites an existing database or sidecar");
         if (!config.restore && !existing && history.length > 0) throw Error("restore required: journal already has history");
         if (config.restore && history.length === 0) throw Error("journal is empty; nothing to restore");
         const working = config.restore ? config.database + ".restoring" : config.database;
-        if (!existsSync(working)) closeSync(openSync(working, "wx", 0o600));
+        if (config.restore) {
+          const previous = lstatSync(working, { throwIfNoEntry: false });
+          if (previous) previousStage=stageIdentity(working, history);
+          else {
+            if (["-wal", "-shm", "-journal"].some(suffix => lstatSync(working + suffix, { throwIfNoEntry:false }))) throw Error("orphan restore working sidecars require inspection");
+            const fd = openSync(working, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+            try { const info=fstatSync(fd); createdStage={path:working,dev:info.dev,ino:info.ino,fd}; } catch (error) { closeSync(fd); throw error; }
+          }
+        } else if (!existsSync(working)) closeSync(openSync(working, "wx", 0o600));
         db = new DatabaseSync(working);
+        if (previousStage) {
+          const named=lstatSync(working);
+          if (!named.isFile() || named.nlink!==1 || named.dev!==previousStage.dev || named.ino!==previousStage.ino) throw Error("restore working path changed before opening");
+        }
         const tables = db.prepare("select name from sqlite_master where type='table'").all();
         if (!tables.some(row => row.name === "store_meta")) {
           if (history.length > 0 && !config.restore) throw Error("restore required: database has no store metadata");
@@ -99,6 +174,7 @@ export class DurableStore {
           db.exec("pragma wal_checkpoint(truncate); pragma journal_mode=delete;");
           db.close();
           linkSync(working, config.database); // Atomic and never overwrites.
+          published = true;
           const directory = openSync(dirname(resolve(config.database)), "r");
           try { fsyncSync(directory); } finally { closeSync(directory); }
           unlinkSync(working);
@@ -108,8 +184,24 @@ export class DurableStore {
         }
         return store;
       } catch (error) {
-        try { if (db?.isOpen) db.close(); } finally { release(); }
+        try { if (db?.isOpen) db.close(); } finally {
+          try {
+            if (createdStage && !published) {
+              const named=lstatSync(createdStage.path,{throwIfNoEntry:false});
+              const sidecars=["-wal","-shm","-journal"].some(suffix=>lstatSync(createdStage!.path+suffix,{throwIfNoEntry:false}));
+              // Only our newly-created, unchanged inode is disposable. A crash,
+              // foreign file or ambiguous sidecar remains evidence for inspection.
+              if (named?.dev===createdStage.dev && named.ino===createdStage.ino && named.nlink===1 && !sidecars) {
+                unlinkSync(createdStage.path);
+                const directory=openSync(dirname(resolve(createdStage.path)),"r");
+                try { fsyncSync(directory); } finally { closeSync(directory); }
+              }
+            }
+          } finally { release(); }
+        }
         throw error;
+      } finally {
+        if (createdStage) closeSync(createdStage.fd);
       }
     }), store => Effect.sync(() => store.close()));
   }
@@ -127,24 +219,7 @@ export class DurableStore {
     for (const change of value.changes) statement.run(change.kind, change.key, JSON.stringify(change.value), value.seq);
   }
   private reconcile(history: readonly Entry[], restoring: boolean): void {
-    const local = this.saved();
-    if (restoring && local.length > history.length) throw Error("restore working file exceeds journal history");
-    const decoded = local.map(row => decode(row.payload));
-    let previous: Entry | undefined;
-    let pending = false;
-    for (let i = 0; i < Math.max(local.length, history.length); i++) {
-      const row = local[i], remote = history[i], saved = decoded[i];
-      const value = saved ?? remote;
-      if (!value || value.seq !== i + 1 || value.store !== this.identity ||
-          value.previous !== (previous?.hash ?? null) || (row && row.seq !== value.seq))
-        throw Error("database/journal sequence or identity mismatch");
-      if (row && row.acknowledged !== 0 && row.acknowledged !== 1) throw Error("invalid acknowledgment marker");
-      if (row?.acknowledged === 0) pending = true;
-      else if (row && pending) throw Error("database acknowledgments are not a prefix");
-      if (saved && remote && saved.hash !== remote.hash) throw Error("database and journal disagree");
-      if (!remote && row?.acknowledged === 1) throw Error("acknowledged history is missing from journal");
-      previous = value;
-    }
+    const local = this.saved(), decoded = historyPrefix(local, history, this.identity, restoring);
     // Replay into the projection atomically, including a journal ahead of a
     // coordinated SQLite snapshot. Retain pending local records for retry.
     this.db.exec("begin immediate");

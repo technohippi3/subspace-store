@@ -2576,3 +2576,43 @@ ownership and raw-entrypoint/latch refusal. These checks establish neither a
 complete installer nor a completed pilot production gate; 75 production cases
 remain absent at this increment, and complete package and buyer acceptance
 qualification remains separate.
+
+
+## Complete production case discovery and restore provenance, 2026-11-12
+
+The strict TypeScript recovery increment now executes all remaining H/S/J
+cases with real SQLite, journal-only restore, paused controller reconciliation
+and recording adapters. H7 runs the independent Seller, RefundFamilies,
+refundPlan and Deficits oracle through three seeds, 102 operations and fifteen
+host losses. It includes six groups, three replacement attempts, three owner
+authorizations, twelve deficit alerts and three undone unacknowledged
+cancellations. This is model comparison, not native-chain recovery evidence.
+
+H5 exposed a staging provenance counterexample. Restore now refuses dangling
+targets and sidecars, symlinks, multiple links and writable or foreign stages
+before SQLite can touch them. It proves lineage through a private inspection
+copy, preserves foreign WAL/SHM bytes, removes only a newly created disposable
+staging inode and resumes valid same-journal stages after real process death.
+Ambiguous preexisting evidence remains for inspection. The strict-format
+applicability is recorded in `PILOT-SPEC.md` and `APPLICATION-RESTORE.md`.
+
+Final default checks pass 491 TypeScript tests in 57.196 seconds and 314 Python
+tests in 104.663 seconds, plus clean installation with scripts disabled, type
+checking, development coverage and whitespace checks. The pilot discovery gate
+reports 400 required production cases with no gaps. It is still discovery plus
+executed component/model suites, not the buyer or whole-host acceptance gate.
+
+Core run `core-adapter-2026-11-12T14-27-41-698Z-51fad090` passes its 82 checks
+against 71 matching source hashes in 68.913 seconds. Its safe receipt is retained
+under `regtest/runs/`. The prior attempt
+`core-adapter-2026-11-12T14-22-16-357Z-2de9c20a` failed at runtime startup while
+an incomplete overlapping module integration changed the source. No application
+database, lock or journal entries existed for that runtime; the harness had
+ignored its stderr. The foreign changes were preserved and removed, and all
+mandatory checks and Core qualification were repeated against the frozen source.
+The failed attempt is retained without a qualification claim.
+
+These checks used fresh isolated fixture wallets or recording peers. No
+production service, managed secret or mainnet wallet changed. Native Spaces
+sale/whole-host acceptance, packaged maintenance and buyer-client acceptance
+remain separately qualified work.
