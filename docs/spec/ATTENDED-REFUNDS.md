@@ -102,7 +102,9 @@ transactions. Isolated Core qualification separately drives the standalone
 process through real signing, capped buyer fees plus merchant remainder,
 explicit send, retry, settlement and restart. The full Spaces-stack harness
 also includes a buyer cancellation and attended runner refund into its
-fresh buyer wallet. `regtest/REPORT.md` records actual run results. Neither
+fresh buyer wallet. Full-stack comparisons are fixed spec assertions, not
+independent model execution. Their metadata and report fields say so.
+`regtest/REPORT.md` records actual run results. Neither
 scenario establishes buyer-client import or whole-host restore.
 
 ## Cases

@@ -2148,7 +2148,7 @@ Python store's baseline commands and payment rules are unchanged. Buyer
 cancellation uses its opaque checkout link; operator-ID cancellation and
 fee-bump/rebuild CLI commands remain separate work.
 
-Local checks pass 298 Python tests in 93.753 seconds and 285 TypeScript
+Local checks pass 298 Python tests in 96.171 seconds and 285 TypeScript
 tests, pinned installation, type checking and whitespace. Cases O61–O66
 and A44–A46 cover real HTTP/SQLite/journals and shipped runner/client
 behavior with recording wallet adapters. They exercise dropped preparation
@@ -2173,7 +2173,7 @@ Prior Core payment/refund/reorg cases still pass. Spaces and relay facts
 in this narrower Core qualification remain mocked.
 
 Full-stack run `typescript-sale-20261112T090721Z-7c2e92` passes 24 required
-checks against 78 current source hashes. It repeats the real Spaces sale
+checks against 78 source hashes before the report-label correction. It repeats the real Spaces sale
 and then buyer cancellation, insufficient-settlement refusal, explicit
 cause selection, replay-safe preparation, `refund-status`, missing-confirmation
 refusal, the exact confirmed send, restart/retry and settled receipt. The
@@ -2186,6 +2186,16 @@ run `typescript-sale-20261112T090359Z-6a7ef2` passed 23 checks before adding
 explicit refund-status inspection; both reports and certificate/relay
 evidence are retained. All four newly retained messages independently
 reverify offline with libveritas.
+
+The final evidence-label run `typescript-sale-20261112T091658Z-91951d`
+passes all 24 checks against 79 current source hashes, including the report
+renderer. Its metadata says fixed_spec, its JSON uses expected rather than
+model, and Markdown says fixed spec expects with no independent model
+executed. Earlier reports used the generic legacy model column for these
+fixed expectations; they are retained unchanged and must not be read as
+model-comparison evidence. The actual sale/refund checks and outcomes are
+unchanged. The new run's two certificate/relay messages reverify offline,
+for six newly retained messages across these three successful runs.
 
 Only fresh isolated fixture wallets were used. No existing wallet, managed
 credential, deployed service or mainnet state changed. This does not pass

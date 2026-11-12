@@ -26,13 +26,15 @@ class Report:
         disagrees fails the run."""
         if required is None:
             required = match is not None
+        fixed = self.meta.get("comparison_source") == "fixed_spec"
         rec = {"label": LABEL, "scenario": scenario, "case": case, "step": what,
-               "regtest": regtest, "model": model, "match": match, "note": note,
+               "regtest": regtest, "expected" if fixed else "model": model, "match": match, "note": note,
                "kind": "required" if required else "informational",
                "t": round(time.time(), 1)}
         self.steps.append(rec)
         mark = {True: "agrees", False: "DISAGREES", None: "-"}[match]
-        print(f"[{LABEL}] {scenario} {case or ''} {what}: {_short(regtest)} | model: {_short(model)} | {mark}",
+        comparison = "fixed spec" if fixed else "model"
+        print(f"[{LABEL}] {scenario} {case or ''} {what}: {_short(regtest)} | {comparison}: {_short(model)} | {mark}",
               flush=True)
         self.save()
         return rec
@@ -61,11 +63,13 @@ class Report:
                                         indent=1, default=str))
 
     def markdown(self):
+        fixed = self.meta.get("comparison_source") == "fixed_spec"
         lines = [f"# Regtest run report", "",
                  "Every result below is labelled \"regtest\": the pinned bitcoind, spaced and",
                  "subs on a local regtest network, driven by the harness in `regtest/`. None",
-                 "of it is model, integration, mainnet or buyer-acceptance evidence. The",
-                 "\"model\" column is what the reference model expects for the same events.",
+                 "of it is model, integration, mainnet or buyer-acceptance evidence.",
+                 ("Expectations are fixed specification assertions; no independent model executes in this run." if fixed else
+                  "The \"model\" column is what the reference model expects for the same events."),
                  ""]
         lines.append(f"Verdict: {self.verdict()} ({len(self.failures())} required steps disagree).")
         lines.append("")
@@ -77,11 +81,11 @@ class Report:
             if s["scenario"] != current:
                 current = s["scenario"]
                 lines += ["", f"## {current}", "",
-                          "| label | case | kind | step | regtest result | model expects | agree |",
+                          f"| label | case | kind | step | regtest result | {'fixed spec expects' if fixed else 'model expects'} | agree |",
                           "| --- | --- | --- | --- | --- | --- | --- |"]
             agree = {True: "yes", False: "no", None: ""}[s["match"]]
             lines.append(f"| {LABEL} | {s['case'] or ''} | {s['kind']} | {s['step']} | {_cell(s['regtest'])} "
-                         f"| {_cell(s['model'])} | {agree} |")
+                         f"| {_cell(s['expected'] if fixed else s['model'])} | {agree} |")
         if self.findings:
             lines += ["", "## Findings recorded during the run", ""]
             for f in self.findings:

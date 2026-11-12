@@ -196,8 +196,10 @@ def main(argv):
         raise RuntimeError("run through regtest/run-typescript-sale.sh")
     run = Run(argv[1])
     files = sorted([*ROOT.glob("ts/src/**/*.ts"), *ROOT.glob("controller/*.py"),
-                    *ROOT.glob("runner/*.py"), Path(__file__), Path(__file__).with_name("typescript_refund.py")])
+                    *ROOT.glob("runner/*.py"), Path(__file__), Path(__file__).with_name("typescript_refund.py"),
+                    Path(__file__).with_name("report.py")])
     run.report.meta.update({"scope": "real Spaces-stack sale and attended cancellation refund; JSON buyer, no buyer client or host-loss gate",
+                            "comparison_source": "fixed_spec",
                             "core": bitcoind_version(), "source_files": {
                                 str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}})
     try:
