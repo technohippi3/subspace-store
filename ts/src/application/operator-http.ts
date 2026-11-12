@@ -5,6 +5,7 @@ import { body } from "./http.ts";
 import { listenAuthenticated, type OperatorToken } from "./authenticated-http.ts";
 import { certificateBody } from "./certificate-http.ts";
 import { deliveryBody } from "./delivery-http.ts";
+import { catalogBody, pauseBody } from "./catalog-http.ts";
 export type { OperatorToken } from "./authenticated-http.ts";
 
 function empty(request: import("node:http").IncomingMessage) {
@@ -63,6 +64,14 @@ export function serveOperator(store: SalesStore, token: OperatorToken, port = 0)
     if (request.method === "GET" && path === "/operator/status") return { code: 200, value: yield* store.operatorStatus() };
     if (request.method === "GET" && path === "/operator/alerts") return { code: 200, value: { alerts: (yield* store.operatorStatus()).alerts } };
     if (request.method === "POST") {
+      if (path === "/operator/listings") {
+        const input = yield* catalogBody(request), result = yield* store.listName(input.handle, input.price_sats);
+        return { code: result.acknowledged ? 200 : 503, value: result };
+      }
+      if (path === "/operator/pause") {
+        const result = yield* store.pause(yield* pauseBody(request));
+        return { code: result.acknowledged ? 200 : 503, value: result };
+      }
       if (path === "/operator/deliveries/lookup") return { code: 200, value: yield* store.registry.deliveries.status(yield* deliveryBody(request, "lookup")) };
       if (path === "/operator/fulfillments") return { code: 200, value: yield* store.registry.deliveries.fulfill(yield* deliveryBody(request, "fulfill")) };
       if (path === "/operator/incidents/resolve") return { code: 200, value: yield* store.registry.deliveries.resolve(yield* deliveryBody(request, "resolve")) };

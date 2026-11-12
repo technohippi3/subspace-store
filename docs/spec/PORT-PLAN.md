@@ -71,8 +71,12 @@ Known-unsent release/rebuild and one-use broadcast permission now have
 separate qualification (`ENTRY-RELEASE.md`). Commitment observations now track
 finality and reorgs (`COMMITMENT-TRACKING.md`). Bound certificate readiness
 and buyer download follow in `CERTIFICATES.md`. Bound delivery callbacks and
-sticky fulfilled recovery incidents follow in `FULFILLMENT.md`. Complete
-Spaces-stack sale, supersession and application recovery remain. The release gate stays blocked; neither component
+sticky fulfilled recovery incidents follow in `FULFILLMENT.md`. The standalone
+regtest process, sequential observation, injected credentials and live runner
+network status follow in `RUNTIME.md`. One JSON-API sale through real Spaces,
+subs, libveritas and the local relay now passes with store crashes/restarts.
+Browser checkout, remaining sale/refund scenarios, supersession and
+application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 
 ## Work order and gates

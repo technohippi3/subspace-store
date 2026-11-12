@@ -12,13 +12,19 @@ deployment, so they name regtest. Every path is a placeholder.
   `python3 -m runner <config> <command>`. Its keys are described in
   `controller/host.py`. `tests/test_controller_host.py` checks that it has
   every key the runner reads.
+- `typescript-regtest.example.json` configures the standalone TypeScript
+  regtest process, `node ts/src/main.ts <config>`. Its three listeners and
+  explicit paths/policy follow `docs/spec/RUNTIME.md`. It starts paused and
+  requires existing wallets, a dedicated journal directory and injected
+  private role-token files. It does not install or deploy anything.
 - `systemd/subspace-store.service` and `systemd/subs.service` are example
   systemd user units for the store service and for `subs`. `bitcoind` and
   `spaced` run under their own documentation.
 
 None of them holds a credential. Bitcoin Core and `spaced` authenticate by
-the cookie files they write at start-up, and the store's tokens are files
-it creates with mode 0600 on its first start. The configurations name
+the cookie files they write at start-up. The Python store creates token
+files with mode 0600 on first start; the TypeScript runtime requires
+injected files and never generates or caches them. The configurations name
 those files and never contain their contents.
 
 The runner protocol is explicit. The Python owner-only baseline defaults
@@ -29,7 +35,8 @@ issuing marks. `docs/spec/ENTRY-RECOVERY.md` defines its bound-entry
 protocol, extended by `docs/spec/ENTRY-RELEASE.md` with permanent closure
 and one-use broadcast permission. Server and controller must update together;
 older pre-release receipt shapes fail closed. Known-unsent release is
-resumable, but delivery and whole-host recovery remain incomplete. These
+resumable. Bound delivery now has a real local-stack sale; whole-host
+TypeScript recovery remains incomplete. These
 examples do not make it deployable for sales.
 
 `docs/spec/COMMITMENT-TRACKING.md` adds revisioned observations tied to

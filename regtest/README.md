@@ -46,6 +46,15 @@ wallets are made fresh for each run inside `.run/`.
   processes.
 - `run-first-purchase.sh [prefix]`: the first purchase end to end on a
   fresh network, then stop. This is the milestone script.
+- `run-typescript-sale.sh [prefix]`: a standalone TypeScript JSON-API sale
+  through the shipped runner, real Spaces/libveritas and a local relay,
+  including store crashes/restarts. It requires Node 24.14 or newer, the
+  pinned dependencies installed under `ts/`, the fetched stack, verifier
+  and relay builds. Build them with `fetch.sh`, `build-relay.sh` and
+  `cargo build --locked --release` from `verifier/` first. The scenario
+  itself downloads nothing. It uses the bootstrap harness only to set up
+  fresh chain fixtures; no purchase uses the Python registry. Its scope
+  excludes browser checkout, buyer-client import, refunds and host loss.
 - `run-all.sh [prefix]`: every scenario in order. CPU proving makes it
   slow.
 - `run-continued.sh [pinned|u1b]`: the first purchase, the second

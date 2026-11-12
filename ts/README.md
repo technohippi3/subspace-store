@@ -24,7 +24,10 @@ commitment observations now track finality and reorgs (`../docs/spec/COMMITMENT-
 Bound certificate readiness, local cache and binary buyer download now follow
 `../docs/spec/CERTIFICATES.md`. Verified-delivery callbacks and sticky
 fulfilled recovery incidents now follow `../docs/spec/FULFILLMENT.md`.
-Full Spaces-stack sale, supersession and full application recovery remain. The Python service,
+One standalone JSON-API sale through the real Spaces stack and local relay
+now passes with store crashes/restarts (`../docs/spec/RUNTIME.md`). Browser
+checkout, remaining sale/refund scenarios, supersession and full application
+recovery remain. The Python service,
 controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -75,6 +78,19 @@ The Python node/test-purchase track runs in parallel. Its store ownership
 lock and real two-process H12 tests are now implemented locally.
 
 ## Current implementation
+
+`node src/main.ts <config.json>` starts the regtest-only runtime. See
+`../deploy/typescript-regtest.example.json` for its explicit configuration.
+It requires existing fixture wallets, a dedicated journal directory and
+private, distinct injected role-token files. New stores start paused.
+Separate loopback ports serve buyer JSON, operator and subs pending routes.
+The operator can journal listing-price and global-pause changes; this is
+the narrow API for the harness and future seller CLI. Runtime polling
+observes payments and advances existing deadlines through node outages;
+it never broadcasts refunds. Live status supplies the shipped runner's
+network/block checks. SIGINT/SIGTERM close the Effect scope and ownership.
+This is a developer/regtest command, not the installer or update protocol.
+Infisical retrieval and Alchemy integration remain planned installer work.
 
 `src/refunds/` holds production fee policy, strict records and reservation
 accounting, separately from `model/refunds.ts`. `src/bitcoin/refunds.ts`
@@ -170,9 +186,8 @@ domain validation and quote/cancellation instruction gates. Real chain
 observation and exclusive family sends are qualified. Cancellation clocks,
 first-known broadcasts, permanent missed-target incidents, durable alerts
 and recorded losses now persist through restart. Existing clocks can be
-ticked during a Core outage through operator inspection, without signing
-or sending. A future runner must poll this; no background scheduler or
-operator HTTP endpoint ships yet. Converted/issuing excess clocks now admit
+ticked during a Core outage through operator inspection and runtime polling,
+without signing or sending. Converted/issuing excess clocks now admit
 the inclusive estimated fee-plus-546 minimum and retain unknown-assessment
 notices, earlier observation times and existing deadlines through failures.
 Unconverted accounting and controller HTTP/whole-host
@@ -185,7 +200,7 @@ off-host for actual host-loss recovery; no object-store adapter is claimed.
 
 Domain rules of `service/ledger.py` still to port, each with its home:
 
-1. Complete order views and full Spaces-stack sale qualification.
+1. Complete browser order views and remaining Spaces-stack sales/refund scenarios.
 2. Remaining registry recovery and supersession callbacks. Pending selection,
    bound entry, commitment observation and certificate acceptance now exist.
 3. Restore from the journal (`restore_from_journal`), which always comes

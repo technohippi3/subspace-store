@@ -23,6 +23,7 @@ import { commitmentLifecycle, commitmentRestart } from "./commitments.ts";
 import { certificateLifecycle, certificateRestart } from "./certificates.ts";
 import { qualification } from "./qualification.ts";
 import { fulfillmentLifecycle, fulfillmentRestart } from "./fulfillment.ts";
+import { runtimeQualification } from "./runtime.ts";
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 const repository = fileURLToPath(new URL("../../", import.meta.url));
@@ -339,6 +340,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     yield* fulfillmentLifecycle(store, node, order.token);
     yield* Scope.close(lifetime, Exit.void); lifetime = yield* Scope.fork(parentScope); store = yield* Scope.provide(lifetime)(open());
     yield* fulfillmentRestart(store, order.token);
+    yield* Effect.promise(() => runtimeQualification(repository, root, config, buyer, node, minerAddress as string, freePort));
     yield* store.listName("two@space", 1_000);
     const second = yield* store.request({ handle: "two@space", script_pubkey: "5120" + "2".padStart(64, "0") });
     const invoice = yield* store.quote(second.token); assert(invoice.address);

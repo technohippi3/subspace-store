@@ -15,7 +15,9 @@ export function qualification(repository: string, root: string, name: string) {
     "ts/src/application/commitments.ts", "ts/src/application/commitment-records.ts", "ts/regtest/commitments.ts",
     "ts/src/application/certificate-cache.ts", "ts/src/application/certificate-records.ts", "ts/src/application/certificates.ts",
     "ts/src/application/certificate-http.ts", "ts/regtest/certificates.ts", "ts/regtest/qualification.ts",
-    "ts/src/application/deliveries.ts", "ts/src/application/delivery-records.ts", "ts/src/application/delivery-http.ts", "ts/regtest/fulfillment.ts"];
+    "ts/src/application/deliveries.ts", "ts/src/application/delivery-records.ts", "ts/src/application/delivery-http.ts", "ts/regtest/fulfillment.ts",
+    "ts/src/main.ts", "ts/src/runtime/config.ts", "ts/src/runtime/credentials.ts", "ts/src/runtime/server.ts",
+    "ts/src/application/catalog-http.ts", "ts/regtest/runtime.ts"];
   writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
     files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
     checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -36,5 +38,6 @@ export function qualification(repository: string, root: string, name: string) {
       "certificate-ancestor-survives-extension", "certificate-reorg-withholds-cache",
       "certificate-new-verification-after-reorg", "certificate-restart-cache-continuity", "fulfilled-stickiness-core-reorg",
       "fulfilled-reverification-retains-first-receipt", "recovery-resolution-keeps-accounting", "fulfillment-restart-history",
-      "no-certificate-on-fulfilled-checkpoint-loss"] }, null, 2), { mode: 0o600 });
+      "no-certificate-on-fulfilled-checkpoint-loss", "standalone-runtime-live-network-status", "standalone-runtime-background-conversion",
+      "standalone-runtime-real-core-restart", "standalone-runtime-explicit-journaled-admission"] }, null, 2), { mode: 0o600 });
 }

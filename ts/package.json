@@ -2,11 +2,12 @@
   "name": "subspace-store",
   "private": true,
   "type": "module",
-  "description": "TypeScript port of the subspace store, in progress. Not used by anything yet.",
+  "description": "TypeScript port and standalone regtest runtime of the subspace store, pre-alpha.",
   "engines": {
     "node": ">=24.14.0"
   },
   "scripts": {
+    "start": "node src/main.ts",
     "check": "tsc -p .",
     "test": "node --test \"test/**/*.test.ts\"",
     "test:core": "../regtest/in-netns.sh env SUBSPACE_CORE_REGTEST_ISOLATED=1 node --test regtest/core.test.ts",

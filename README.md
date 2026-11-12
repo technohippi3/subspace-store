@@ -65,7 +65,10 @@ finality and reorgs (`docs/spec/COMMITMENT-TRACKING.md`). Bound certificate
 readiness and binary buyer download now have separate qualification
 (`docs/spec/CERTIFICATES.md`). Bound verified-delivery callbacks and sticky
 fulfilled recovery incidents now follow `docs/spec/FULFILLMENT.md`. The
-complete Spaces-stack sale, supersession and full application recovery remain. The Python
+standalone regtest process now follows `docs/spec/RUNTIME.md`. One JSON-API
+sale through real Spaces, subs, libveritas and the local relay passes with
+store crashes/restarts. Browser checkout, remaining sale/refund scenarios,
+supersession and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

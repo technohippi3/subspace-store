@@ -25,6 +25,7 @@ export interface Adapters {
   readonly newDestination: Effect.Effect<Destination, ApplicationError>;
   readonly refunds?: RefundAdapters;
   readonly certificateChain?: CertificateChain;
+  readonly chainStatus?: Effect.Effect<{ network: string; best_block_hash: string; blocks: number }, ApplicationError>;
 }
 export interface Config extends StorageConfig { readonly riskBudgetSats: number;
   readonly refundPolicy: RefundPolicy; readonly merchantDestinations?: readonly Destination[] }
@@ -263,6 +264,15 @@ export class SalesStore {
     }));
   }
   observe() { return this.queue.withPermit(this.refresh().pipe(Effect.asVoid)); }
+  /** Advance known deadlines without pretending an unavailable node was observed. */
+  tick() {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { records, state } = yield* self.load();
+      yield* verified(() => tick(state, self.adapters.clock()));
+      yield* self.save(records, state); yield* self.storage.flush();
+    }));
+  }
   certificate(token: string) {
     const self = this;
     return self.queue.withPermit(Effect.gen(function* () {
@@ -282,8 +292,12 @@ export class SalesStore {
       yield* verified(() => tick(state, self.adapters.clock()));
       yield* self.save(records, state); yield* self.storage.flush();
       const position = yield* self.storage.status();
+      const chain = self.adapters.chainStatus ? yield* self.adapters.chainStatus.pipe(Effect.match({
+        onSuccess: value => value, onFailure: () => null,
+      })) : null;
       return { orders: structuredClone(state.monitors), alerts: structuredClone(state.alerts), assessments: structuredClone(state.assessments),
-        recovery_incidents: structuredClone(state.incidents), acknowledged: position.acknowledged === position.seq };
+        recovery_incidents: structuredClone(state.incidents), acknowledged: position.acknowledged === position.seq,
+        chain, paused: state.settings.paused };
     }));
   }
   private inspectedOrder(state: State, order: Order) {
@@ -540,6 +554,9 @@ export class SalesStore {
       if (listing) listing.price = price;
       else state.listings.push({ handle, space: handle.split("@")[1]!, price });
       yield* self.save(records, state);
+      yield* self.storage.flush();
+      const saved = yield* self.storage.acknowledged("listing", handle);
+      return { handle, price_sats: price, acknowledged: !!saved && (saved.value as { price: number }).price === price };
     }));
   }
   pause(paused: boolean) {

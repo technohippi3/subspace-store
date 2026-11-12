@@ -2007,3 +2007,120 @@ a7dea4d9dec77177d2f7ef85faf40a3023a769a8bcf40389a129056ff57c4b42  ts/regtest/cer
 05edcbcd2d2deb6a59c767af4731469c4b57699d495f8eadea73c18c060c38f8  ts/src/application/delivery-http.ts
 79f02d192562ce3370a85d4e65c0544d1d7849b6b3f72e1f5929051605e52afc  ts/regtest/fulfillment.ts
 ```
+
+
+## Standalone TypeScript runtime and real Spaces-stack sale, 2026-11-12
+
+The Effect-scoped entry point now composes the existing store and Core
+adapters, three loopback roles and one sequential payment observer. New
+stores start paused. Explicit injected credential files are reread per
+request; roles require distinct values. Startup reconciles before exposing
+listeners. Signals and failed partial acquisition release listeners,
+polling and store ownership. Polling observes and advances known deadlines
+through node outages; it never signs or broadcasts a refund. Live Core
+network status lets the shipped runner perform its existing chain checks.
+Authenticated listing-price and global-pause routes acknowledge durable
+journal writes. This is a regtest command, not an installer or production
+update path. Infisical retrieval and Alchemy remain installer work.
+
+Production cases O55–O60 cover strict configuration, role isolation and
+credential rotation, polling/outage recovery, live chain status, journaled
+operator settings, actual child-process ownership and startup/shutdown
+cleanup. The default suite passes 279 TypeScript tests; type checking and
+pinned installation pass. Python's 295 tests pass in 108.669 seconds. The
+development gate reports 335 fixed-price cases without gaps, 40 deferred
+cases, 49 TypeScript model and 169 TypeScript store cases. The pilot
+production gate still refuses for 112 cases. The first focused polling
+test used a recording RPC receipt address that differed from its allocated
+address; correcting that fixture made the test pass.
+
+Core run `core-adapter-2026-11-12T07-32-47-965Z-5df73ff7` passes 57 checks
+bound to 52 source hashes. The standalone process receives a real payment,
+converts it through background observation and preserves it through restart,
+with a live network/block report and explicit journaled admission. Previous
+Core payment/refund, checkpoint and recovery checks still pass. Spaces and
+relay metadata in that narrower Core qualification remain mocks.
+
+The separate full-stack harness first failed twice: run
+`typescript-sale-20261112T072857Z-8869b5` used the wrong entry-point path,
+and `typescript-sale-20261112T073144Z-a62aef` referenced the HTTP client's
+wrong property. Both retained reports record errors. After correction,
+`typescript-sale-20261112T073236Z-054378` passes all 13 required checks
+against 74 source hashes. The buyer JSON request, quote, real payment,
+three-block conversion, real subs proof and coordinated snapshot, confirmed
+commitment, certificate verification with libveritas, independent download
+verification and verified local-relay delivery all succeed. Store crashes
+after payment, issuance, readiness and fulfillment preserve the purchase
+and immutable first receipt. The bootstrap registry only sets up throwaway
+chain fixtures; no purchase touches it. The sale itself uses the shipped
+TypeScript process and attended Python runner, real spaced/subs/libveritas
+and a real isolated relay, with no verifier/RPC stand-ins.
+
+After improving harness failure cleanup and readiness diagnostics, final run
+`typescript-sale-20261112T073618Z-255271` repeats all 13 required checks
+successfully. Its 74 source hashes match the final runtime, controller,
+runner and harness files. Both successful reports and their independent
+certificate evidence are retained, along with the two failed attempts.
+
+No browser checkout or buyer-client import is established. The TypeScript
+refund-stack, supersession, whole-application/host restore, installer, safe
+updates and seller CLI remain separate work. Only fresh isolated fixture
+wallets were used. No existing wallet, managed credential, deployed service
+or mainnet state changed. Paid sales remain closed.
+
+The Core qualification's source hashes are:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+9aec8bd7f33982b2df7de63fa463e0a83ee27ce459a15ef062e9af9828868119  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+9fb2512bba7c820ebcab8c11ab7745fe63979bde2cbeed1c8f07e381574e0646  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a  ts/src/refunds/types.ts
+9023af566c4978d910bd776cb3a9038dc2002f4eeb17a82a751c6f8ff8556d2a  ts/src/refunds/book.ts
+150a881f7892824b11342610accec83ac303780e3e869d1565c1c4625552a78c  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+bcc7565f645caf5b95a1d9190f69e50fda39cde460e6a5f300832220040c1af9  ts/src/application/records.ts
+24fa858863ac6d2c079f6e764aa08ab4cd1685efa46e11981d773ed1a715f082  ts/regtest/core.test.ts
+7d10c5be62c77a6915c9b5212364c93203cbc90eb01e69b02ecb2939c5a8a5c1  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+5aba74aeadcc8c692e840ebd98a293eedb39476427d750e1b85895e3e70869d8  ts/src/application/monitor.ts
+0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
+d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin/excess-fee.ts
+09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0  ts/src/application/assessments.ts
+c5f04aaba4706dc0b1dd1e710dc9e7648c10f978b1c2e2f955ff68adc5c1bd9d  ts/src/application/http.ts
+45bd751c483ad4ad7eccaa5ecafcc4f24a67b63cd31876363d66ff57d389ddc7  ts/src/application/operator-http.ts
+205663367370e64521a8aad08d442ee1b9a5c3afa50837bf32660dd05b5996e1  ts/src/application/authenticated-http.ts
+8cd0b89fbf629272935bfff87fbfdb91701dd2cfe8caa63b02338387e475378c  ts/src/application/pending-http.ts
+57bc3a4b9283abc046dec320eee171a1f558d7de5b134cd28c8ffda8b2d86661  ts/src/application/entry.ts
+74833a7470ef060d76bd223b5feee0b17ee5b256940317adbd7bb50a1e66f89e  ts/src/application/registry.ts
+f1e0ba998513d08d745b215c1343b3805e464ce28b15139c5e8bbe52273c4e73  ts/src/application/bound-entries.ts
+8ad1cc8fd2671416e1dd6dd7a621a0169436c03abf4239ab556ec764675cdc1e  ts/src/application/bound-records.ts
+8d77f6124e99851cb63fd59f0d18605fe01cd2df7ceee47464cdc46613d8b55a  ts/regtest/entry-lifecycle.ts
+e6d7c49bb416aa17b89a293fbd6f2f410dbedad74c2adbf8e6dd3e08f6ee1931  ts/src/application/commitments.ts
+1650655adfafb57a05c1014e68a636d76ccae77a2aad4e44b0fef5c9cec2f00e  ts/src/application/commitment-records.ts
+4f202525da1cb5acd90b60531d898db51928be25deba8e36eb697e73d1517e22  ts/regtest/commitments.ts
+cc420b4301f03a4a570d1f375359e58b56a32dc10909943456044bab0daf0a52  ts/src/application/certificate-cache.ts
+039e4f53df0e143606d1bdab5cead3563033a1908ebb6aa58789899ae72f6de8  ts/src/application/certificate-records.ts
+336eeb766bf6729f50865a585614757ee76f400172403982b649a868b9e87658  ts/src/application/certificates.ts
+d5ff3084d0a67647524d023123c7fcb478a06eb687c83a12542d0e3cfd028bd3  ts/src/application/certificate-http.ts
+a7dea4d9dec77177d2f7ef85faf40a3023a769a8bcf40389a129056ff57c4b42  ts/regtest/certificates.ts
+457e28d922e32e6d7956512039ef8c522c4681c13ab3f5aa3bcd08ba070e9c87  ts/regtest/qualification.ts
+51b0ffa3edaffe866bd1911c82280c350f38925763e672e914ebc03da1e3a6b1  ts/src/application/deliveries.ts
+948c3a7378c3b8a6edde65bbe76288292a71d471fc0b4ea7b79d0a065677d1fe  ts/src/application/delivery-records.ts
+05edcbcd2d2deb6a59c767af4731469c4b57699d495f8eadea73c18c060c38f8  ts/src/application/delivery-http.ts
+79f02d192562ce3370a85d4e65c0544d1d7849b6b3f72e1f5929051605e52afc  ts/regtest/fulfillment.ts
+25afecbca606ec82080e0e21c3dc686697bc5228f12ae4baf3e6fdf5d9628e64  ts/src/main.ts
+d6a0de204d208983cc436212cdc30cc6876708a0d92de5c4f00de4719bd525d8  ts/src/runtime/config.ts
+0f14ac2cc563975f485e4ac1f618d591289f6a79d500bf9ade74daa95f62996e  ts/src/runtime/credentials.ts
+002f19805f0966f5befe177e919261f01e6cdcf7d169d45d2d017acffe1a9aba  ts/src/runtime/server.ts
+f6a5885bb410726878c8eae19fa6858e1090b6e1c40d3a4870387d9cffbf767a  ts/src/application/catalog-http.ts
+102cf9e74e7be4c5060d23cea8c758f15e1c8a9b41bc4c71ccdef30e248d5b35  ts/regtest/runtime.ts
+```
