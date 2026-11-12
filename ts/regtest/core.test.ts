@@ -348,6 +348,11 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     assert.equal((yield* store.order(second.token)).detected_sats, 1_000);
     const replacement = object(yield* buyer.call("bumpfee", pending, { fee_rate: 50 }));
     pending = hex(replacement.txid);
+    // The sender's bumpfee reply can precede the receiving wallet's mempool
+    // notification. Establish discovery before asserting its replacement view.
+    yield* Effect.promise(() => until(async () => {
+      assert.equal(object(await run(merchant.call("gettransaction", pending))).txid, pending);
+    }));
     assert.equal((yield* store.order(second.token)).detected_sats, 1_000);
     const entry = object(yield* node.call("getmempoolentry", pending));
     yield* node.call("generateblock", minerAddress, []); yield* node.call("generateblock", minerAddress, []);

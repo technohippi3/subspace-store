@@ -2148,7 +2148,7 @@ Python store's baseline commands and payment rules are unchanged. Buyer
 cancellation uses its opaque checkout link; operator-ID cancellation and
 fee-bump/rebuild CLI commands remain separate work.
 
-Local checks pass 298 Python tests in 96.171 seconds and 285 TypeScript
+Local checks pass 298 Python tests in 108.175 seconds and 285 TypeScript
 tests, pinned installation, type checking and whitespace. Cases O61–O66
 and A44–A46 cover real HTTP/SQLite/journals and shipped runner/client
 behavior with recording wallet adapters. They exercise dropped preparation
@@ -2159,7 +2159,7 @@ coverage reports 344 fixed-price cases without gaps, with 40 deferred;
 TypeScript model/store and Python controller counts are 49/175/46. The
 pilot production gate still refuses for 112 cases.
 
-Core run `core-adapter-2026-11-12T09-07-22-082Z-62f93dc3` passes 66 checks
+Core run `core-adapter-2026-11-12T09-22-32-904Z-4361d3ff` passes 66 checks
 bound to 54 source hashes. Its actual standalone process uses a fresh
 separate payment wallet and explicit funded merchant fee destination. It
 refuses preparation before six confirmations, recovers the same prepared
@@ -2197,6 +2197,15 @@ model-comparison evidence. The actual sale/refund checks and outcomes are
 unchanged. The new run's two certificate/relay messages reverify offline,
 for six newly retained messages across these three successful runs.
 
+Actions run 43190401602 exposed a receiving-wallet notification race in
+an existing replacement assertion: 0 !== 1000. The sender's bumpfee reply
+can precede discovery in the merchant wallet. The qualification now waits
+for that wallet to discover the actual replacement transaction before
+asserting its complete receipt view. No runtime accounting rule changed.
+The corrected local Core run above and repeated Python/TypeScript suites
+pass. The report-label correction and this test barrier land as separate
+follow-up commits; earlier failures and reports remain recorded.
+
 Only fresh isolated fixture wallets were used. No existing wallet, managed
 credential, deployed service or mainnet state changed. This does not pass
 browser/buyer-client, supersession or whole-host restore gates. Remaining
@@ -2217,7 +2226,7 @@ ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a  ts/src/refunds
 c4b8b82cb5bffb2a3732e29035b4044ad817f36a2c1c139b04617baccc23fee7  ts/src/application/store.ts
 10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
 bcc7565f645caf5b95a1d9190f69e50fda39cde460e6a5f300832220040c1af9  ts/src/application/records.ts
-24fa858863ac6d2c079f6e764aa08ab4cd1685efa46e11981d773ed1a715f082  ts/regtest/core.test.ts
+667d0fb234aeb28edd49a0cecea35d6ca4db5df4beabe189c670077b61cb7ade  ts/regtest/core.test.ts
 7d10c5be62c77a6915c9b5212364c93203cbc90eb01e69b02ecb2939c5a8a5c1  ts/test/production/application-fixture.ts
 c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
 995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
