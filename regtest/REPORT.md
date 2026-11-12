@@ -2468,3 +2468,79 @@ remain before installer/Alchemy, signed updates and essential seller
 commands. Only fresh isolated fixture wallets were used. No existing wallet,
 managed credential, deployed service or mainnet state changed. Paid sales
 stay closed.
+
+
+## TypeScript known-history whole-host recovery, 2026-11-12
+
+`docs/spec/HOST-RECOVERY.md` records the recovery procedure and its limits.
+The new `run-typescript-recovery.sh` mode reuses the existing independent
+network-node fixture. A fulfilled sale and settled cancellation refund use
+the real TypeScript process and attended runner. Two more invoices are
+acknowledged but unseen. Every seller process is killed and seller data
+paths, including Core, Spaces, subs, controller, application, caches and
+runtime credentials, are moved aside. They remain private failure evidence,
+not inputs to the replacement. The network, its buyer/miner wallets, world
+Spaces instance and isolated relay survive.
+
+Run `typescript-recovery-20261112T121422Z-14ce0d` passes all 43 required
+checks against 103 current source hashes. It restores the payment and
+operator wallets from their original onboarding backups on a fresh seller
+node, rescans against the surviving chain, replays the application journal
+and reconciles controller/subs through the shipped commands. Replacement
+runtime credentials are supplied independently; the attended workflow
+reconfigures subs and verifies its authenticated health connection before
+enabling admission. No old snapshot credential is treated as the current
+secret source. This does not implement Infisical integration.
+
+A payment sent and confirmed during the host's absence is found, attributed
+to its original invoice and fulfilled in the next batch. The other historical
+invoice stays unknown with no displayed payment address. The first new
+quote skips all historical destinations, including the unpaid one. The
+store UUID, first fulfilled receipt and settled refund survive. Missing
+certificate cache is rebuilt with fresh real verification, and the restored
+tree issues again through local relay delivery. The five retained
+reverified/new certificate and relay messages independently verify offline
+with real libveritas. The measured replacement/recovery portion is 66.99
+seconds on this small regtest chain; it is not a production sync estimate
+or evidence of the four-hour target.
+
+The first two runs, `typescript-recovery-20261112T120919Z-e8027f` and
+`typescript-recovery-20261112T121134Z-beecae`, refused reconciliation while
+Spaces had reached its tip but its anchor file was not yet created. Their
+error reports are retained, with no success claim. Temporary private
+diagnostics in the second run were removed before final qualification.
+The controller now retries that known file-open condition under the same
+finite bound as its existing truncated-file read retry. A57 checks both
+conditions, exhaustion and immediate refusal for unrelated errors. No send,
+release or new payment rule is introduced; Python's frozen store baseline
+is unchanged.
+
+The normal live-wallet scenario still passes all 35 checks in
+`typescript-sale-20261112T121841Z-4bdc49`, bound to 99 current source hashes.
+All five of its retained certificate/relay messages independently verify
+offline too. Both passing reports record the combined U1(b)/relay-seed subs
+binary digest. Core run `core-adapter-2026-11-12T12-18-43-235Z-8802758c`
+passes its existing 79 checks against 67 current source hashes. Its safe
+qualification JSON is retained. That narrower Core scenario does not
+execute whole-host recovery; default CI and the separate full-stack
+qualification remain distinct evidence.
+
+Pinned installation, type checking, 324 TypeScript tests, 309 Python tests
+in 103.683 seconds, shell syntax and whitespace pass. Development coverage
+reports 385 fixed-price cases without gaps and 40 deferred cases, with
+TypeScript model/store and Python controller counts of 57/205/57. The pilot
+production gate still refuses for 112 missing cases. Whole-host checks use
+fixed expectations; no independent model executes inside that scenario.
+The workspace register validates 1,371 records with 369 warnings. Its script
+checker reports two unrelated binary-size advisories and does not qualify
+this external product repository.
+
+This qualifies known mined history with intact recovery material. It does
+not pass the complete operator gate: simultaneous multi-space in-flight/
+unknown sends, mempool loss, damaged backups, independent secret recovery,
+the packaged replacement host and remaining production cases still need
+qualification. Browser/buyer-client acceptance also remains. No deployed
+service, existing wallet, managed secret or mainnet state changed. Only
+fresh isolated fixture wallets were used. Installer/Alchemy, Infisical,
+signed updates and essential seller commands remain planned. Paid sales
+stay closed.

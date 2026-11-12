@@ -38,6 +38,9 @@ until controller reconciliation; restore/recover cannot reopen sales.
 which independently checks known transaction/root/wallet histories and both
 journals before permitting paused startup. The Spaces-stack fixture restores
 application/controller/subs paths and issues again with live Core/wallets.
+`../docs/spec/HOST-RECOVERY.md` adds a separate fresh seller-node/wallet
+fixture using the original onboarding backups. It covers known mined history;
+the complete operator recovery acceptance gate remains separate.
 Browser checkout, remaining sale/refund scenarios, other supersession paths and full application
 recovery remain. The Python service,
 controller and runner remain the
@@ -222,10 +225,10 @@ Domain rules of `service/ledger.py` still to port, each with its home:
    Pending selection, bound entry, commitment observation, certificate acceptance
    and explicit known-transaction delegate-conflict proof now exist. Generating
    a rollback, repairing the Spaces tree and resolving conflicts remain manual.
-3. Wallet onboarding-backup and whole-host recovery qualification.
-   Journal-only restore and offline controller/subs reconciliation now permit
-   paused startup for known histories. Unknown sends and tree repair remain
-   manual; Core and wallets stay live in the current full-stack fixture.
+3. Complete operator recovery acceptance with simultaneous in-flight states.
+   Journal-only restore and offline reconciliation permit paused startup for
+   known histories. A separate fixture replaces Core and both wallets from
+   onboarding backups. Unknown sends and unsupported tree repair remain manual.
 
 `src/application/` now has strict records, serialized Effect commands,
 public request validation, journal-gated addresses/cancellations and

@@ -60,7 +60,16 @@ wallets are made fresh for each run inside `.run/`.
   restores fresh application/controller/subs paths and issues again, while
   Core and wallets stay live. It excludes browser checkout, buyer-client
   import and whole-host loss.
-- `run-all.sh [prefix]`: every scenario in order. CPU proving makes it
+- `run-typescript-recovery.sh [prefix]`: the same actual TypeScript sale
+  and attended refund with a separate surviving network node, buyer/miner
+  wallets and relay. It replaces every seller data path, including Core
+  and Spaces, restores the original onboarding wallets, then runs journal/
+  subs/controller recovery and issues again. It tests payment during the
+  outage, an unpaid historical invoice, credential rebinding and avoidance
+  of historical address reuse. Build the same dependencies as the sale
+  scenario first. Only known mined history is covered; this is not the
+  full multi-space in-flight operator gate or packaged deployment.
+- `run-all.sh [prefix]`: every numbered scenario in order. CPU proving makes it
   slow.
 - `run-continued.sh [pinned|u1b]`: the first purchase, the second
   commitment and the restore, then another batch on the same space

@@ -218,14 +218,14 @@ class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification,
 
     def root_anchors(self, attempts=20):
         """spaced's root anchors. spaced v0.5.0 rewrites its anchors file in
-        place while getrootanchors reads it, so a read can see a truncated
-        file (finding R15). Retry that error only."""
+        place while getrootanchors reads it. A fresh host can also be at tip
+        before that file exists. Retry only these bounded file errors."""
         from .rpc import RpcError
         for i in range(attempts):
             try:
                 return self.spaced.call("getrootanchors")
             except RpcError as e:
-                if "Could not read anchors file" not in str(e) or i == attempts - 1:
+                if not any(m in str(e) for m in ("Could not read anchors file", "Could not open anchors file")) or i == attempts - 1:
                     raise
                 self.anchor_read_retries = getattr(self, "anchor_read_retries", 0) + 1
                 time.sleep(0.25)

@@ -7,8 +7,10 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from controller.errors import Refused
+from controller.rpc import RpcError
 from runner.recovery_bridge import RecoveryStore, digest
 from runner.recovery_snapshot import validate_snapshot
 from runner.recovery_status import recovery_status
@@ -69,6 +71,35 @@ class BoundRecovery(unittest.TestCase):
         self.assertEqual((w.closed, w.rollbacks), (0, 0))
         self.assertFalse(any("send" in c or "sign" in c for c in w.calls))
         self.assertFalse(w.c.registry.journal_ok("o1"))
+
+    def test_A57_anchor_file_startup_and_rewrite_errors_retry_with_a_bound_other_errors_refuse(self):
+        w = self.world()
+        for message in ("Could not open anchors file: unavailable", "Could not read anchors file: partial"):
+            with self.subTest(message=message), patch("controller.core.time.sleep") as sleep:
+                results = [RpcError("getrootanchors", {"code": -1, "message": message}), [{"mock": "anchor"}]]
+
+                def call(*args):
+                    value = results.pop(0)
+                    if isinstance(value, Exception):
+                        raise value
+                    return value
+
+                w.c.clients.spaced = lambda: SimpleNamespace(call=call)
+                self.assertEqual(w.c.root_anchors(attempts=2), [{"mock": "anchor"}])
+                sleep.assert_called_once_with(0.25)
+        for message, expected_calls in (("Could not open anchors file: unavailable", 2), ("unrelated RPC failure", 1)):
+            with self.subTest(message=message), patch("controller.core.time.sleep"):
+                calls = []
+
+                def unavailable(*args):
+                    calls.append(args)
+                    raise RpcError("getrootanchors", {"code": -1, "message": message})
+
+                w.c.clients.spaced = lambda: SimpleNamespace(call=unavailable)
+                with self.assertRaises(RpcError):
+                    w.c.root_anchors(attempts=2)
+                self.assertEqual(len(calls), expected_calls)
+                self.assertEqual((w.closed, w.rollbacks), (0, 0))
 
     def test_A52_unknown_or_conflicting_armed_identity_and_journal_outage_retain_ownership(self):
         for fault in ("unknown", "conflict", "journal"):

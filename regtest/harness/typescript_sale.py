@@ -36,7 +36,7 @@ def wait(work, timeout=120):
             time.sleep(0.25)
 
 
-def sale(run):
+def sale(run, recovery=None, buyer_wallet=None):
     stack, report = run.stack, run.report
     scenario = "TypeScript process, shipped runner and real Spaces/relay sale"
 
@@ -48,7 +48,8 @@ def sale(run):
     # Reuse only fixture setup. No purchase touches this bootstrap registry.
     run.start()
     run.registry.shutdown()
-    run.controller.close()
+    if run.controller is not None:
+        run.controller.close()
     runtime = stack.dir / "typescript"
     runtime.mkdir(mode=0o700)
     journal = run.offhost / "typescript-store"
@@ -168,7 +169,7 @@ def sale(run):
     message_file = evidence / f"{handle}.certificate"
     message_file.write_bytes(message)
     anchors = evidence / "anchors.json"
-    anchors.write_text(json.dumps(run.controller.root_anchors()))
+    anchors.write_text(json.dumps(run.controller.root_anchors() if run.controller else run.chain.root_anchors()))
     verified = subprocess.run([str(VERIFIER), str(message_file), str(anchors)], capture_output=True, text=True, timeout=30)
     verdict = json.loads(verified.stdout)
     (evidence / f"{handle}.libveritas.json").write_text(verified.stdout)
@@ -188,26 +189,43 @@ def sale(run):
          "same_certificate": buyer.get(link + "/certificate", raw=True) == message},
          {"status": "fulfilled", "same_receipt": True, "same_certificate": True})
     from .typescript_refund import refund
-    refund(run, buyer, operator, command, restart)
-    from .typescript_reconciliation import reconcile
-    reconcile(run, buyer, operator, command, restart, file, runner_file, link, receipt)
+    refund(run, buyer, operator, command, restart, wallet=buyer_wallet)
+    if recovery is None:
+        from .typescript_reconciliation import reconcile
+        recovery = reconcile
+    recovery(run, buyer, operator, command, restart, file, runner_file, link, receipt)
 
 
 def main(argv):
     if os.environ.get("SUBSPACE_TYPESCRIPT_STACK_ISOLATED") != "1" or os.environ.get("SUBSPACE_RELAY") != "1":
         raise RuntimeError("run through regtest/run-typescript-sale.sh")
-    run = Run(argv[1])
+    if len(argv) not in (2, 3) or len(argv) == 3 and argv[2] != "whole-host":
+        raise ValueError("expected a run id and optional whole-host mode")
+    whole_host = len(argv) == 3
+    recovery, wallet = None, None
+    if whole_host:
+        from .recovery import RecoveryRun
+        from .typescript_host_recovery import recover_host
+        run = RecoveryRun(argv[1])
+        recovery, wallet = recover_host, run.stack.net("buyer")
+    else:
+        run = Run(argv[1])
     files = sorted([*ROOT.glob("ts/src/**/*.ts"), *ROOT.glob("controller/*.py"),
                     *ROOT.glob("runner/*.py"), Path(__file__), Path(__file__).with_name("typescript_refund.py"),
                     Path(__file__).with_name("report.py"), Path(__file__).with_name("typescript_reconciliation.py"),
-                    Path(__file__).with_name("procs.py"), ROOT / "regtest/run-typescript-sale.sh"])
-    run.report.meta.update({"scope": "real Spaces-stack sale/refund and application/controller/subs restore with continued issuance; wallets and Core stay live, no whole-host gate",
+                    Path(__file__).with_name("procs.py"), ROOT / "regtest/run-typescript-sale.sh",
+                    *([Path(__file__).with_name(n) for n in ("typescript_host_recovery.py", "recovery.py", "service.py")]
+                      if whole_host else []), *([ROOT / "regtest/run-typescript-recovery.sh"] if whole_host else [])])
+    scope = "real Spaces-stack sale/refund and application/controller/subs restore with continued issuance; wallets and Core stay live, no whole-host gate"
+    if whole_host:
+        scope = "known-history whole-host TypeScript recovery from onboarding wallet backups, journals and coordinated subs snapshot; independent network and buyer wallets survive"
+    run.report.meta.update({"scope": scope,
                             "comparison_source": "fixed_spec",
                             "core": bitcoind_version(),
                             "subs_binary": {"name": subs_bin().name, "sha256": hashlib.sha256(subs_bin().read_bytes()).hexdigest()}, "source_files": {
                                 str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}})
     try:
-        sale(run)
+        sale(run, recovery=recovery, buyer_wallet=wallet)
     except BaseException as exc:
         run.report.meta["error"] = f"{type(exc).__name__}: {exc}"
         run.report.save()

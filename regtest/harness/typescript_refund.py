@@ -2,7 +2,7 @@
 from .scenarios import PRICE, SPACE_A
 
 
-def refund(run, buyer, operator, command, restart):
+def refund(run, buyer, operator, command, restart, wallet=None):
     scenario = "TypeScript buyer cancellation and attended runner refund"
 
     def step(what, got, expected):
@@ -19,7 +19,7 @@ def refund(run, buyer, operator, command, restart):
     run.mine(3)
     cancelled = buyer.post(link + "/cancel", {})
     step("buyer cancellation before issuance is journaled", cancelled["cancellation"], "final")
-    wallet = run.stack.btc("buyer")
+    wallet = wallet or run.stack.btc("buyer")
     address = wallet.call("getnewaddress", "", "bech32m")
     buyer.post(link + "/refund-destination", {"address": address})
     command("refund", "o2", "--cause", "buyer", expected=1)

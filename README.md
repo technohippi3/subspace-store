@@ -78,6 +78,9 @@ financial history and a journaled quarantine. Offline controller/subs
 reconciliation and durable paused-startup completion now follow
 `docs/spec/RECONCILIATION.md`; a full-stack fixture restores application,
 controller and subs paths and issues again while Core and wallets stay live.
+`docs/spec/HOST-RECOVERY.md` adds the separate known-history whole-host
+qualification using original onboarding wallet backups and a surviving
+network node. Simultaneous uncertain/in-flight histories remain separate.
 Browser checkout, remaining sale/refund scenarios,
 other supersession paths and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.

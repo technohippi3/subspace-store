@@ -7,7 +7,7 @@ from pathlib import Path
 from .scenarios import PRICE, SPACE_A
 
 
-def reconcile(run, buyer, operator, command, restart, runtime_file, runner_file, link, receipt):
+def reconcile(run, buyer, operator, command, restart, runtime_file, runner_file, link, receipt, configure=None):
     stack = run.stack
     root = Path(__file__).resolve().parents[2]
     scenario = "TypeScript application/controller/subs restore and continued issuance"
@@ -47,6 +47,8 @@ def reconcile(run, buyer, operator, command, restart, runtime_file, runner_file,
     step("known original transaction and restored subs complete recovery", {"ready": completed["ready"], "acknowledged": completed["acknowledged"],
          "paused": completed["sales_paused"]}, {"ready": True, "acknowledged": True, "paused": True})
     restart()
+    if configure is not None:
+        configure()
     status = command("status")
     step("runner adopts the bound acknowledged store completion", status["recovery"]["ready"], True)
     step("fulfilled sale retains its first receipt after restore", {"status": buyer.get(link)["status"],
@@ -67,6 +69,7 @@ def reconcile(run, buyer, operator, command, restart, runtime_file, runner_file,
     step("continued issuance sends a new bound commitment", issued["state"], "broadcast")
     run.mine(187)
     delivered = command("certify", prepared["bid"])
-    step("continued issuance verifies a new certificate", delivered["members"][prepared["members"][0]]["delivered"], True)
+    step("continued issuance verifies every new certificate", all(m["delivered"] for m in delivered["members"].values()), True)
     published = command("publish", prepared["bid"])
     step("continued issuance reaches verified relay delivery", published["outstanding"], [])
+    return dict(quote=quote, request=request, prepared=prepared, published=published)

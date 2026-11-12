@@ -90,6 +90,9 @@ controller/subs reconciliation and journal-bound completion for known
 histories, allowing only paused startup. The full-stack fixture restores
 application/controller/subs paths and issues again while Core/wallets stay
 live; wallet/whole-host recovery qualification remains.
+`HOST-RECOVERY.md` extends the qualification procedure with fresh seller-node
+and wallet paths from onboarding backups. Known mined history is its scope;
+the complete multi-space in-flight recovery gate remains separate.
 Browser checkout, remaining sale/refund scenarios, remaining supersession and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.

@@ -79,6 +79,12 @@ when needed, and confirms both journals before paused startup. Unknown sends
 and unsupported tree states retain quarantine. See
 `docs/spec/RECONCILIATION.md` for its scope; Core and wallets remain live in
 the current full-stack fixture. Never clear recovery flags by hand.
+`docs/spec/HOST-RECOVERY.md` records the separate known-history whole-host
+fixture. Restore original wallet backups and rescan before reconciliation.
+After paused startup, configure subs with the replacement runtime's injected
+registry credential and test its health connection before enabling admission.
+An old snapshot's stored bearer token is not the replacement secret source.
+This attended step and the fixture do not implement Infisical or the installer.
 
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,

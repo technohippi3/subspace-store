@@ -109,6 +109,9 @@ original certificate and issues again. Core and both wallets stay live in
 that scenario. Wallet onboarding-backup restore and whole-host loss remain
 separate acceptance work. No browser, buyer-client or public-network gate is
 established by this command. Paid sales remain closed.
+`HOST-RECOVERY.md` extends the qualification procedure to fresh seller-node
+and wallet paths, with explicit replacement-credential configuration before
+admission. It does not enlarge the supported uncertain-send histories.
 
 ## Cases
 
@@ -129,3 +132,4 @@ established by this command. Paid sales remain closed.
 | A54 | unavailable/stale wallet, mismatched root/recipient, unknown RPC or missing attachment capability | build controller proof | refuse completion; no rollback or release |
 | A55 | normal runner with a completion marker | adopt readiness | require its own acknowledged journal proof, matching store UUID/source and ordinary readiness |
 | A56 | coordinated recovery snapshot | validate before copy | check exact bytes, paths, store identity and journal bounds; refuse a forged or incomplete set |
+| A57 | fresh or concurrently rewritten Spaces root-anchor file | request root anchors | retry only known open/read file errors within the finite limit; unrelated errors and exhaustion refuse without releasing ownership |
