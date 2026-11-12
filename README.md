@@ -67,7 +67,9 @@ readiness and binary buyer download now have separate qualification
 fulfilled recovery incidents now follow `docs/spec/FULFILLMENT.md`. The
 standalone regtest process now follows `docs/spec/RUNTIME.md`. One JSON-API
 sale through real Spaces, subs, libveritas and the local relay passes with
-store crashes/restarts. Browser checkout, remaining sale/refund scenarios,
+store crashes/restarts. Attended refund HTTP/runner commands and a real
+cancellation refund now follow `docs/spec/ATTENDED-REFUNDS.md`.
+Browser checkout, remaining sale/refund scenarios,
 supersession and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 

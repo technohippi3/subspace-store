@@ -402,9 +402,20 @@ class Runner:
     def cancel(self, oid):
         return dict(self.store.cancel(oid), oid=oid)
 
-    def refund(self, oid):
-        """Build, sign and reserve the cancellation refund. Nothing is sent."""
+    def refund(self, oid, kind="cancellation", cause=None):
+        """Build/sign only. TypeScript requires an explicit fee-cause decision."""
+        if getattr(self.store, "bound_entries", False):
+            if kind not in ("cancellation", "excess") or cause not in ("buyer", "merchant"):
+                raise NotConfirmed("TypeScript refund requires --cause buyer or merchant; nothing was sent")
+            return dict(self.store.refund(oid, kind, cause), oid=oid)
+        if kind != "cancellation" or cause is not None:
+            raise NotConfirmed("refund kind/cause options require the TypeScript store; nothing was sent")
         return dict(self.store.refund(oid, "cancellation"), oid=oid)
+
+    def refund_status(self, gid):
+        if not getattr(self.store, "bound_entries", False):
+            raise NotConfirmed("refund-status requires the TypeScript store")
+        return self.store.refund_group(gid)
 
     # Sends a transaction: confirmed by the operator
 
@@ -470,10 +481,16 @@ class Runner:
         return {"bid": bid, "txid": txid, "in_mempool": txid in pool,
                 "ancestors": [{"txid": a, "in_mempool": a in pool} for a in ancestors]}
 
-    def broadcast_refund(self, gid, confirm=None):
+    def broadcast_refund(self, gid, confirm=None, txid=None):
         if self.network == "mainnet":
             self.require_networks()
         _confirm("refund group id", gid, confirm, self.ask)
+        if getattr(self.store, "bound_entries", False):
+            if txid is None:
+                raise NotConfirmed("TypeScript refund requires --txid from the reviewed receipt; nothing was sent")
+            return self.store.broadcast(gid, txid)
+        if txid is not None:
+            raise NotConfirmed("explicit refund transaction requires the TypeScript store; nothing was sent")
         return self.store.broadcast(gid)
 
 
@@ -520,11 +537,16 @@ def main(argv=None, ask=None):
     p.add_argument("--confirm")
     for name in ("watch", "certify", "publish"):
         sub.add_parser(name).add_argument("bid")
-    for name in ("cancel", "refund"):
-        sub.add_parser(name).add_argument("oid")
+    sub.add_parser("cancel").add_argument("oid")
+    p = sub.add_parser("refund")
+    p.add_argument("oid")
+    p.add_argument("--kind", choices=("cancellation", "excess"), default="cancellation")
+    p.add_argument("--cause", choices=("buyer", "merchant"))
     p = sub.add_parser("broadcast-refund")
     p.add_argument("gid")
     p.add_argument("--confirm")
+    p.add_argument("--txid")
+    sub.add_parser("refund-status").add_argument("gid")
     sub.add_parser("restore")
     for name in ("readback", "attach-txid"):
         sub.add_parser(name).add_argument("bid")
@@ -563,7 +585,9 @@ def main(argv=None, ask=None):
         elif args.command == "cancel":
             out = r.cancel(args.oid)
         elif args.command == "refund":
-            out = r.refund(args.oid)
+            out = r.refund(args.oid, args.kind, args.cause)
+        elif args.command == "refund-status":
+            out = r.refund_status(args.gid)
         elif args.command == "restore":
             out = r.restore()
         elif args.command == "readback":
@@ -575,7 +599,7 @@ def main(argv=None, ask=None):
         elif args.command == "rebroadcast":
             out = r.rebroadcast(args.bid, args.confirm)
         else:
-            out = r.broadcast_refund(args.gid, args.confirm)
+            out = r.broadcast_refund(args.gid, args.confirm, args.txid)
     except (NotConfirmed, ControllerBusy) as e:
         print(json.dumps({"refused": str(e)}))
         return 3

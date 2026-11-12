@@ -2,14 +2,15 @@
 
 This extends `REFUND-PREPARATION.md` with the existing broadcast and
 reconciliation rules in `PAYMENT-SPEC.md`. `REFUND-FAMILIES.md` now extends
-it to all saved members, fee bumps and exclusive rebuilds. The refund
-deadline lifecycle, general alerts/loss recording and full host-loss
-recovery remain unfinished. This component does not open paid sales.
+it to all saved members, fee bumps and exclusive rebuilds.
+`REFUND-OBLIGATIONS.md` adds deadlines, alerts and loss recording; full
+host-loss recovery remains unfinished. This component does not open paid sales.
 
 ## Intent and sending
 
 An operator-only command runs under the store's serialized Effect queue.
-There is no operator HTTP route or raw transaction export. It reads payment
+`ATTENDED-REFUNDS.md` adds the confirmed operator HTTP/runner boundary;
+raw transaction export remains unbuilt. The sender reads payment
 and refund evidence at the same tip hash/height before deciding. Known
 mempool or mined transactions are observed rather than sent again. An
 unknown input spend blocks sending. A conflict seen at six confirmations

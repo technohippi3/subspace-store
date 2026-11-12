@@ -4,10 +4,12 @@ This implements an Effect-scoped inspection listener, separate from the
 buyer listener and bound only to loopback. It supplies the read portion
 needed by the registry/runner bridge. `REGISTRY-ENTRY.md` adds atomic
 issuing marks, live journal confirmation and frozen pending sets through
-the same operator listener. It is not yet a complete runner interface:
-recovery transitions, commitment callbacks, certificates, cancellation by
-operator ID and refund-write routes remain unimplemented. No signing or
-broadcasting route is exposed here.
+the same operator listener. Bound commitment, certificate and fulfillment
+callbacks now have their own specifications. `ATTENDED-REFUNDS.md` adds
+preparation, inspection and exact-transaction broadcast for refunds. It is
+not yet a complete runner interface: remaining recovery transitions and
+cancellation by operator ID remain unimplemented. The inspection routes
+themselves never sign or broadcast.
 
 `ENTRY-RECOVERY.md` now requires bound entry identities for HTTP issuance
 and qualifies lost-response/restart handling. The former anonymous

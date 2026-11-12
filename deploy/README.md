@@ -57,6 +57,15 @@ delivery completion follows the store acknowledgment. A recovery resolution
 does not change balances or certificate validity. Full Spaces-stack and
 whole-host recovery qualification remain separate from these component tests.
 
+`docs/spec/ATTENDED-REFUNDS.md` adds the TypeScript refund operator API and
+attended runner commands. Preparation requires `--cause buyer` or
+`--cause merchant`; inspect the bounded receipt before broadcasting with
+both `--txid` and `--confirm`. The same group is recovered after a lost
+preparation reply. A changed transaction requires renewed review, and
+runtime polling never signs or sends. The real regtest stack now qualifies
+one cancellation refund into the buyer's wallet. Maintenance coordination
+and whole-host TypeScript recovery remain separate installer/recovery work.
+
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,
   with the commands in `subs.stop_command` and `subs.start_command`. The

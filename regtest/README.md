@@ -54,7 +54,9 @@ wallets are made fresh for each run inside `.run/`.
   `cargo build --locked --release` from `verifier/` first. The scenario
   itself downloads nothing. It uses the bootstrap harness only to set up
   fresh chain fixtures; no purchase uses the Python registry. Its scope
-  excludes browser checkout, buyer-client import, refunds and host loss.
+  includes buyer cancellation and an attended runner refund received by
+  the buyer, with exact transaction confirmation and restart checks. It
+  excludes browser checkout, buyer-client import and host loss.
 - `run-all.sh [prefix]`: every scenario in order. CPU proving makes it
   slow.
 - `run-continued.sh [pinned|u1b]`: the first purchase, the second

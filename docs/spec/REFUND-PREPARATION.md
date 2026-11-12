@@ -98,7 +98,7 @@ historical evidence; the expanded regtest now uses the application sender.
 | --- | --- | --- | --- |
 | Z19 | settled excess and an unavailable journal | reserve, retry and restart | retain one pending reservation, sign only after live acknowledgment and never allocate its credit twice |
 | Z20 | a reserved cancellation refund, failed signing and lost settlement | retry, discard unbuilt, then restore settlement | keep reservation on failure, refuse depleted credit and release only explicitly unbuilt credit |
-| Z21 | a private buyer link | submit refund-destination JSON | accept one exact string member, reject duplicate/extra/non-string members and expose no operator route or raw transaction |
+| Z21 | a private buyer link | submit refund-destination JSON | accept one exact string member, reject duplicate/extra/non-string members and expose no operator route on the buyer listener or raw transaction |
 | Z22 | journaled policy/settings | change startup policy or journal malformed settings | refuse startup; SQLite-only damage is repaired from the authoritative journal |
 | Z23 | explicit order and merchant funding | sign a capped buyer-fee refund | conserve each owner's funds with separate change, validate actual size and never call a send or automatic-funding RPC |
 | Z24 | unsafe, unsettled, spent, reserved, unrelated or mismatched coins, dust change or excessive fees | build | refuse; unrelated wallet money cannot replace missing order funding |

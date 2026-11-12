@@ -25,8 +25,10 @@ Bound certificate readiness, local cache and binary buyer download now follow
 `../docs/spec/CERTIFICATES.md`. Verified-delivery callbacks and sticky
 fulfilled recovery incidents now follow `../docs/spec/FULFILLMENT.md`.
 One standalone JSON-API sale through the real Spaces stack and local relay
-now passes with store crashes/restarts (`../docs/spec/RUNTIME.md`). Browser
-checkout, remaining sale/refund scenarios, supersession and full application
+now passes with store crashes/restarts (`../docs/spec/RUNTIME.md`).
+The same scenario now includes a real attended cancellation refund, with
+the operator API/runner contract in `../docs/spec/ATTENDED-REFUNDS.md`.
+Browser checkout, remaining sale/refund scenarios, supersession and full application
 recovery remain. The Python service,
 controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
@@ -106,7 +108,12 @@ will update policy for new quotes. No general migration layer was added.
 
 The buyer JSON route accepts a refund destination, and views expose fee
 ceilings, balances and sanitized group summaries. Preparation and sending
-are operator building blocks with no operator HTTP route. The first-attempt
+now have a strict operator HTTP/attended-runner boundary in
+`../docs/spec/ATTENDED-REFUNDS.md`. Preparation retries recover the existing
+outstanding group. TypeScript commands require explicit cause and reviewed
+transaction/group confirmation; `refund-status` re-reads the current
+receipt. No raw transaction is exported. Runtime polling never sends.
+The first-attempt
 sender journals uncertain intent before sending and checks live permission
 immediately before the Core send RPC. Startup observes refunds before
 returning a ready application; explicit reconciliation retries only absent,

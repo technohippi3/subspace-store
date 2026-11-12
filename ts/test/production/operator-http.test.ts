@@ -83,7 +83,8 @@ test("O3: observation has a strict empty body and unsupported write routes never
       assert.equal(f.node.observations, before);
       assert.equal((await call(listener.url, "/operator/observe", secret, { method: "POST", body: "{}" })).response.status, 200);
       assert.equal(f.node.observations, before + 1);
-      for (const path of ["/operator/orders/o1/refunds", "/operator/refunds/g1/broadcast", "/operator/orders/o1/certificate"])
+      assert.equal((await call(listener.url, "/operator/orders/o1/refunds", secret, { method: "POST", body: "{}" })).response.status, 400);
+      for (const path of ["/operator/refunds/g1/broadcast", "/operator/orders/o1/certificate"])
         assert.equal((await call(listener.url, path, secret, { method: "POST", body: "{}" })).response.status, 404);
       assert.equal((await call(listener.url, "/operator/orders/o1")).value.status, "converted");
     });

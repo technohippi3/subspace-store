@@ -355,9 +355,11 @@ export class SalesStore {
       const target = chosen.ordinal ? state.refundAttempts.find(a => a.id === chosen.id)! : g;
       // No raw transaction or intermediate signed draft leaves this API.
       return { ...summary({ ...g, charged: reservation(state, g), transaction: chosen.transaction }, !!saved && JSON.stringify(saved.value) === JSON.stringify(target)),
+        refund_address: chosen.transaction?.outputs.find(o => o.role === "buyer")?.address ?? state.accounts.find(a => a.order === g.order)!.destination?.address ?? null,
         ...refundStatus(state, g, chosen.transaction?.txid), original_txid: g.transaction?.txid ?? null,
         settled_txid: winner(state, g)?.transaction?.txid ?? null,
         maximum_charge_sats: reservation(state, g), settled_charge_sats: winner(state, g)?.charged ?? null,
+        selected_charge_sats: chosen.charged,
         pending_attempt: state.refundAttempts.find(a => a.group === g.id && a.phase === "reserved")?.id ?? null,
         rebuild_paused: state.refundPauses.some(p => p.group === g.id && p.active),
         operator_notices: state.refundPauses.filter(p => p.group === g.id).map(p => ({ code: "refund_rebuild_paused", active: p.active, first_at: p.firstAt, last_at: p.lastAt })),
@@ -395,7 +397,7 @@ export class SalesStore {
       yield* self.save(records, state); yield* self.storage.flush(); return yield* self.view(state, order);
     }));
   }
-  /** Operator building block only. No operator HTTP route exists. */
+  /** Lower-level explicit reservation. HTTP retries use prepareOperatorRefund. */
   prepareRefund(id: string, kind: RefundGroup["kind"], cause: RefundGroup["cause"]) {
     const self = this;
     return self.queue.withPermit(Effect.gen(function* () {
@@ -423,6 +425,38 @@ export class SalesStore {
     });
   }
   buildRefund(id: string) { return this.queue.withPermit(this.build(id)); }
+  /** Retry the outstanding preparation before allocating any new credit. */
+  prepareOperatorRefund(id: string, kind: RefundGroup["kind"], cause: RefundGroup["cause"]) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { records, state } = yield* self.refresh();
+      yield* checked(() => { if (!["excess", "cancellation"].includes(kind) || !["buyer", "merchant"].includes(cause)) fail("invalid refund request", "invalid"); });
+      const active = state.groups.filter(g => g.order === id && g.phase !== "void" && !settled(state, g));
+      if (active.length) {
+        const g = yield* checked(() => {
+          if (active.length !== 1 || active[0]!.kind !== kind || active[0]!.cause !== cause)
+            fail("another refund is outstanding; inspect and finish it first");
+          return active[0]!;
+        });
+        return yield* self.build(g.id);
+      }
+      const adapters = yield* checked(() => self.refundAdapters());
+      const estimate = yield* adapters.estimateRate(state.refunds.policy.confirmationTarget);
+      const g = yield* checked(() => reserve(state, id, kind, cause, estimate));
+      yield* self.save(records, state); return yield* self.build(g.id);
+    }));
+  }
+  inspectionRefund(id: string) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { state } = yield* self.refresh(); yield* self.storage.flush();
+      const g = yield* checked(() => state.groups.find(g => g.id === id) ?? fail("no such refund", "not_found"));
+      return yield* self.groupView(state, g);
+    }));
+  }
+  broadcastOperatorRefund(id: string, txid: string) {
+    return this.queue.withPermit(this.sendRefund(id, txid, true));
+  }
   bumpRefund(id: string, feeRate: number, charged?: number, absorbFeeIncrease = false) {
     const self = this;
     return self.queue.withPermit(Effect.gen(function* () {
@@ -488,12 +522,16 @@ export class SalesStore {
       g.phase = "void"; yield* self.save(records, state); return yield* self.groupView(state, g);
     }));
   }
-  private sendRefund(id: string, requestedTxid?: string) {
+  private sendRefund(id: string, requestedTxid?: string, exact = false) {
     const self = this;
     return Effect.gen(function* () {
       const sender = yield* checked(() => self.refundAdapters().sender ?? fail("refund sender is not configured", "unavailable"));
       const { records, state } = yield* self.refresh();
       const g = yield* checked(() => state.groups.find(g => g.id === id) ?? fail("no such refund", "not_found"));
+      yield* checked(() => {
+        if (exact && (winner(state, g) ?? preferred(state, g)).transaction?.txid !== requestedTxid)
+          fail("refund transaction changed; inspect and confirm again");
+      });
       if (settled(state, g)) return yield* self.groupView(state, g);
       const member = yield* checked(() => requestedTxid ? members(state, g).find(m => m.transaction?.txid === requestedTxid) ?? fail("transaction is not in this refund") : preferred(state, g));
       const tx = yield* checked(() => member.transaction ?? fail("refund has not been built"));

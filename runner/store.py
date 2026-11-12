@@ -19,6 +19,7 @@ from controller.rpc import Http, HttpError
 from .commitments import receipt as commitment_receipt
 from .certificates import accept as accept_certificate
 from .deliveries import fulfill as fulfill_order, status as delivery_status
+from .refunds import receipt as refund_receipt, GROUP, HASH
 
 
 class Refused(Exception):
@@ -166,6 +167,30 @@ class TypeScriptStore(Store):
     """Explicit TypeScript pilot protocol; never probes or falls back to the
     Python store's anonymous issuing marks."""
     bound_entries = True
+
+    def refund(self, oid, kind, cause):
+        if not isinstance(oid, str) or not re.fullmatch(r"o[1-9][0-9]{0,15}", oid) or \
+                kind not in ("cancellation", "excess") or cause not in ("buyer", "merchant"):
+            raise Refused("invalid refund preparation")
+        return refund_receipt(self.op("POST", f"/operator/orders/{oid}/refunds", {"kind": kind, "cause": cause}),
+                              Refused, oid=oid, kind=kind, cause=cause)
+
+    def refund_group(self, gid):
+        if not isinstance(gid, str) or not GROUP.fullmatch(gid):
+            raise Refused("invalid refund group")
+        return refund_receipt(self.op("GET", f"/operator/refunds/{gid}"), Refused, gid=gid)
+
+    def broadcast(self, gid, txid=None):
+        if not isinstance(txid, str) or not HASH.fullmatch(txid):
+            raise Refused("refund requires an explicit reviewed transaction")
+        current = self.refund_group(gid)
+        if current["txid"] != txid or not current["acknowledged"]:
+            raise Refused("refund transaction changed or is not acknowledged; inspect and confirm again")
+        result = refund_receipt(self.op("POST", f"/operator/refunds/{gid}/broadcast", {"txid": txid, "confirm": gid}), Refused,
+                                gid=gid, oid=current["oid"], kind=current["kind"], cause=current["cause"])
+        if any(result[k] != current[k] for k in ("txid", "refund_address", "charged_sats", "to_buyer_sats", "fee_sats", "buyer_fee_sats", "merchant_fee_sats")):
+            raise Refused("refund response differs from the reviewed transaction; inspect before retrying")
+        return result
 
     def delivery_status(self, batch, oid):
         return delivery_status(self, batch, oid, Refused)

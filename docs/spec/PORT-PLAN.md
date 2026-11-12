@@ -75,6 +75,9 @@ sticky fulfilled recovery incidents follow in `FULFILLMENT.md`. The standalone
 regtest process, sequential observation, injected credentials and live runner
 network status follow in `RUNTIME.md`. One JSON-API sale through real Spaces,
 subs, libveritas and the local relay now passes with store crashes/restarts.
+The attended refund API/runner boundary now follows `ATTENDED-REFUNDS.md`,
+with a real cancellation refund and exact transaction confirmation. Reads
+and polling never broadcast; pending preparation retries reuse their group.
 Browser checkout, remaining sale/refund scenarios, supersession and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.

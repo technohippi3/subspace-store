@@ -72,8 +72,9 @@ cleanup and restart, not real Spaces proofs. `run-typescript-sale.sh`
 separately drives fresh fixture wallets in a loopback-only namespace with
 real Core 31.2, spaced, subs, libveritas and a local relay. That scenario
 uses the buyer JSON API and shipped attended runner, and records exact
-source hashes and crash/restart checks. It is not a browser checkout,
-buyer-client import, refund-stack or whole-host restore qualification.
+source hashes and crash/restart checks. `ATTENDED-REFUNDS.md` now extends
+it through cancellation and a real attended refund received by the buyer.
+It is not browser checkout, buyer-client import or whole-host restore qualification.
 Results are recorded in `regtest/REPORT.md`; the existence of the harness
 alone establishes none of them. No deployment or sales-opening authority
 is implied.

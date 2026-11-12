@@ -6,6 +6,8 @@ import { listenAuthenticated, type OperatorToken } from "./authenticated-http.ts
 import { certificateBody } from "./certificate-http.ts";
 import { deliveryBody } from "./delivery-http.ts";
 import { catalogBody, pauseBody } from "./catalog-http.ts";
+import { groupId, refundBody, refundSendBody } from "./refund-http.ts";
+import { refundReceipt } from "./refund-receipt.ts";
 export type { OperatorToken } from "./authenticated-http.ts";
 
 function empty(request: import("node:http").IncomingMessage) {
@@ -46,7 +48,7 @@ function commitment(request: import("node:http").IncomingMessage) {
   }, catch: () => new ApplicationError({ code: "invalid", message: "invalid commitment request" }) });
 }
 /** Operator role only. The controller still owns roots, binding evidence,
- * broadcast intents, sends and recovery. No financial send is exposed. */
+ * commitment sends and recovery. Refund sends require exact confirmation. */
 export function serveOperator(store: SalesStore, token: OperatorToken, port = 0) {
   return listenAuthenticated(request => Effect.gen(function* () {
     const raw = request.url ?? "";
@@ -59,6 +61,18 @@ export function serveOperator(store: SalesStore, token: OperatorToken, port = 0)
       return { code: 200, value: { orders: result.orders.map(o => o.oid) } };
     }
     if (url.search) return { code: 404, value: { error: "not found" } };
+    const refund = new RegExp(`^/operator/refunds/(${groupId})(/broadcast)?$`).exec(path);
+    if (request.method === "GET" && refund && !refund[2])
+      return { code: 200, value: refundReceipt(yield* store.inspectionRefund(refund[1]!)) };
+    const prepare = /^\/operator\/orders\/(o[1-9][0-9]{0,15})\/refunds$/.exec(path);
+    if (request.method === "POST" && prepare) {
+      const input = yield* refundBody(request);
+      return { code: 200, value: refundReceipt(yield* store.prepareOperatorRefund(prepare[1]!, input.kind, input.cause)) };
+    }
+    if (request.method === "POST" && refund?.[2]) {
+      const txid = yield* refundSendBody(request, refund[1]!);
+      return { code: 200, value: refundReceipt(yield* store.broadcastOperatorRefund(refund[1]!, txid)) };
+    }
     const order = /^\/operator\/orders\/(o[1-9][0-9]{0,15})(\/(?:batch-entry|journal))?$/.exec(path);
     if (request.method === "GET" && order && !order[2]) return { code: 200, value: yield* store.inspectionOrder(order[1]!) };
     if (request.method === "GET" && path === "/operator/status") return { code: 200, value: yield* store.operatorStatus() };

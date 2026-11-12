@@ -187,6 +187,8 @@ def sale(run):
          "same_receipt": operator.get("/operator/orders/o1")["fulfillment"] == receipt,
          "same_certificate": buyer.get(link + "/certificate", raw=True) == message},
          {"status": "fulfilled", "same_receipt": True, "same_certificate": True})
+    from .typescript_refund import refund
+    refund(run, buyer, operator, command, restart)
 
 
 def main(argv):
@@ -194,8 +196,8 @@ def main(argv):
         raise RuntimeError("run through regtest/run-typescript-sale.sh")
     run = Run(argv[1])
     files = sorted([*ROOT.glob("ts/src/**/*.ts"), *ROOT.glob("controller/*.py"),
-                    *ROOT.glob("runner/*.py"), Path(__file__)])
-    run.report.meta.update({"scope": "real Spaces-stack sale; JSON buyer, no buyer client or refund/host-loss gate",
+                    *ROOT.glob("runner/*.py"), Path(__file__), Path(__file__).with_name("typescript_refund.py")])
+    run.report.meta.update({"scope": "real Spaces-stack sale and attended cancellation refund; JSON buyer, no buyer client or host-loss gate",
                             "core": bitcoind_version(), "source_files": {
                                 str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}})
     try:
