@@ -12,7 +12,7 @@ import type { RefundAdapters, RefundGroup } from "../refunds/types.ts";
 import { applyObservations, balance, refundStatus, sendable, settled, winner } from "../refunds/observations.ts";
 import { allMembers, evidenceKey, members, preferred, reservation } from "../refunds/families.ts";
 import { attemptRequest, finishAttempt, rebuildRequest, reserveAttempt } from "../refunds/attempts.ts";
-import { advance, noteBroadcast, reconcile, recordLoss, tick, unserved, type Reason } from "./monitor.ts";
+import { advance, alert, monitor, noteBroadcast, reconcile, recordLoss, tick, unserved, type Reason } from "./monitor.ts";
 import { assess } from "./assessments.ts";
 import { auditRecipients, recipientBlock } from "./entry.ts";
 import { IssuanceRegistry, type RegistryContext } from "./registry.ts";
@@ -241,10 +241,20 @@ export class SalesStore {
         return yield* checked(() => fail("the off-host journal is unavailable; no quote was made", "unavailable"));
       const held = new Set(heldScripts(state));
       let chosen: Destination | undefined;
+      let skipped = 0;
       for (let draw = 0; draw <= held.size; draw++) {
         const candidate = yield* self.adapters.newDestination;
         yield* verified(() => destination(candidate));
         if (!held.has(candidate.script)) { chosen = { ...candidate }; break; }
+        skipped++;
+      }
+      if (skipped && !state.alerts.some(a => a.order === order.id && a.kind === "destination_held")) {
+        monitor(state, order.id); alert(state, order.id, "destination_held", skipped);
+      }
+      if (!chosen) {
+        // Even a refused allocation retains its single bounded wallet warning.
+        yield* self.save(records, state);
+        return yield* checked(() => fail("the payment wallet gave out only addresses that orders hold; no quote was made"));
       }
       yield* checked(() => {
         if (!chosen) fail("the payment wallet gave out only addresses that orders hold; no quote was made");

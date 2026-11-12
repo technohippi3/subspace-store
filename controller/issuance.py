@@ -27,6 +27,7 @@ class Issuance:
         one `/broadcast`. Returns the batch that went on (a rebuilt one if a
         member failed)."""
         self.require_restored()
+        self._require_rebuild_gate()
         b = self.batch(bid)
         if b["state"] != "checkpointed":
             raise Refused("not checkpointed")
@@ -165,9 +166,9 @@ class Issuance:
                 self._uncertain(bid, "entry was already armed", "local attempted-send evidence is stale")
                 raise Refused("entry already armed; outcome uncertain, not sent")
             if entry["found"] and entry["phase"] == "closed":
-                return self.release_unsent(bid, [m for m in b["members"] if not self.registry.batch_entry_ok(m)])
+                return self.release_unsent(bid, [m for m in b["members"] if not self.registry.batch_entry_ok(m)], binding_failure=True)
             if entry["found"] and entry["acknowledged"] and not entry["batchable"]:
-                return self.release_unsent(bid, self.failing(bid, recheck_issuing=True))
+                return self.release_unsent(bid, self.failing(bid, recheck_issuing=True), binding_failure=True)
             self._require_bound(b)
             delegate = self.live_delegate(b["space"])
             self._save(bid, journal=False, intent=1, delegate_in=delegate["outpoint"])
@@ -212,19 +213,20 @@ class Issuance:
         if not entry["found"]:
             failing = self.failing(bid)
             if failing:
-                return self.release_unsent(bid, failing)
+                return self.release_unsent(bid, failing, binding_failure=True)
             entry = self.registry.entry_status(b, create=True)
         if entry["found"] and entry["phase"] == "armed":
             self._save(bid, journal=False, state="issuing", intent=1, attempted=1, delegate_in=entry["delegate"])
             self._uncertain(bid, "entry was already armed", "local attempted-send evidence is stale")
             raise Refused("entry already armed; outcome uncertain, not sent")
         if entry["found"] and entry["phase"] == "closed":
-            return self.release_unsent(bid, [m for m in b["members"] if not self.registry.batch_entry_ok(m)])
+            return self.release_unsent(bid, [m for m in b["members"] if not self.registry.batch_entry_ok(m)], binding_failure=True)
         if entry["found"] and entry["acknowledged"] and not entry["batchable"]:
-            return self.release_unsent(bid, self.failing(bid, recheck_issuing=True))
+            return self.release_unsent(bid, self.failing(bid, recheck_issuing=True), binding_failure=True)
         if not entry["found"] or not entry["acknowledged"] or not entry["batchable"]:
             raise Refused("issuance entry is not currently confirmed and batchable; locks retained, not sent")
         delegate = self.live_delegate(b["space"])
+        self._reset_rebuild_guard()
         self._save(bid, journal=False, state="issuing", intent=1,
                    delegate_in=delegate["outpoint"], fee_rate=fee_rate)
         self._journal(bid)

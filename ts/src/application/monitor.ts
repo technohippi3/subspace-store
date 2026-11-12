@@ -15,7 +15,7 @@ export interface OrderMonitor {
 }
 export interface BroadcastReceipt { group: string; txid: string; at: number }
 export interface OperatorAlert {
-  id: number; order: string; kind: Reason | "refund_deadline" | "refund_assessment" | "recipient_conflict" | "recovery_incident"; amount: number; at: number; deadline: number | null;
+  id: number; order: string; kind: Reason | "refund_deadline" | "refund_assessment" | "recipient_conflict" | "recovery_incident" | "destination_held"; amount: number; at: number; deadline: number | null;
 }
 export function monitor(state: State, order: string): OrderMonitor {
   let value = state.monitors.find(m => m.order === order);
@@ -135,7 +135,7 @@ export function decodeAlert(value: unknown): asserts value is OperatorAlert {
   fields(value, "id,order,kind,amount,at,deadline"); whole(value.id, 1); whole(value.at);
   if (value.kind === "recipient_conflict" || value.kind === "recovery_incident") { if (value.amount !== 0) fail("invalid nonfinancial alert amount"); }
   else sats(value.amount);
-  if (typeof value.order !== "string" || ![...reasons, "refund_deadline", "refund_assessment", "recipient_conflict", "recovery_incident"].includes(String(value.kind)) ||
+  if (typeof value.order !== "string" || ![...reasons, "refund_deadline", "refund_assessment", "recipient_conflict", "recovery_incident", "destination_held"].includes(String(value.kind)) ||
       (value.kind === "refund_deadline") !== (value.deadline !== null)) fail("invalid operator alert");
   if (value.deadline !== null) whole(value.deadline, 1);
 }

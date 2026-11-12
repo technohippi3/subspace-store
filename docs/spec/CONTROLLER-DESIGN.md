@@ -630,3 +630,20 @@ Still open:
 A separate signer (open decision 2), Lightning, and any mainnet execution.
 Running anything on mainnet needs a concrete plan and the owner's explicit
 authorization.
+
+## Bound rebuild and missing-byte incidents
+
+B5's consecutive binding-failure count is an acknowledged, versioned
+controller-journal record. Retrying the same failed batch, including after
+process death, cannot count it twice. The third failed batch retires without
+a successor and records an operator alert. New freeze or issuance waits
+until a later block. A successful fresh binding check resets the count;
+a late retry of an old paused batch can never create a successor. Explicit
+operator rollback is not a binding failure. Unsupported counter history
+refuses startup.
+
+For L8, refusing an unknown commitment transaction also records a local
+recovery pause and one operator alert before any confirmation prompt.
+Journal acknowledgment is retried without duplicating the alert. Members
+remain issuing and non-cancellable. The refusal constructs or broadcasts
+nothing; absence from a mempool does not prove that no transaction escaped.

@@ -117,7 +117,7 @@ pay the increased price first.
 
 The production release requires all non-deferred fixed-price cases except
 the Y cases, which exercise the separate owner-only mode. Cases A, B, L,
-X and J1–J10 require the shipped Python controller/runner's production
+X and J3–J4/J6–J10 require the shipped Python controller/runner's production
 tests; other applicable cases require TypeScript store production tests.
 The latter live in `ts/test/production/`, and independent model tests in
 `ts/test/model/`. Baseline Python store tests do not count for that target.
@@ -163,3 +163,54 @@ without exempting their safety outcomes.
 The production browser suite uses real HTTP, SQLite and journal replay with
 recording chain/wallet/controller adapters. It does not establish a funded
 wallet purchase, real Spaces browser sale or buyer-client acceptance.
+
+## Cross-component qualification
+
+The production controller suite has typed, unconditional Node test entry
+points in `ts/test/production/controller-cases.test.ts`. Its scenarios run
+fresh processes of the shipped Python controller and runner against the
+real TypeScript HTTP store, SQLite and journals. Only native RPCs, upstream
+proof verification and relay behavior are recorded. The coverage checker
+classifies this exact suite as controller evidence. Other TypeScript tests
+cannot satisfy a controller case merely by using its identifier. Simulated
+transactions and proofs are not Core, Spaces or buyer acceptance evidence.
+
+J1, J2 and J5 concern the refund journal, which the pilot's TypeScript store
+owns. They require TypeScript production coverage. Their tests restore the
+signed family and reservation from its journal, observe before any send,
+and withhold signing or sending while the relevant acknowledgment is
+missing. An operator receipt exposes neither PSBT nor signed bytes. Owner
+PSBT export is deferred by the attended hot-wallet decision; no export
+capability is implied by these receipts. R10 retains that reservation:
+a built transaction cannot be discarded, and an unsettled conflict grants
+no release or independent payment authority. A settled conflict permits
+only the already specified exclusive rebuild.
+
+B2's historical proof-quota conflict is outside the owner-selected pilot
+without proof eligibility. Its pilot test refuses unsupported proof
+configuration and request members, and repeats real availability and
+recipient binding checks. B1 and J9 repeat the funding check. This does
+not supply a quota or nullifier implementation. The historical model case
+remains unchanged.
+
+J3 and J4 use the stricter bound-entry order: the controller cannot record
+an intent before exact store acknowledgment. A locally issuing but
+unacknowledged entry remains checkpointed without a send. A journal-only
+restore of an armed entry remains issuing and quarantined until controller
+reconciliation; neither cancellation nor an unknown-send retry is granted.
+J6 retries the same acknowledged known-unsent identity after independent
+reconciliation. J8 and J10 deliberately supply stale controller recovery
+journals while preserving their newer copies separately in the fixture.
+They exercise actual adoption or supersession before paused startup;
+they do not claim arbitrary native tree repair.
+
+V15 and the historical-SQL part of V17 concern Python records predating
+its recipient-audit column. Those formats are not accepted TypeScript
+inputs. The first strict TypeScript format refuses invalid recipients at
+repeated startup and journal-only restore, preserves the invalid history,
+and never publishes a serving target. It cannot expose the old invoice,
+freeze a batch or send. There is no in-place Python SQL upgrade. V16 and
+the valid current-recipient part of V17 still audit current conflicts,
+retain their orders, alert once and refuse unsafe entry or payment
+instructions. Any future historical import needs a separate specification
+and atomic interruption qualification, as C12 already requires.

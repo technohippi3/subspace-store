@@ -13,7 +13,7 @@ def _label(handle):
 
 
 class Rebuild:
-    def release_unsent(self, bid, failing):
+    def release_unsent(self, bid, failing, binding_failure=False):
         """Conditionally close the store entry before any local rollback.
         Its durable arm marker, not a stale local flag, is the final guard."""
         self.require_restored()
@@ -33,6 +33,8 @@ class Rebuild:
         if acked and (any(acked[k] != b[k] for k in ("root", "prior_root", "members", "digest", "space")) or
                       (acked.get("entry_key") and acked["entry_key"] != b.get("entry_key"))):
             raise Refused("release identity differs from its journal; reconcile before continuing")
+        if binding_failure:
+            self._note_failed_rebuild(bid)
         if b["root"] is None:
             if b.get("entry_key") or b["intent"]:
                 raise Refused("entry or intent has no root; reconcile before continuing")
@@ -116,21 +118,30 @@ class Rebuild:
         """Parent retirement and its sole successor are one local transaction.
         A crash before the journal is repaired by retrying, not by rollback."""
         keep = sorted(m for m in b["members"] if m not in failed)
-        child = f"b{self.db.execute('select count(*) from batches').fetchone()[0] + 1}" if keep else None
+        paused = self._paused_rebuild(b["bid"])
+        child = f"b{self.db.execute('select count(*) from batches').fetchone()[0] + 1}" if keep and not paused else None
         statements = []
         if child:
             full = sorted((self.registry.order(m)["name"], self.registry.order(m)["recipient_spk"], m) for m in keep)
             statements.append(("insert into batches(bid,space,members,digest,state,prior_root,supersedes) "
                                "values(?,?,?,?,'frozen',?,?)", (child, b["space"], json.dumps(keep),
                                hashlib.sha256(json.dumps(full).encode()).hexdigest(), b["prior_root"], b["bid"])))
-        else:
+        elif not keep:
             statements.append(("insert into alerts(kind,bid,detail) values('every_member_failed',?,'')", (b["bid"],)))
+        if paused and not any(a["kind"]=="rebuilds" and a["bid"]==b["bid"] for a in self.alerts()):
+            statements.append(("insert into alerts(kind,bid,detail) values('rebuilds',?,'paused until next block')",(b["bid"],)))
         statements.append(("update batches set state='rebuilt',intent=0,release_failed=? where bid=?",
                            (json.dumps(failed), b["bid"])))
         self._atomically(*statements)
         return self._released_successor(self.batch(b["bid"]))
 
     def _released_successor(self, b):
+        if self._paused_rebuild(b["bid"]):
+            if any(c["supersedes"]==b["bid"] for c in self.batches()):
+                raise Refused("paused rebuild unexpectedly has a successor")
+            if not self._journal(b["bid"]):
+                raise Refused("paused rebuild not acknowledged; retry completion")
+            raise Refused("three rebuilds in a row: paused until the next block")
         keep = sorted(m for m in b["members"] if m not in json.loads(b["release_failed"]))
         full = sorted((self.registry.order(m)["name"], self.registry.order(m)["recipient_spk"], m) for m in keep)
         digest = hashlib.sha256(json.dumps(full).encode()).hexdigest()
@@ -160,7 +171,7 @@ class Rebuild:
         return its members to paid, then roll back and continue without the
         failing members."""
         if getattr(self.registry, "bound_entries", False):
-            return self.release_unsent(bid, failing)
+            return self.release_unsent(bid, failing, binding_failure=True)
         b = self.batch(bid)
         self.db.execute("update batches set state = 'rebuilt', intent = 0 where bid = ?", (bid,))
         if not self._journal(bid):
@@ -174,7 +185,7 @@ class Rebuild:
     def rebuild(self, bid, failing):
         b = self.batch(bid)
         if getattr(self.registry, "bound_entries", False):
-            return self.release_unsent(bid, failing)
+            return self.release_unsent(bid, failing, binding_failure=True)
         self.subs.post(f"/spaces/{b['space']}/rollback-local")
         self._save(bid, state="rebuilt")
         return self._new_without(b, failing)

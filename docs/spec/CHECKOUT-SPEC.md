@@ -172,3 +172,14 @@ The pilot release gate remains blocked.
 | Z10 | invalid application records or configuration | open the application | refuse foreign kinds/fields and inconsistent identities without serving; release ownership on failure |
 | Z11 | a buyer order and a journal that fails before or after wallet allocation | quote through HTTP, retry, cancel a converted order twice during an outage, then restart with the journal available | no address before acknowledgment; no wallet call during a known outage; retry keeps the original address; cancellation stays unconfirmed with its prior status until acknowledged |
 | Z12 | a quote waiting for its wallet adapter | try another SQLite write transaction, queue cancellation and interrupt the quote | no SQLite transaction is held across the wait; cancellation proceeds after interruption; no address or hold from the interrupted quote is committed |
+
+## Payment destination reuse warnings
+
+Payment allocation excludes every historical payment, refund and retained
+change destination. H11 and T3 require one durable `destination_held`
+operator alert per affected quote. Its `amount` is the positive number of
+skipped wallet candidates, not satoshis; no address or script is placed in
+the alert. A successful quote journals the warning with its invoice. If
+all bounded candidates are held, the warning is saved before refusal and
+the order keeps its requested state without a destination or grant.
+Repeated quote attempts and restart do not duplicate the warning.

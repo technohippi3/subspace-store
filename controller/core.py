@@ -35,6 +35,7 @@ from .commitments import ANCHOR_FINALITY, FINAL_D, WATCHED, CommitmentTracking
 from .certificates import CertificateVerification
 from .supersessions import SupersessionTracking
 from .bound_recovery import BoundRecovery
+from .rebuild_guard import RebuildGuard
 
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
@@ -111,7 +112,7 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking, BoundRecovery):
+class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking, BoundRecovery):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
@@ -121,6 +122,7 @@ class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification,
             self.db.executescript(SCHEMA)
             self._migrate()
             self.journal = journal
+            self._rebuild_policy()  # Refuse malformed/unsupported policy history before serving.
             self.registry = registry
             self.clients = clients
             self.subs_process = subs_process
@@ -310,6 +312,7 @@ class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification,
 
     def freeze(self, space, members=None, supersedes=None):
         self.require_restored()
+        self._require_rebuild_gate()
         open_ = [b for b in self.batches(space) if b["state"] not in CLOSED]
         if open_:
             raise Refused(f"another batch is open ({open_[0]['bid']}); one commitment per space")
@@ -726,9 +729,7 @@ class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification,
             raise Refused("the commitment is still on the chain or in the mempool")
         acked = self.acknowledged(bid)
         if not b["raw"] or not acked or acked.get("raw") != b["raw"]:
-            if not b["recovery_paused"]:
-                self._save(bid, recovery_paused=1)
-                self.alert("recovery_paused", bid)
+            self.pause_missing_commitment_bytes(bid)
             raise Refused("no journaled commitment bytes: recovery paused for the owner")
         if not self._issuance_acknowledged(self.batch(bid)):
             raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")

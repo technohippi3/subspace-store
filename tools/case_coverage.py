@@ -22,6 +22,8 @@ CONTROLLER_FILES = {'test_controller_host.py', 'test_controller_lock.py',
                     'test_runner.py', 'test_runner_recovery.py',
                     'test_interrupted_broadcast.py', 'test_entry_recovery.py', 'test_entry_release.py',
                     'test_commitment_tracking.py', 'test_bound_certificates.py', 'test_bound_delivery.py', 'test_attended_refunds.py', 'test_supersession.py', 'test_bound_recovery.py', 'test_public_pilot.py'}
+# This suite executes the shipped Python controller across the real TS HTTP store.
+CONTROLLER_TS_FILES = {'production/controller-cases.test.ts'}
 SERVICE_PREFIXES = 'VHCASTY'
 TS_LEXEMES = re.compile(r'//[^\n]*|/\*[\s\S]*?\*/|`(?:\\.|[^`\\])*`|'
                         r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
@@ -55,7 +57,7 @@ def deferred(case):
 
 
 def pilot_target(case):
-    if case[0] in 'ABLX' or (case[0] == 'J' and int(case[1:]) <= 10):
+    if case[0] in 'ABLX' or (case[0] == 'J' and int(case[1:]) <= 10 and case not in {'J1', 'J2', 'J5'}):
         return 'python-controller'
     return 'ts-store'
 
@@ -109,7 +111,8 @@ def evidence(root=ROOT):
                 errors.append(f'{path.relative_to(root)}: {case} requires an unconditional callback')
                 continue
             relative = path.relative_to(root / 'ts/test')
-            kind = {'model': 'ts-model', 'production': 'ts-store'}.get(relative.parts[0])
+            kind = ('python-controller' if relative.as_posix() in CONTROLLER_TS_FILES else
+                    {'model': 'ts-model', 'production': 'ts-store'}.get(relative.parts[0]))
             if kind is None:
                 errors.append(f'{relative}: named cases belong in model/ or production/')
                 continue

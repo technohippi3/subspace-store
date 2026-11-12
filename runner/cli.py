@@ -541,6 +541,10 @@ class Runner:
             self._fee_rate(b.get("fee_rate"))
         if self.network == "mainnet":
             self.require_networks()
+        if b["state"] in ("broadcast", "broadcast_uncertain") and not b["txid"]:
+            # Local incident only, before any prompt or network call. Keep
+            # A11's refusal ordering while recording L8's durable pause.
+            self.c.pause_missing_commitment_bytes(bid)
         if b["state"] not in ("broadcast", "broadcast_uncertain") or not b["txid"]:
             raise NotConfirmed(f"{bid} is {b['state']} with no known txid; nothing to "
                                "rebroadcast, nothing was sent")

@@ -104,6 +104,17 @@ paused bootstrap and a separate TypeScript public pilot runner path. Its compone
 The release gate stays blocked; neither component
 nor model tests open sales.
 
+The seller CLI and repeatable policy operations now follow
+`SELLER-OPERATIONS.md`, including explicit request limits and funded owner
+invoices. Cross-component production cases now execute the shipped Python
+controller against the real TypeScript store. They close controller binding,
+finality, cancellation, journal and deficit coverage with explicit pilot
+applicability in `PILOT-SPEC.md`. They also expose and fix B5's durable
+rebuild throttle and L8's missing-byte incident. Payment allocation now
+records H11/T3's durable warning when the wallet repeats a retained
+destination. Restore coverage and signed package acceptance remain open;
+passing source tests do not establish phone or deployed acceptance.
+
 ## Work order and gates
 
 | Stage | Work | Evidence required before moving through its gate |
