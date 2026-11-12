@@ -117,3 +117,26 @@ This table describes applicability, not a temporary case-status exemption.
 
 K6 adds the full-payment constraint to P9; it does not remove the normal
 full-payment P9 scenario from pilot coverage. K7 preserves the P12 result.
+
+## Browser case applicability
+
+All C1–C12 cases remain required TypeScript production coverage. The
+browser is a transport over the same commands as JSON; it grants no
+alternative payment, cancellation or issuance permission. The following
+mapping resolves differences from the retained Python checkout cases,
+without exempting their safety outcomes.
+
+| Baseline requirement | Public-pilot equivalent |
+| --- | --- |
+| C1–C6 and C9 | Public prices/availability only; exact recipient parsing; private 303 order links; journal-gated address retry; token isolation; escaping and private, scriptless, unframeable responses. |
+| C7–C8 | A converted order without a bound armed entry cannot accept a certificate. Under `CERTIFICATES.md`, a verified bound callback atomically changes issuing to ready rather than requiring a separate anonymous readiness mutation. Only currently verified ready/fulfilled bytes are downloadable; finality loss withdraws both link and bytes until fresh observation and verification. |
+| C10 certificate bounds | The kept 226,511-byte certificate is delivered through the authenticated bound callback and served byte for byte. Oversize certificate/envelope requests preserve the previous bytes. All other buyer and operator bodies retain the 65,536-byte limit, including declared bounds; unauthenticated delivery remains 401. |
+| C11 ordinary invoices | Only an unexpired, never-detected, acknowledged quoted invoice with its ordinary hold can ask for payment. Confirmation, conversion, issuance, readiness, fulfillment, cancellation pending/final, refund due and unevaluated expiry all remove payment instructions and explain not to pay. |
+| C11 pay-first invoices | K1/K3/K5 require usable invoices without a hold. Inside the original quote window a never-detected acknowledged pay-first invoice can ask for payment only after the race-loss/refund-fee warning and ceiling. Outside that window it is history. This is the explicit pilot replacement of C11's hold-only display condition, not a new hold or race rule. |
+| C12 live observations | Full or partial mempool payment, first confirmation, replacement by less payment or no payment, disappearance and expiry keep detected history sticky; displayed detection never counts as confirmation or grants an extra extension. No replacement-payment prompt is shown. The JSON order link reports the same detected amounts. |
+| C12 supported journal-only restore | Acknowledged detection remains detected even when gone. Detection seen only during an outage and then lost, and an invoice never observed paid, become unknown. Unquoted orders remain none and offer the invoice button under the normal pause/admission rules. Browser and JSON keep these outcomes after reconciliation and expiry; later fresh detection advances unknown to detected. |
+| C12 pre-history journals and direct/older/interrupted Python SQL upgrades | Those SQL formats belong to the pinned Python service and its unchanged executable migration tests. TypeScript's first strict application format already requires payment history and has no older shipped SQL history column to migrate. Missing-history records, including those accompanied by a payment output, refuse repeated startup and journal restore without changing the journal, publishing a serving database, or leaving partial domain/schema changes. A Python database is not an accepted TypeScript input. This fail-closed production check preserves the no-payment-request outcome; any future import requires its own explicit migration specification and atomic interruption tests. |
+
+The production browser suite uses real HTTP, SQLite and journal replay with
+recording chain/wallet/controller adapters. It does not establish a funded
+wallet purchase, real Spaces browser sale or buyer-client acceptance.

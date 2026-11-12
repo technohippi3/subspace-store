@@ -1205,6 +1205,13 @@ not replace the controller lock or the maintenance protocol for broadcasts.
 Status (2026-11-09): requirements for the regtest checkout milestone.
 Nothing here authorizes mainnet.
 
+The retained Python checkout cases keep their baseline behavior. The
+TypeScript public pilot's explicit browser equivalents are mapped in
+`PILOT-SPEC.md`, including hold-free pay-first invoices, bound certificate
+readiness and strict rejection of unsupported pre-history formats.
+`CHECKOUT-SPEC.md` defines its implemented browser transport and remaining
+acceptance requirements.
+
 Checkout. The buyer pages are served by the store service, beside its
 JSON API, and are plain HTML forms with no scripts. They add no rule: every
 step goes through the same ledger call as the JSON API, with the same

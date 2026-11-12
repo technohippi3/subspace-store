@@ -41,8 +41,14 @@ application/controller/subs paths and issues again with live Core/wallets.
 `../docs/spec/HOST-RECOVERY.md` adds a separate fresh seller-node/wallet
 fixture using the original onboarding backups. It covers known mined history;
 the complete operator recovery acceptance gate remains separate.
-Browser checkout, remaining sale/refund scenarios, other supersession paths and full application
-recovery remain. The Python service,
+Browser checkout now serves a public catalog, exact recipient-request forms,
+private orders, journal-gated BIP21 invoices, payment uncertainty,
+cancellation/refund destinations and progress, and certificate downloads.
+Production C1–C12 tests exercise real HTTP/SQLite/journals with simulated
+adapters; `../docs/spec/CHECKOUT-SPEC.md` and `PILOT-SPEC.md` define the
+transport and exact baseline-to-pilot mappings. Real-stack browser
+qualification, Nacho acceptance, remaining sale/refund scenarios, other
+supersession paths and full application recovery remain. The Python service,
 controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -220,7 +226,7 @@ off-host for actual host-loss recovery; no object-store adapter is claimed.
 
 Domain rules of `service/ledger.py` still to port, each with its home:
 
-1. Complete browser order views and remaining Spaces-stack sales/refund scenarios.
+1. Qualify browser checkout and remaining Spaces-stack sales/refund scenarios.
 2. Remaining registry recovery and alternative/unknown-transaction supersession.
    Pending selection, bound entry, commitment observation, certificate acceptance
    and explicit known-transaction delegate-conflict proof now exist. Generating
@@ -295,7 +301,7 @@ acceptance now have their own protocol specifications. Certificate bytes
 are reconstructible local cache; their binding and invalidation are journaled.
 Bound delivery callbacks now retain first delivery and fulfilled ownership
 across certificate loss, with explicit recovery incidents.
-Next complete additional Spaces-stack qualification, remaining supersession/recovery, order views and
+Next complete additional Spaces-stack/browser qualification, remaining supersession/recovery and
 wallet/whole-host recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

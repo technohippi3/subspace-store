@@ -93,8 +93,10 @@ live; wallet/whole-host recovery qualification remains.
 `HOST-RECOVERY.md` extends the qualification procedure with fresh seller-node
 and wallet paths from onboarding backups. Known mined history is its scope;
 the complete multi-space in-flight recovery gate remains separate.
-Browser checkout, remaining sale/refund scenarios, remaining supersession and
-application recovery remain. The release gate stays blocked; neither component
+The TypeScript browser checkout now has production C1–C12 coverage through
+the same commands as JSON (`CHECKOUT-SPEC.md`). Real-stack browser sale/refund
+qualification, Nacho acceptance, remaining sale/refund scenarios, remaining
+supersession and application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 
 ## Work order and gates

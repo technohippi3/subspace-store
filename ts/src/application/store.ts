@@ -4,7 +4,7 @@ import { canonicalHandle } from "../recipient.ts";
 import { DurableStore, type StorageConfig } from "../storage/store.ts";
 import { ApplicationError, checked, claims, decode, destination, fail, postIssuance, request, sats, verified,
   type Destination, type Order, type Record, type RefundSettings, type Snapshot, type State } from "./records.ts";
-import { active, admission, grant, refresh, release, total } from "./sales.ts";
+import { active, admission, grant, owner, refresh, release, total } from "./sales.ts";
 import { policy, type RefundPolicy } from "../refunds/policy.ts";
 import { available, buildRequest, configuration, heldScripts, recordBuilt, reserve, summary } from "../refunds/book.ts";
 import type { RefundAdapters, RefundGroup } from "../refunds/types.ts";
@@ -152,11 +152,14 @@ export class SalesStore {
         recovery_incident: yield* recoveryView(self.registryContext, state, order.id),
         cancellation: cancelled ? (final ? "final" : "unconfirmed") : null,
         price_sats: order.price,
+        quoted_price_sats: order.quotedPrice,
         address: rejected || order.paymentHistory === "unknown" ? null : acknowledged?.destination?.address ?? null,
         address_pending: !rejected && !!order.destination && !acknowledged?.destination,
         recipient_rejected: rejected,
         acknowledged: !!acknowledged?.destination,
         pay_first: order.payFirst,
+        payment_request_open: order.status === "quoted" && order.paymentHistory === "none" && total(state, order, 0) === 0 &&
+          order.quotedAt !== null && state.settings.lastTime < order.quotedAt + 900 && (order.payFirst || hold !== null),
         payment_warning: order.payFirst ? "This invoice does not reserve the name. Another buyer may pay first; if that happens, your payment is refunded less the refund fee." : null,
         quote_expires_at: order.quotedAt === null ? null : order.quotedAt + 900,
         hold_expires_at: hold?.until ?? null,
@@ -276,6 +279,17 @@ export class SalesStore {
     }));
   }
   observe() { return this.queue.withPermit(this.refresh().pipe(Effect.asVoid)); }
+  /** Public catalog projection: never includes recipient, token or order data. */
+  catalog() {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { state } = yield* self.refresh();
+      return { paused: state.settings.paused,
+        listings: [...state.listings].sort((a, b) => a.handle.localeCompare(b.handle)).map(n => ({
+          handle: n.handle, price_sats: n.price, available: !owner(state, n.handle),
+        })) };
+    }));
+  }
   /** Advance known deadlines without pretending an unavailable node was observed. */
   tick() {
     const self = this;

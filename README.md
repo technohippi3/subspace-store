@@ -81,8 +81,12 @@ controller and subs paths and issues again while Core and wallets stay live.
 `docs/spec/HOST-RECOVERY.md` adds the separate known-history whole-host
 qualification using original onboarding wallet backups and a surviving
 network node. Simultaneous uncertain/in-flight histories remain separate.
-Browser checkout, remaining sale/refund scenarios,
-other supersession paths and full application recovery remain. The Python
+The TypeScript browser checkout now covers catalog, public requests,
+journal-gated invoices, payment uncertainty, cancellation/refunds and
+certificate download with production C1–C12 tests. These use simulated
+adapters; real-stack browser qualification and Nacho acceptance remain,
+alongside remaining sale/refund scenarios, other supersession paths and
+full application recovery. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

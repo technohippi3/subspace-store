@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Effect } from "effect";
 import { ApplicationError } from "./records.ts";
 import type { SalesStore } from "./store.ts";
+import { checkoutRoute, sendCheckout } from "./checkout.ts";
 
 // The recipient request has exactly two string members. Parsing that shape
 // directly retains duplicate-key rejection, which JSON.parse alone loses.
@@ -15,7 +16,7 @@ function parseAddress(raw: string): string {
   try { JSON.parse(raw); return JSON.parse(match[2]!) as string; }
   catch { throw new ApplicationError({ code: "invalid", message: "invalid refund destination request" }); }
 }
-function parseRequest(raw: string): unknown {
+export function parseRequest(raw: string): unknown {
   const match = requestShape.exec(raw);
   if (!match) throw new ApplicationError({ code: "invalid", message: "invalid recipient request" });
   const first: unknown = JSON.parse(match[1]!), second: unknown = JSON.parse(match[3]!);
@@ -34,7 +35,12 @@ export async function body(request: IncomingMessage, maximum = 65_536): Promise<
     if (length > maximum) throw new ApplicationError({ code: "invalid", message: "body too large" });
     parts.push(part);
   }
-  return Buffer.concat(parts).toString("utf8");
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(parts)); }
+  catch { throw new ApplicationError({ code: "invalid", message: "invalid request encoding" }); }
+}
+async function emptyBody(request: IncomingMessage): Promise<void> {
+  const raw = (await body(request)).trim();
+  if (raw !== "" && raw !== "{}") throw new ApplicationError({ code: "invalid", message: "invalid empty request" });
 }
 export function send(response: ServerResponse, code: number, value: unknown): void {
   if (response.destroyed) return;
@@ -44,7 +50,7 @@ export function send(response: ServerResponse, code: number, value: unknown): vo
     "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" });
   response.end(data);
 }
-/** Buyer JSON API only, bound to loopback for the future HTTPS proxy.
+/** Buyer forms and JSON API, bound to loopback for the future HTTPS proxy.
  * No operator, registry, wallet or public-listening interface. */
 export function serve(store: SalesStore, port = 0) {
   return Effect.acquireRelease(Effect.tryPromise({ try: async () => {
@@ -55,6 +61,11 @@ export function serve(store: SalesStore, port = 0) {
       const work = (async () => {
         try {
           const path = request.url ?? "", method = request.method;
+          const checkout = checkoutRoute(store, request);
+          if (checkout) {
+            sendCheckout(response, await Effect.runPromise(checkout, { signal: controller.signal }));
+            return;
+          }
           const match = /^\/orders\/([A-Za-z0-9_-]{32})(\/(?:quote|cancel|refund-destination|certificate))?$/.exec(path);
           const operation: Effect.Effect<{ code: number; value: unknown }, unknown> = method === "POST" && path === "/requests" ?
             store.request(parseRequest(await body(request))).pipe(Effect.map(value => ({ code: 201, value }))) :
@@ -63,9 +74,9 @@ export function serve(store: SalesStore, port = 0) {
             match && method === "GET" && match[2] === "/certificate" ?
               store.certificate(match[1]!).pipe(Effect.map(value => ({ code: 200, value }))) :
             match && method === "POST" && match[2] === "/quote" ?
-              store.quote(match[1]!).pipe(Effect.map(value => ({ code: value.acknowledged ? 200 : 503, value }))) :
+              (await emptyBody(request), store.quote(match[1]!)).pipe(Effect.map(value => ({ code: value.acknowledged ? 200 : 503, value }))) :
             match && method === "POST" && match[2] === "/cancel" ?
-              store.cancel(match[1]!).pipe(Effect.map(value => ({ code: value.cancellation === "final" ? 200 : 202, value }))) :
+              (await emptyBody(request), store.cancel(match[1]!)).pipe(Effect.map(value => ({ code: value.cancellation === "final" ? 200 : 202, value }))) :
             match && method === "POST" && match[2] === "/refund-destination" ?
               store.setRefundDestination(match[1]!, parseAddress(await body(request))).pipe(Effect.map(value => ({ code: 200, value }))) :
               Effect.succeed({ code: 404, value: { error: "not found" } });
