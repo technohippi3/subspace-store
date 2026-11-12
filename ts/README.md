@@ -28,7 +28,10 @@ One standalone JSON-API sale through the real Spaces stack and local relay
 now passes with store crashes/restarts (`../docs/spec/RUNTIME.md`).
 The same scenario now includes a real attended cancellation refund, with
 the operator API/runner contract in `../docs/spec/ATTENDED-REFUNDS.md`.
-Browser checkout, remaining sale/refund scenarios, supersession and full application
+Known-transaction confirmed delegate conflicts now have explicit supersession
+and reorg-reversal handling (`../docs/spec/SUPERSESSION.md`). The store checks
+the Core proof; Spaces root exclusion is a trusted controller attestation.
+Browser checkout, remaining sale/refund scenarios, other supersession paths and full application
 recovery remain. The Python service,
 controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
@@ -208,8 +211,10 @@ off-host for actual host-loss recovery; no object-store adapter is claimed.
 Domain rules of `service/ledger.py` still to port, each with its home:
 
 1. Complete browser order views and remaining Spaces-stack sales/refund scenarios.
-2. Remaining registry recovery and supersession callbacks. Pending selection,
-   bound entry, commitment observation and certificate acceptance now exist.
+2. Remaining registry recovery and alternative/unknown-transaction supersession.
+   Pending selection, bound entry, commitment observation, certificate acceptance
+   and explicit known-transaction delegate-conflict proof now exist. Generating
+   a rollback, repairing the Spaces tree and resolving conflicts remain manual.
 3. Restore from the journal (`restore_from_journal`), which always comes
    back with sales paused.
 
@@ -278,7 +283,7 @@ acceptance now have their own protocol specifications. Certificate bytes
 are reconstructible local cache; their binding and invalidation are journaled.
 Bound delivery callbacks now retain first delivery and fulfilled ownership
 across certificate loss, with explicit recovery incidents.
-Next complete full Spaces-stack qualification, supersession, order views and
+Next complete additional Spaces-stack qualification, remaining supersession/recovery, order views and
 application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

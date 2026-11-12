@@ -49,7 +49,8 @@ never returns a fulfilled order to issuing. It opens a durable incident and
 alerts once per new reason; reads do not repeat the alert. New verification
 can restore the certificate without downgrading fulfillment or rewriting its
 receipt. It does not close the incident. Incidents can open before
-supersession; supersession remains a separate unported protocol.
+supersession; the known-transaction delegate-conflict protocol and reversal
+now follow `SUPERSESSION.md`, including nonfulfilled recovery incidents.
 
 Resolution is a journaled operator note, limited to 2,000 characters. Exact
 retries are idempotent; changing an existing resolution refuses. Resolution

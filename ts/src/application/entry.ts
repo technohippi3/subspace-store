@@ -2,6 +2,7 @@ import { canonicalHandle, validP2tr } from "../recipient.ts";
 import { claims, fail, postIssuance, type Order, type State } from "./records.ts";
 import { alert, monitor } from "./monitor.ts";
 import { total } from "./sales.ts";
+import { liveEntries, liveHandleEntries } from "./supersession-records.ts";
 
 export function recipientBlock(state: State, order: Order): string | null {
   if (!canonicalHandle(order.handle) || !validP2tr(order.recipient)) return "recipient not accepted";
@@ -18,6 +19,8 @@ export function auditRecipients(state: State): void {
 }
 export function entryOk(state: State, order: Order, issuing = false): boolean {
   return order.status === (issuing ? "issuing" : "converted") &&
+    liveEntries(state, order.id).length <= 1 &&
+    !liveHandleEntries(state, order.handle).some(e => e.bindings.some(b => b.handle === order.handle && b.id !== order.id)) &&
     total(state, order, 3) >= order.price! && recipientBlock(state, order) === null;
 }
 export function orderById(state: State, id: string): Order {

@@ -2270,3 +2270,72 @@ a251019fb5a8963264b3743966ac8e0f59fba848e4ce537b1a33c9ec112497f8  ts/regtest/run
 eceb07730de094c4cff3139be1e90fbe30f0b9f220a1fbacdcc61f0d856daeb9  ts/src/application/refund-http.ts
 c9631a41dc072be68e099d73013f865b4eb5c712d6dabe2423026f9df525aafb  ts/src/application/refund-receipt.ts
 ```
+
+
+## TypeScript confirmed delegate-conflict supersession, 2026-11-12
+
+The explicit protocol in `docs/spec/SUPERSESSION.md` now has independent
+model, production store, shipped controller/client and Core coverage. It
+observes an already-confirmed conflicting spend of the exact bound delegate;
+it does not create or send that transaction. Spaces root exclusion remains
+the authenticated controller's attestation. Unknown original transactions
+or signed bytes, alternative supersession proofs, actual Spaces tree repair
+and conflicting-history resolution remain manual or unported.
+
+Final local Core run `core-adapter-2026-11-12T10-06-50-967Z-68f47ce5`
+passes 73 checks bound to 59 current source hashes. Its complete safe
+qualification JSON is retained under `regtest/runs/` with that run ID.
+A separate fresh wallet signs two real transactions spending one delegate;
+the original contains the bound root and the higher-fee conflict mines six
+deep. The store independently verifies both identities, the root/input,
+active block and checkpoint before releasing paid undelivered orders. It
+retains the price reserve, survives restart, revokes the proof after actual
+checkpoint loss, relocks a paid order and preserves a cancelled order with
+an incident. Reconsidering the block and retrying old proof never reactivates
+it, including after another restart. Spaces root absence is a fixture fact
+in this narrower qualification, not a real Spaces rollback.
+
+Two initial Core attempts failed in the new fixture: run
+`core-adapter-2026-11-12T09-58-39-101Z-3e31dbfc` rejected full signed bytes
+through a hash-only validator (`invalid Core hash`), and run
+`core-adapter-2026-11-12T10-00-42-347Z-004b0197` reused one recipient script
+for two orders (`not batchable`). The helper now validates raw hex and uses
+distinct recipients. Run `core-adapter-2026-11-12T10-02-41-473Z-63a58392`
+then passed, before the additional handle-level recovery guard. The final
+run above is the one bound to current source. Failed runs retain their
+private logs but have no successful qualification JSON.
+
+Review also found that a cancelled old order's name could have a new order
+ID when its proof reverses. O77 now blocks entry, commitment and certificate
+progress by handle across order IDs; cancelling and reordering cannot evade
+the revived old issuance lock. An independent model and production tests
+cover both an unentered checkout and an already-armed replacement. A lost
+controller journal acknowledgment during reversal is retried before further
+progress, without repeating its alert.
+
+Final full-stack run `typescript-sale-20261112T100650Z-8544da` passes all
+24 required checks against 85 current source hashes. Core, spaced, subs,
+libveritas and the isolated relay complete the normal sale with store
+crashes/restarts and the attended cancellation refund. The buyer receives
+9,778 sats from its 10,000-sat principal with the 222-sat fee below the
+300-sat ceiling. This run qualifies the normal bridge after the new guards;
+it does not exercise real Spaces supersession. It compares fixed spec
+expectations and executes no independent model.
+
+The earlier passing full-stack run `typescript-sale-20261112T100350Z-655924`
+is also retained, but predates the final handle guard in two source files.
+Both reports and all four certificate/relay messages are retained. Each
+message independently reverified offline with the real libveritas verifier.
+
+Pinned installation, type checking, 300 TypeScript tests, 302 Python tests
+and whitespace checks pass. Development coverage reports 359 fixed-price
+cases with no gaps and 40 deferred cases; TypeScript model/store and Python
+controller coverage counts are 53/186/50. The pilot release gate still
+refuses for 112 missing production cases. Model evidence is separate from
+recording-adapter tests, actual Core transactions and full-stack evidence.
+
+Only fresh isolated fixture wallets were used. No deployed service, existing
+wallet, managed credential or mainnet state changed. Complete Spaces
+supersession, browser/buyer-client and application/host restore gates remain,
+followed by installer/Alchemy, safe updates and essential seller commands.
+Paid sales stay closed.

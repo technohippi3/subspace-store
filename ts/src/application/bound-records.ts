@@ -63,7 +63,7 @@ export function validateEntries(state: State): void {
     const spaces = new Set<string>();
     for (const b of e.bindings) {
       const o = state.orders.find(o => o.id === b.id);
-      const closed = state.closures.some(c => c.id === e.id);
+      const closed = state.closures.some(c => c.id === e.id) || state.supersessions.some(s => s.entry === e.id);
       if (!o || o.handle !== b.handle || o.recipient !== b.recipient || (!closed && (!postIssuance(o) || orders.has(o.id))))
         fail("invalid issuance entry relationship");
       if (!closed) orders.add(o.id); spaces.add(o.space);

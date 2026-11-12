@@ -8,6 +8,7 @@ import { deliveryBody } from "./delivery-http.ts";
 import { catalogBody, pauseBody } from "./catalog-http.ts";
 import { groupId, refundBody, refundSendBody } from "./refund-http.ts";
 import { refundReceipt } from "./refund-receipt.ts";
+import { supersessionBody } from "./supersession-http.ts";
 export type { OperatorToken } from "./authenticated-http.ts";
 
 function empty(request: import("node:http").IncomingMessage) {
@@ -78,6 +79,8 @@ export function serveOperator(store: SalesStore, token: OperatorToken, port = 0)
     if (request.method === "GET" && path === "/operator/status") return { code: 200, value: yield* store.operatorStatus() };
     if (request.method === "GET" && path === "/operator/alerts") return { code: 200, value: { alerts: (yield* store.operatorStatus()).alerts } };
     if (request.method === "POST") {
+      if (path === "/operator/supersessions/lookup") return { code: 200, value: yield* store.registry.supersessions.current(yield* bound(request, true)) };
+      if (path === "/operator/supersessions") return { code: 200, value: yield* store.registry.supersessions.accept(yield* supersessionBody(request)) };
       if (path === "/operator/listings") {
         const input = yield* catalogBody(request), result = yield* store.listName(input.handle, input.price_sats);
         return { code: result.acknowledged ? 200 : 503, value: result };

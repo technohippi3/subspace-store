@@ -4,6 +4,7 @@ import { armed, reportInput, summary } from "./commitment-records.ts";
 import { checked, fail, type State } from "./records.ts";
 import type { RegistryContext } from "./registry.ts";
 import { invalidateCommitmentCertificates } from "./certificate-records.ts";
+import { usableEntry } from "./supersession-records.ts";
 
 /** Trusted controller observations, never a chain verifier or send path.
  * A revision comparison prevents delayed reports overwriting newer facts. */
@@ -44,6 +45,7 @@ export class Commitments {
         const { records, state, tipHash } = yield* c.refresh();
         yield* checked(() => {
           armed(state, input);
+          if (!usableEntry(state, input.id)) fail("commitment entry is superseded or conflicted");
           if (!tipHash || tipHash !== input.observation.tipHash || state.settings.tip !== input.observation.tipHeight)
             fail("commitment report tip differs from the store; retry", "unavailable");
           const previous = state.commitments.find(r => r.entry === input.id);

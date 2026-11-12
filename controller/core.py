@@ -33,6 +33,7 @@ from .issuance import ANSWER_LIMIT, Issuance
 from .rebuild import PREPARING, Rebuild
 from .commitments import ANCHOR_FINALITY, FINAL_D, WATCHED, CommitmentTracking
 from .certificates import CertificateVerification
+from .supersessions import SupersessionTracking
 
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
@@ -109,7 +110,7 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification):
+class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
@@ -718,6 +719,8 @@ class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification)
         b = self.batch(bid)
         if b["state"] not in ("broadcast", "broadcast_uncertain"):
             raise Refused("nothing to recover")
+        if getattr(self.registry, "bound_entries", False) and self.supersession_progress(b) is not None:
+            raise Refused("commitment is safely superseded; rebroadcast refused")
         if self.commitment_seen(bid):
             raise Refused("the commitment is still on the chain or in the mempool")
         acked = self.acknowledged(bid)

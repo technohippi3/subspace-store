@@ -18,7 +18,9 @@ export function qualification(repository: string, root: string, name: string) {
     "ts/src/application/deliveries.ts", "ts/src/application/delivery-records.ts", "ts/src/application/delivery-http.ts", "ts/regtest/fulfillment.ts",
     "ts/src/main.ts", "ts/src/runtime/config.ts", "ts/src/runtime/credentials.ts", "ts/src/runtime/server.ts",
     "ts/src/application/catalog-http.ts", "ts/regtest/runtime.ts",
-    "ts/src/application/refund-http.ts", "ts/src/application/refund-receipt.ts"];
+    "ts/src/application/refund-http.ts", "ts/src/application/refund-receipt.ts",
+    "ts/src/application/supersessions.ts", "ts/src/application/supersession-records.ts", "ts/src/application/supersession-http.ts",
+    "ts/src/bitcoin/supersession.ts", "ts/regtest/supersessions.ts"];
   writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
     files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
     checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -44,5 +46,8 @@ export function qualification(repository: string, root: string, name: string) {
       "attended-refund-six-block-guard", "attended-refund-preparation-retry", "attended-refund-no-automatic-send-on-restart",
       "attended-refund-explicit-transaction-send", "attended-refund-repeated-send-is-observation",
       "attended-refund-capped-fee-and-merchant-remainder", "attended-refund-real-buyer-receipt-and-settled-restart",
-      "attended-refund-late-cancelled-invoice-credit", "attended-refund-merchant-cause-full-principal"] }, null, 2), { mode: 0o600 });
+      "attended-refund-late-cancelled-invoice-credit", "attended-refund-merchant-cause-full-principal",
+      "supersession-real-signed-delegate-conflict", "supersession-six-deep-core-proof", "supersession-restart-preserves-release",
+      "supersession-checkpoint-loss-relocks-paid-order", "supersession-reversal-preserves-cancellation",
+      "supersession-old-retry-never-reactivates", "supersession-restart-preserves-revocation"] }, null, 2), { mode: 0o600 });
 }

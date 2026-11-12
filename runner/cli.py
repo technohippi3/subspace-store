@@ -417,6 +417,15 @@ class Runner:
             raise NotConfirmed("refund-status requires the TypeScript store")
         return self.store.refund_group(gid)
 
+    def supersede(self, bid, conflict, confirm=None):
+        if not getattr(self.store, "bound_entries", False):
+            raise NotConfirmed("supersession acknowledgment requires the TypeScript store")
+        if confirm is None and self.ask is not None:
+            confirm = self.ask(f"Acknowledge existing conflict {conflict}. Type batch id {bid}: ").strip()
+        if confirm != bid:
+            raise NotConfirmed("supersession needs the exact batch confirmation; nothing released or sent")
+        return self.c.record_supersession(bid, conflict)
+
     # Sends a transaction: confirmed by the operator
 
     def _fee_rate(self, rate):
@@ -547,6 +556,10 @@ def main(argv=None, ask=None):
     p.add_argument("--confirm")
     p.add_argument("--txid")
     sub.add_parser("refund-status").add_argument("gid")
+    p = sub.add_parser("supersede")
+    p.add_argument("bid")
+    p.add_argument("--conflict-txid", required=True)
+    p.add_argument("--confirm")
     sub.add_parser("restore")
     for name in ("readback", "attach-txid"):
         sub.add_parser(name).add_argument("bid")
@@ -588,6 +601,8 @@ def main(argv=None, ask=None):
             out = r.refund(args.oid, args.kind, args.cause)
         elif args.command == "refund-status":
             out = r.refund_status(args.gid)
+        elif args.command == "supersede":
+            out = r.supersede(args.bid, args.conflict_txid, args.confirm)
         elif args.command == "restore":
             out = r.restore()
         elif args.command == "readback":

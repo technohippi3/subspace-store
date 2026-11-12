@@ -9,6 +9,7 @@ import { Commitments } from "./commitments.ts";
 import { Certificates, type CertificateChain } from "./certificates.ts";
 import type { CertificateCache } from "./certificate-cache.ts";
 import { Deliveries } from "./deliveries.ts";
+import { Supersessions, type SupersessionChain } from "./supersessions.ts";
 
 type Result<A> = Effect.Effect<A, ApplicationError | StorageError>;
 interface Loaded { records: readonly Record[]; state: State; tipHash?: string | undefined }
@@ -16,6 +17,7 @@ export interface RegistryContext {
   readonly storage: DurableStore;
   readonly certificateCache: CertificateCache;
   readonly certificateChain?: CertificateChain;
+  readonly supersessionChain?: SupersessionChain;
   readonly queue: ReturnType<typeof Semaphore.makeUnsafe>;
   readonly load: () => Result<Loaded>;
   readonly refresh: () => Result<Loaded>;
@@ -28,10 +30,12 @@ export class IssuanceRegistry {
   readonly commitments: Commitments;
   readonly certificates: Certificates;
   readonly deliveries: Deliveries;
+  readonly supersessions: Supersessions;
   private readonly context: RegistryContext;
   constructor(context: RegistryContext) {
     this.context = context; this.entries = new BoundEntries(context);
     this.commitments = new Commitments(context); this.certificates = new Certificates(context); this.deliveries = new Deliveries(context);
+    this.supersessions = new Supersessions(context);
   }
   entry(id: string) {
     const c = this.context;

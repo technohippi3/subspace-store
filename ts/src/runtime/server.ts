@@ -9,6 +9,7 @@ import { CoreRefundSender } from "../bitcoin/refund-sender.ts";
 import { configuration } from "./config.ts";
 import { credentials } from "./credentials.ts";
 import { checked } from "../application/records.ts";
+import { conflictVerifier } from "../bitcoin/supersession.ts";
 
 /** One process, one store owner and one sequential observer. Never sends refunds. */
 export function startRuntime(value: unknown) {
@@ -17,9 +18,11 @@ export function startRuntime(value: unknown) {
     yield* tokens.operator;
     const coreConfig = { ...config.core, network: config.network };
     const core = yield* CoreAdapter.make(coreConfig), refunds = yield* CoreRefundWallet.make(coreConfig), sender = yield* CoreRefundSender.make(coreConfig);
+    const supersessionChain = yield* conflictVerifier(coreConfig);
     const store = yield* SalesStore.open(config, {
       clock: () => Math.floor(Date.now() / 1000), snapshot: destinations => core.snapshot(destinations),
       newDestination: core.newDestination(), certificateChain: checkpoint => core.containsBlock(checkpoint),
+      supersessionChain,
       chainStatus: core.checkReady().pipe(Effect.map(tip => ({ network: config.network, best_block_hash: tip.hash, blocks: tip.height }))),
       refunds: { resolveAddress: address => refunds.resolveAddress(address), estimateRate: target => refunds.estimateRate(target),
         assessExcess: request => refunds.assessExcess(request), build: request => refunds.build(request),

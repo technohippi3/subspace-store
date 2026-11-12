@@ -18,6 +18,7 @@ import { IssuanceRegistry, type RegistryContext } from "./registry.ts";
 import { CertificateCache } from "./certificate-cache.ts";
 import { certificateBytes, checkCertificates, type CertificateChain } from "./certificates.ts";
 import { recoveryView } from "./deliveries.ts";
+import { checkSupersessions, type SupersessionChain } from "./supersessions.ts";
 
 export interface Adapters {
   readonly clock: () => number;
@@ -25,6 +26,7 @@ export interface Adapters {
   readonly newDestination: Effect.Effect<Destination, ApplicationError>;
   readonly refunds?: RefundAdapters;
   readonly certificateChain?: CertificateChain;
+  readonly supersessionChain?: SupersessionChain;
   readonly chainStatus?: Effect.Effect<{ network: string; best_block_hash: string; blocks: number }, ApplicationError>;
 }
 export interface Config extends StorageConfig { readonly riskBudgetSats: number;
@@ -44,6 +46,7 @@ export class SalesStore {
     this.storage = storage; this.adapters = adapters; this.budget = config.riskBudgetSats;
     this.refunds = configuration({ version: 1, policy: structuredClone(config.refundPolicy), merchantDestinations: structuredClone([...(config.merchantDestinations ?? [])]) });
     this.registryContext = { storage, certificateCache, ...(adapters.certificateChain ? { certificateChain: adapters.certificateChain } : {}),
+      ...(adapters.supersessionChain ? { supersessionChain: adapters.supersessionChain } : {}),
       queue: this.queue, load: () => this.load(), refresh: () => this.refresh(), save: (before, state) => this.save(before, state) };
     this.registry = new IssuanceRegistry(this.registryContext);
   }
@@ -60,7 +63,7 @@ export class SalesStore {
         return yield* checked(() => fail("refund reconciliation adapter is required", "unavailable"));
       yield* verified(() => auditRecipients(state));
       yield* result.save(records, state);
-      if (state.certificates.length || (adapters.refunds?.sender && state.groups.some(g => g.transaction))) yield* result.refresh();
+      if (state.supersessions.length || state.certificates.length || (adapters.refunds?.sender && state.groups.some(g => g.transaction))) yield* result.refresh();
       return result;
     });
   }
@@ -97,6 +100,7 @@ export class SalesStore {
           yield* verified(() => applyObservations(current.state, observations));
         }
         yield* verified(() => refresh(current.state, self.adapters.clock(), snapshot));
+        yield* checkSupersessions(current.state, snapshot, self.adapters.supersessionChain);
         yield* checkCertificates(current.state, snapshot, self.adapters.certificateChain);
         const observedAt = current.state.settings.lastTime;
         for (const fact of current.state.refundObservations) if (fact.seen !== "absent") noteBroadcast(current.state, fact.group, fact.txid, observedAt);

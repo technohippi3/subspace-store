@@ -78,7 +78,11 @@ subs, libveritas and the local relay now passes with store crashes/restarts.
 The attended refund API/runner boundary now follows `ATTENDED-REFUNDS.md`,
 with a real cancellation refund and exact transaction confirmation. Reads
 and polling never broadcast; pending preparation retries reuse their group.
-Browser checkout, remaining sale/refund scenarios, supersession and
+Known-transaction confirmed delegate-conflict proofs and their reversal now
+follow `SUPERSESSION.md`. Real Core conflict/ancestry evidence is separate
+from the trusted controller's Spaces root-exclusion attestation. Rollback
+construction, tree repair and alternative/unknown-transaction paths remain.
+Browser checkout, remaining sale/refund scenarios, remaining supersession and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 

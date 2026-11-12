@@ -61,7 +61,7 @@ export function validateCertificates(state: State) {
     if (seen.has(cert.oid) || !entry?.bindings.some(b => b.id === cert.oid) || !order || !report || cert.revision > report.revision ||
         cert.blockedThrough > report.revision || !state.arms.some(a => a.id === cert.entry) ||
         (cert.valid && (!["ready", "fulfilled"].includes(order.status) || !basisCovered(cert.root, cert.height, entry.root, report.observation))) ||
-        (!cert.valid && !["issuing", "fulfilled"].includes(order.status))) fail("invalid certificate relationship");
+        (!cert.valid && !["issuing", "fulfilled"].includes(order.status) && !state.supersessions.some(s => s.entry === cert.entry))) fail("invalid certificate relationship");
     seen.add(cert.oid);
   }
   if (state.orders.some(o => o.status === "ready" && !state.certificates.some(c => c.oid === o.id && c.valid))) fail("ready order has no certificate");

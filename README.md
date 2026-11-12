@@ -69,8 +69,11 @@ standalone regtest process now follows `docs/spec/RUNTIME.md`. One JSON-API
 sale through real Spaces, subs, libveritas and the local relay passes with
 store crashes/restarts. Attended refund HTTP/runner commands and a real
 cancellation refund now follow `docs/spec/ATTENDED-REFUNDS.md`.
+Known-transaction delegate-conflict supersession and its reorg reversal now
+follow `docs/spec/SUPERSESSION.md`. This observes an already-settled conflict;
+it does not generate a rollback transaction or repair a Spaces tree.
 Browser checkout, remaining sale/refund scenarios,
-supersession and full application recovery remain. The Python
+other supersession paths and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

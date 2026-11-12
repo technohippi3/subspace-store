@@ -6,7 +6,7 @@ export interface Fulfillment {
   version: 1; oid: string; entry: string; revision: number; certificateHash: string; proofHash: string;
   relayRoot: string; relayHeight: number; batchHeight: number; anchorHeight: number; tipHeight: number; tipHash: string;
 }
-export const recoveryReasons = ["certificate_checkpoint_lost", "commitment_lost"] as const;
+export const recoveryReasons = ["certificate_checkpoint_lost", "commitment_lost", "superseded", "supersession_reversed"] as const;
 export interface RecoveryIncident {
   version: 1; id: number; oid: string; entry: string; revision: number;
   reasons: (typeof recoveryReasons[number])[]; resolution: string | null;
@@ -35,14 +35,13 @@ export function resolutionInput(value: unknown) {
   if (typeof value.resolution !== "string" || !value.resolution.trim() || value.resolution.length > 2000) fail("invalid incident resolution", "invalid");
   return { incident: value.incident as number, resolution: value.resolution };
 }
-export function openRecovery(state: State, oid: string, reason: typeof recoveryReasons[number]) {
-  const order = state.orders.find(o => o.id === oid)!;
-  if (order.status !== "fulfilled") return;
-  const fulfillment = state.fulfillments.find(f => f.oid === oid)!;
+export function openRecovery(state: State, oid: string, reason: typeof recoveryReasons[number], sourceEntry?: string) {
+  const entry = sourceEntry ?? state.fulfillments.find(f => f.oid === oid)?.entry;
+  if (!entry) return;
   let incident = state.incidents.find(i => i.oid === oid && i.resolution === null);
   if (!incident) {
-    incident = { version: 1, id: Math.max(0, ...state.incidents.map(i => i.id)) + 1, oid, entry: fulfillment.entry,
-      revision: state.commitments.find(c => c.entry === fulfillment.entry)!.revision, reasons: [], resolution: null };
+    incident = { version: 1, id: Math.max(0, ...state.incidents.map(i => i.id)) + 1, oid, entry,
+      revision: state.commitments.find(c => c.entry === entry)!.revision, reasons: [], resolution: null };
     state.incidents.push(incident);
   }
   if (!incident.reasons.includes(reason)) { incident.reasons.push(reason); monitor(state, oid); alert(state, oid, "recovery_incident", 0); }
@@ -77,8 +76,9 @@ export function validateDeliveries(state: State) {
   if (state.orders.some(o => o.status === "fulfilled" && !seen.has(o.id))) fail("fulfilled order has no verified delivery");
   const open = new Set<string>();
   for (const [index, i] of state.incidents.entries()) {
-    const f = state.fulfillments.find(f => f.oid === i.oid);
-    if (i.id !== index + 1 || !f || i.entry !== f.entry || i.revision > state.commitments.find(c => c.entry === i.entry)!.revision ||
+    const entry = state.entries.find(e => e.id === i.entry), report = state.commitments.find(c => c.entry === i.entry);
+    if (i.id !== index + 1 || !entry?.bindings.some(b => b.id === i.oid) || !report || i.revision > report.revision ||
+        (!state.fulfillments.some(f => f.oid === i.oid) && !state.supersessions.some(s => s.entry === i.entry)) ||
         (i.resolution === null && open.has(i.oid))) fail("invalid recovery incident relationship");
     if (i.resolution === null) open.add(i.oid);
   }

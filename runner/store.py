@@ -20,6 +20,7 @@ from .commitments import receipt as commitment_receipt
 from .certificates import accept as accept_certificate
 from .deliveries import fulfill as fulfill_order, status as delivery_status
 from .refunds import receipt as refund_receipt, GROUP, HASH
+from .supersessions import receipt as supersession_receipt
 
 
 class Refused(Exception):
@@ -167,6 +168,18 @@ class TypeScriptStore(Store):
     """Explicit TypeScript pilot protocol; never probes or falls back to the
     Python store's anonymous issuing marks."""
     bound_entries = True
+
+    def supersession_status(self, batch):
+        payload = dict(self._entry_payload(batch), delegate=batch["delegate_in"])
+        return supersession_receipt(self.op("POST", "/operator/supersessions/lookup", payload), batch, Refused)
+
+    def accept_supersession(self, batch, proof):
+        payload = dict(self._entry_payload(batch), delegate=batch["delegate_in"], rootAbsent=True,
+                       confirm=batch["entry_key"], **proof)
+        result = supersession_receipt(self.op("POST", "/operator/supersessions", payload), batch, Refused)
+        if result["proof"] is None or any(result["proof"][k] != v for k, v in proof.items() if k != "originalRaw"):
+            raise Refused("supersession response differs from the confirmed proof")
+        return result
 
     def refund(self, oid, kind, cause):
         if not isinstance(oid, str) or not re.fullmatch(r"o[1-9][0-9]{0,15}", oid) or \

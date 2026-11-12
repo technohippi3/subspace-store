@@ -44,6 +44,9 @@ class World:
     def observe(self):
         pass
 
+    def supersession_status(self, batch):
+        return dict(proof=None, acknowledged=True, conflicted=False)
+
     def batch_entry_ok(self, oid):
         return oid not in self.failed
 

@@ -4,6 +4,7 @@ import { checked, fail, type State } from "./records.ts";
 import { armInput, entryInput, sameEntry, sameMarker, type EntryClosure, type EntryInput } from "./bound-records.ts";
 import { entryOk, members, orderById } from "./entry.ts";
 import { reconcile } from "./monitor.ts";
+import { liveEntries, usableEntry } from "./supersession-records.ts";
 
 /** A stable controller entry ID is bound atomically to its root and exact
  * immutable order bindings. Retrying it never allocates a second entry. */
@@ -38,7 +39,7 @@ export class BoundEntries {
       }
       return { found: true as const, entry: entry.id, root: entry.root, oids: entry.bindings.map(b => b.id), acknowledged,
         phase: armed ? "armed" as const : "open" as const, delegate: armed?.delegate ?? null,
-        batchable: entry.bindings.every(b => entryOk(state, orderById(state, b.id), true)) };
+        batchable: usableEntry(state, entry.id) && entry.bindings.every(b => entryOk(state, orderById(state, b.id), true)) };
     });
   }
   find(value: unknown) {
@@ -90,7 +91,7 @@ export class BoundEntries {
           if (state.arms.some(m => m.id === input.id)) fail("entry is armed; unsent release refused");
           const orders = members(state, input.ids);
           if (entry) {
-            for (const order of orders) order.status = "converted";
+            for (const order of orders) order.status = liveEntries(state, order.id).some(e => e.id !== input.id) ? "issuing" : "converted";
             state.pending = state.pending.filter(id => !input.ids.includes(id));
           }
           const closed: EntryClosure = { version: 1, id: input.id, root: input.root, oids: [...input.ids] };
@@ -119,6 +120,8 @@ export class BoundEntries {
         }
         const before = yield* self.receipt(state, input);
         yield* checked(() => {
+          if (state.arms.some(a => a.id !== input.id && a.delegate === input.delegate &&
+              !state.supersessions.some(s => s.entry === a.id && s.active))) fail("delegate already has an attempted commitment");
           if (!before.acknowledged || !entry.bindings.every(b => entryOk(state, orderById(state, b.id), true))) fail("entry not confirmed and batchable");
           state.arms.push({ version: 1, id: input.id, root: input.root, oids: [...input.ids], delegate: input.delegate });
         });

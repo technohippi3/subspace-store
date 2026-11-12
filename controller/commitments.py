@@ -93,8 +93,11 @@ class CommitmentTracking:
         self.wait_synced()
         self.capture_bytes(bid)
         b = self.batch(bid)
-        if b["state"] not in ("broadcast", "broadcast_uncertain", "mined", "final") or not b["txid"]:
+        if b["state"] not in ("broadcast", "broadcast_uncertain", "mined", "final", "superseded") or not b["txid"]:
             return b["state"]
+        if self.supersession_progress(b) == "superseded":
+            return "superseded"
+        b = self.batch(bid)
         if not b.get("entry_key") or not b["attempted"] or not b["intent"]:
             raise Refused("commitment has no bound attempted intent")
         current = self.registry.commitment_status(b)
