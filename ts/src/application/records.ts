@@ -12,6 +12,7 @@ import { assessment, type ExcessAssessment } from "./assessments.ts";
 import { armRecord, boundRecord, closureRecord, validateEntries, type BoundEntry, type EntryArm, type EntryClosure } from "./bound-records.ts";
 import { commitmentRecord, validateCommitments, type CommitmentRecord } from "./commitment-records.ts";
 import { certificateRecord, validateCertificates, type CertificateRecord } from "./certificate-records.ts";
+import { fulfillmentRecord, incidentRecord, validateDeliveries, type Fulfillment, type RecoveryIncident } from "./delivery-records.ts";
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly code: "invalid" | "refused" | "unavailable" | "not_found";
@@ -35,7 +36,7 @@ export function sats(value: unknown): asserts value is number {
   whole(value, 1); if (value > MAX_MONEY) fail("invalid amount", "invalid");
 }
 export interface Destination { address: string; script: string }
-export type Status = "requested" | "quoted" | "unpaid" | "converted" | "issuing" | "ready" | "cancelled" | "refund_due";
+export type Status = "requested" | "quoted" | "unpaid" | "converted" | "issuing" | "ready" | "fulfilled" | "cancelled" | "refund_due";
 export interface Grant { at: number; until: number; seenHeight: number | null;
   acquiredHeight: number | null; released: boolean; converted: boolean }
 export interface Order {
@@ -55,12 +56,13 @@ export interface State { settings: Settings; listings: Listing[]; orders: Order[
   closures: EntryClosure[]; arms: EntryArm[];
   commitments: CommitmentRecord[];
   certificates: CertificateRecord[];
+  fulfillments: Fulfillment[]; incidents: RecoveryIncident[];
   refunds: RefundSettings; accounts: RefundAccount[]; groups: RefundGroup[];
   monitors: OrderMonitor[]; broadcastReceipts: BroadcastReceipt[]; alerts: OperatorAlert[];
   assessments: ExcessAssessment[];
   refundObservations: RefundObservation[]; refundSends: RefundSend[]; refundAttempts: RefundAttempt[]; refundPauses: RefundPause[] }
 export interface Record { kind: string; key: string; value: Json }
-export const postIssuance = (order: Order): boolean => order.status === "issuing" || order.status === "ready";
+export const postIssuance = (order: Order): boolean => ["issuing", "ready", "fulfilled"].includes(order.status);
 export const claims = (order: Order): boolean => order.status === "converted" || postIssuance(order);
 export function request(body: unknown): { handle: string; script: string } {
   if (!body || typeof body !== "object" || Array.isArray(body) ||
@@ -93,7 +95,7 @@ function order(value: unknown): asserts value is Order {
   if (value.id !== `o${value.sequence}` || !canonicalHandle(value.handle) ||
       value.handle.split("@")[1] !== value.space || !validP2tr(value.recipient) ||
       typeof value.tokenHash !== "string" || !/^[0-9a-f]{64}$/.test(value.tokenHash) ||
-      !["requested", "quoted", "unpaid", "converted", "issuing", "ready", "cancelled", "refund_due"].includes(String(value.status)) ||
+      !["requested", "quoted", "unpaid", "converted", "issuing", "ready", "fulfilled", "cancelled", "refund_due"].includes(String(value.status)) ||
       !["none", "detected"].includes(String(value.paymentHistory))) fail("invalid stored order");
   nullableWhole(value.quotedAt);
   for (const amount of [value.quotedPrice, value.price]) if (amount !== null) sats(amount);
@@ -123,6 +125,8 @@ export function encode(state: State): Record[] {
     ...state.arms.map(value => ({ kind: "entry_arm", key: value.id, value: value as unknown as Json })),
     ...state.commitments.map(value => ({ kind: "commitment", key: value.entry, value: value as unknown as Json })),
     ...state.certificates.map(value => ({ kind: "certificate", key: value.oid, value: value as unknown as Json })),
+    ...state.fulfillments.map(value => ({ kind: "fulfillment", key: value.oid, value: value as unknown as Json })),
+    ...state.incidents.map(value => ({ kind: "recovery_incident", key: String(value.id), value: value as unknown as Json })),
     { kind: "refund_settings", key: "global", value: state.refunds as unknown as Json },
     ...state.assessments.map(value => ({ kind: "excess_assessment", key: value.order, value: value as unknown as Json })),
     ...state.monitors.map(value => ({ kind: "order_monitor", key: value.order, value: value as unknown as Json })),
@@ -142,7 +146,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   policy(refunds.policy);
   for (const d of refunds.merchantDestinations) destination(d);
   const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
-    lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [], entries: [], closures: [], arms: [], commitments: [], certificates: [],
+    lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [], entries: [], closures: [], arms: [], commitments: [], certificates: [], fulfillments: [], incidents: [],
     refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [], assessments: [],
     refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
   for (const record of records) {
@@ -150,6 +154,8 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
+      case "fulfillment": fulfillmentRecord(v); if (v.oid !== record.key) fail("fulfillment identity differs"); state.fulfillments.push(v); break;
+      case "recovery_incident": incidentRecord(v); if (String(v.id) !== record.key) fail("incident identity differs"); state.incidents.push(v); break;
       case "certificate": certificateRecord(v); if (v.oid !== record.key) fail("certificate identity differs"); state.certificates.push(v); break;
       case "commitment": commitmentRecord(v); if (v.entry !== record.key) fail("commitment identity differs"); state.commitments.push(v); break;
       case "entry_closure": closureRecord(v); if (v.id !== record.key) fail("entry closure identity differs"); state.closures.push(v); break;
@@ -193,6 +199,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   if (records.length && !records.some(r => r.kind === "sales_settings")) fail("missing application settings");
   if (records.length && !records.some(r => r.kind === "refund_settings")) fail("missing refund settings; explicit import required");
   state.alerts.sort((a, b) => a.id - b.id);
+  state.incidents.sort((a, b) => a.id - b.id);
   const tokens = new Set<string>(), destinations = new Set<string>();
   for (const o of state.orders) {
     if (!state.listings.some(n => n.handle === o.handle) || o.sequence >= state.settings.nextOrder ||
@@ -218,6 +225,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   validateEntries(state);
   validateCommitments(state);
   validateCertificates(state);
+  validateDeliveries(state);
   if (state.pending.some(id => !state.orders.some(o => o.id === id)) ||
       new Set(state.orders.filter(o => state.pending.includes(o.id)).map(o => o.space)).size > 1) fail("invalid pending relationship");
   if (state.payments.some(p => !destinations.has(p.script))) fail("payment has no invoice");

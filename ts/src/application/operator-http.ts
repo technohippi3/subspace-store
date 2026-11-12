@@ -4,6 +4,7 @@ import type { SalesStore } from "./store.ts";
 import { body } from "./http.ts";
 import { listenAuthenticated, type OperatorToken } from "./authenticated-http.ts";
 import { certificateBody } from "./certificate-http.ts";
+import { deliveryBody } from "./delivery-http.ts";
 export type { OperatorToken } from "./authenticated-http.ts";
 
 function empty(request: import("node:http").IncomingMessage) {
@@ -62,6 +63,9 @@ export function serveOperator(store: SalesStore, token: OperatorToken, port = 0)
     if (request.method === "GET" && path === "/operator/status") return { code: 200, value: yield* store.operatorStatus() };
     if (request.method === "GET" && path === "/operator/alerts") return { code: 200, value: { alerts: (yield* store.operatorStatus()).alerts } };
     if (request.method === "POST") {
+      if (path === "/operator/deliveries/lookup") return { code: 200, value: yield* store.registry.deliveries.status(yield* deliveryBody(request, "lookup")) };
+      if (path === "/operator/fulfillments") return { code: 200, value: yield* store.registry.deliveries.fulfill(yield* deliveryBody(request, "fulfill")) };
+      if (path === "/operator/incidents/resolve") return { code: 200, value: yield* store.registry.deliveries.resolve(yield* deliveryBody(request, "resolve")) };
       if (path === "/operator/certificates") return { code: 200, value: yield* store.registry.certificates.accept(yield* certificateBody(request)) };
       if (path === "/operator/commitments/lookup") return { code: 200, value: yield* store.registry.commitments.current(yield* bound(request, true)) };
       if (path === "/operator/commitments") return { code: 200, value: yield* store.registry.commitments.observe(yield* commitment(request)) };

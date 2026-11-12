@@ -22,8 +22,9 @@ Permanent closure cannot unlock a successor, and one-use broadcast permission
 prevents a stale controller from releasing a possibly sent entry. Bound
 commitment observations now track finality and reorgs (`../docs/spec/COMMITMENT-TRACKING.md`).
 Bound certificate readiness, local cache and binary buyer download now follow
-`../docs/spec/CERTIFICATES.md`. Verified relay fulfillment, full Spaces-stack
-sale and full application recovery remain. The Python service,
+`../docs/spec/CERTIFICATES.md`. Verified-delivery callbacks and sticky
+fulfilled recovery incidents now follow `../docs/spec/FULFILLMENT.md`.
+Full Spaces-stack sale, supersession and full application recovery remain. The Python service,
 controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -184,7 +185,7 @@ off-host for actual host-loss recovery; no object-store adapter is claimed.
 
 Domain rules of `service/ledger.py` still to port, each with its home:
 
-1. Complete order views and verified relay fulfillment/recovery incidents.
+1. Complete order views and full Spaces-stack sale qualification.
 2. Remaining registry recovery and supersession callbacks. Pending selection,
    bound entry, commitment observation and certificate acceptance now exist.
 3. Restore from the journal (`restore_from_journal`), which always comes
@@ -253,7 +254,9 @@ uncertain. The former anonymous issuing HTTP route is absent.
 Safe bound-entry release/rebuild, commitment observation and certificate
 acceptance now have their own protocol specifications. Certificate bytes
 are reconstructible local cache; their binding and invalidation are journaled.
-Next complete verified relay fulfillment, supersession, order views and
+Bound delivery callbacks now retain first delivery and fulfilled ownership
+across certificate loss, with explicit recovery incidents.
+Next complete full Spaces-stack qualification, supersession, order views and
 application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.

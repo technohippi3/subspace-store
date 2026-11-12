@@ -23,7 +23,7 @@ export function checkCertificates(state: State, snapshot: Snapshot, chain: Certi
 export function acknowledgedCertificate(c: RegistryContext, state: State, oid: string) {
   return Effect.gen(function* () {
     const cert = state.certificates.find(v => v.oid === oid);
-    if (!cert?.valid || state.orders.find(o => o.id === oid)?.status !== "ready") return false;
+    if (!cert?.valid || !["ready", "fulfilled"].includes(state.orders.find(o => o.id === oid)?.status ?? "")) return false;
     const commitment = state.commitments.find(v => v.entry === cert.entry)!;
     const entry = state.entries.find(v => v.id === cert.entry)!, arm = state.arms.find(v => v.id === cert.entry)!;
     const order = state.orders.find(o => o.id === oid)!;
@@ -63,7 +63,7 @@ export class Certificates {
           const previous = state.certificates.find(v => v.oid === input.oid);
           if (input.revision <= (previous?.blockedThrough ?? 0)) fail("certificate was invalidated; observe and reverify");
           const order = state.orders.find(o => o.id === input.oid)!;
-          if (!["issuing", "ready"].includes(order.status)) fail("order is not certifiable");
+          if (!["issuing", "ready", "fulfilled"].includes(order.status)) fail("order is not certifiable");
           return report;
         });
         yield* c.certificateCache.put(input.bytes);
@@ -74,7 +74,8 @@ export class Certificates {
             tipHeight: report.observation.tipHeight, tipHash: report.observation.tipHash, valid: true,
             blockedThrough: previous?.blockedThrough ?? 0 };
           if (previous) Object.assign(previous, cert); else state.certificates.push(cert);
-          state.orders.find(o => o.id === input.oid)!.status = "ready";
+          const order = state.orders.find(o => o.id === input.oid)!;
+          if (order.status !== "fulfilled") order.status = "ready";
         });
         yield* c.save(records, state);
         return { oid: input.oid, entry: input.id, revision: input.revision, certificateRoot: input.rootBasis,

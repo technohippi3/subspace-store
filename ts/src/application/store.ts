@@ -17,6 +17,7 @@ import { auditRecipients, recipientBlock } from "./entry.ts";
 import { IssuanceRegistry, type RegistryContext } from "./registry.ts";
 import { CertificateCache } from "./certificate-cache.ts";
 import { certificateBytes, checkCertificates, type CertificateChain } from "./certificates.ts";
+import { recoveryView } from "./deliveries.ts";
 
 export interface Adapters {
   readonly clock: () => number;
@@ -130,9 +131,12 @@ export class SalesStore {
       const refund = account?.value as unknown as State["accounts"][number] | undefined;
       const funds = balance(state, order), monitoring = state.monitors.find(m => m.order === order.id);
       const certificate = yield* certificateBytes(self.registryContext, state, order.id);
+      const status = order.status === "fulfilled" && acknowledged?.status !== "fulfilled" ? (acknowledged?.status ?? "issuing") :
+        cancelled && !final ? (acknowledged?.status ?? "requested") : order.status;
       return { handle: order.handle, recipient_script_pubkey: order.recipient,
-        status: order.status === "ready" && !certificate ? "issuing" : cancelled && !final ? (acknowledged?.status ?? "requested") : order.status,
+        status: status === "ready" && !certificate ? "issuing" : status,
         certificate_available: certificate !== null,
+        recovery_incident: yield* recoveryView(self.registryContext, state, order.id),
         cancellation: cancelled ? (final ? "final" : "unconfirmed") : null,
         price_sats: order.price,
         address: rejected ? null : acknowledged?.destination?.address ?? null,
@@ -279,7 +283,7 @@ export class SalesStore {
       yield* self.save(records, state); yield* self.storage.flush();
       const position = yield* self.storage.status();
       return { orders: structuredClone(state.monitors), alerts: structuredClone(state.alerts), assessments: structuredClone(state.assessments),
-        acknowledged: position.acknowledged === position.seq };
+        recovery_incidents: structuredClone(state.incidents), acknowledged: position.acknowledged === position.seq };
     }));
   }
   private inspectedOrder(state: State, order: Order) {
@@ -292,7 +296,9 @@ export class SalesStore {
         dest_address: saved?.destination?.address ?? null, journaled_status: saved?.status ?? null,
         confirmed_sum: total(state, order, 1), batchable_sum: total(state, order, 3), settled_sum: total(state, order, 6),
         refunded_total: balance(state, order).refunded, reserved: balance(state, order).reserved,
-        reasons: [...(state.monitors.find(m => m.order === order.id)?.reasons ?? [])] };
+        reasons: [...(state.monitors.find(m => m.order === order.id)?.reasons ?? [])],
+        fulfillment: structuredClone(state.fulfillments.find(f => f.oid === order.id) ?? null),
+        incident: structuredClone(state.incidents.filter(i => i.oid === order.id).at(-1) ?? null) };
     });
   }
   inspectionOrders(status?: string) {

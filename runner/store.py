@@ -18,6 +18,7 @@ from controller.journal import Journal
 from controller.rpc import Http, HttpError
 from .commitments import receipt as commitment_receipt
 from .certificates import accept as accept_certificate
+from .deliveries import fulfill as fulfill_order, status as delivery_status
 
 
 class Refused(Exception):
@@ -165,6 +166,12 @@ class TypeScriptStore(Store):
     """Explicit TypeScript pilot protocol; never probes or falls back to the
     Python store's anonymous issuing marks."""
     bound_entries = True
+
+    def delivery_status(self, batch, oid):
+        return delivery_status(self, batch, oid, Refused)
+
+    def fulfill_order(self, batch, revision, oid, certificate_hash, root, height, proof_hash):
+        return fulfill_order(self, batch, revision, oid, certificate_hash, root, height, proof_hash, Refused)
 
     def accept_certificate(self, batch, revision, oid, root, height, message):
         return accept_certificate(self, batch, revision, oid, root, height, message, Refused)

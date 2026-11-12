@@ -24,7 +24,7 @@ class CommitmentTracking:
                 return "not_final"
             if not observed["covered"]:
                 return "awaiting_anchor"
-            verified = all(self.registry.order(m)["status"] == "ready" and self.registry.journal_ok(m) for m in b["members"])
+            verified = all(self.registry.order(m)["status"] in ("ready", "fulfilled") and self.registry.journal_ok(m) for m in b["members"])
             return "verified" if verified else "awaiting_certificate_verification"
         newest = self.root_anchors()[0]["block"]["height"]
         return "verified" if newest - b["mined_height"] >= ANCHOR_FINALITY else "awaiting_anchor"

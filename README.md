@@ -63,8 +63,9 @@ closes entries permanently and requires one-use permission before sending
 (`docs/spec/ENTRY-RELEASE.md`). Bound commitment observations now track
 finality and reorgs (`docs/spec/COMMITMENT-TRACKING.md`). Bound certificate
 readiness and binary buyer download now have separate qualification
-(`docs/spec/CERTIFICATES.md`). Verified relay fulfillment, the complete
-Spaces sale and full application recovery remain. The Python
+(`docs/spec/CERTIFICATES.md`). Bound verified-delivery callbacks and sticky
+fulfilled recovery incidents now follow `docs/spec/FULFILLMENT.md`. The
+complete Spaces-stack sale, supersession and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

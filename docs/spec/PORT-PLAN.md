@@ -70,8 +70,9 @@ normal-process restart are qualified separately (`ENTRY-RECOVERY.md`).
 Known-unsent release/rebuild and one-use broadcast permission now have
 separate qualification (`ENTRY-RELEASE.md`). Commitment observations now track
 finality and reorgs (`COMMITMENT-TRACKING.md`). Bound certificate readiness
-and buyer download follow in `CERTIFICATES.md`. Verified relay fulfillment,
-complete Spaces-stack sale and application recovery remain. The release gate stays blocked; neither component
+and buyer download follow in `CERTIFICATES.md`. Bound delivery callbacks and
+sticky fulfilled recovery incidents follow in `FULFILLMENT.md`. Complete
+Spaces-stack sale, supersession and application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 
 ## Work order and gates

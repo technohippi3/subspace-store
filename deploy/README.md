@@ -44,6 +44,12 @@ Core before readiness after restart. `docs/spec/CERTIFICATES.md` defines
 redelivery after cache loss and the strict binary download gate. These are
 component tests, not a deployed-stack recovery qualification.
 
+`docs/spec/FULFILLMENT.md` adds verified-delivery callbacks and durable
+recovery incidents. The publisher and server must update together; local
+delivery completion follows the store acknowledgment. A recovery resolution
+does not change balances or certificate validity. Full Spaces-stack and
+whole-host recovery qualification remain separate from these component tests.
+
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,
   with the commands in `subs.stop_command` and `subs.start_command`. The

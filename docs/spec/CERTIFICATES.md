@@ -59,8 +59,8 @@ invalidation never serves an older acknowledged certificate.
 Invalidation records a blocked observation revision. Returning to the old
 chain does not revive cached bytes, and a delayed callback at that revision
 cannot do so. A newer observation and fresh verification are required.
-These guarantees apply to ready orders; verified relay fulfillment and its
-sticky fulfilled/recovery-incident rules remain to be ported.
+`FULFILLMENT.md` now extends these guarantees to fulfilled orders: certificate
+loss withholds bytes, preserves fulfillment and opens a recovery incident.
 
 ## Cache and HTTP contract
 

@@ -2,6 +2,7 @@ import { armInput } from "./bound-records.ts";
 import { summary, type CommitmentObservation } from "./commitment-records.ts";
 import { CERTIFICATE_LIMIT, certificateHash } from "./certificate-cache.ts";
 import { fail, whole, type State } from "./records.ts";
+import { openRecovery, type recoveryReasons } from "./delivery-records.ts";
 
 export interface CertificateRecord {
   version: 1; oid: string; entry: string; revision: number; root: string; height: number;
@@ -29,7 +30,8 @@ export function basisCovered(root: string, height: number, entryRoot: string, o:
   return summary(o).covered && (root === entryRoot ? height === o.minedHeight : height > o.minedHeight!) &&
     o.tipHeight - height >= 150 && o.anchorHeight! - height >= 144;
 }
-export function invalidateCertificate(state: State, cert: CertificateRecord) {
+export function invalidateCertificate(state: State, cert: CertificateRecord, reason: typeof recoveryReasons[number] = "certificate_checkpoint_lost") {
+  if (cert.valid) openRecovery(state, cert.oid, reason);
   cert.valid = false;
   cert.blockedThrough = Math.max(cert.blockedThrough, state.commitments.find(c => c.entry === cert.entry)!.revision);
   const order = state.orders.find(o => o.id === cert.oid)!;
@@ -39,7 +41,7 @@ export function invalidateCommitmentCertificates(state: State, entry: string) {
   const report = state.commitments.find(c => c.entry === entry)!;
   const root = state.entries.find(e => e.id === entry)!.root;
   for (const cert of state.certificates.filter(c => c.entry === entry && c.valid))
-    if (!basisCovered(cert.root, cert.height, root, report.observation)) invalidateCertificate(state, cert);
+    if (!basisCovered(cert.root, cert.height, root, report.observation)) invalidateCertificate(state, cert, "commitment_lost");
 }
 export function certificateRecord(value: unknown): asserts value is CertificateRecord {
   fields(value, "version,oid,entry,revision,root,height,hash,length,tipHeight,tipHash,valid,blockedThrough");
@@ -58,8 +60,8 @@ export function validateCertificates(state: State) {
     const report = state.commitments.find(c => c.entry === cert.entry);
     if (seen.has(cert.oid) || !entry?.bindings.some(b => b.id === cert.oid) || !order || !report || cert.revision > report.revision ||
         cert.blockedThrough > report.revision || !state.arms.some(a => a.id === cert.entry) ||
-        (cert.valid && (order.status !== "ready" || !basisCovered(cert.root, cert.height, entry.root, report.observation))) ||
-        (!cert.valid && order.status !== "issuing")) fail("invalid certificate relationship");
+        (cert.valid && (!["ready", "fulfilled"].includes(order.status) || !basisCovered(cert.root, cert.height, entry.root, report.observation))) ||
+        (!cert.valid && !["issuing", "fulfilled"].includes(order.status))) fail("invalid certificate relationship");
     seen.add(cert.oid);
   }
   if (state.orders.some(o => o.status === "ready" && !state.certificates.some(c => c.oid === o.id && c.valid))) fail("ready order has no certificate");

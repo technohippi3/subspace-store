@@ -8,6 +8,7 @@ import { BoundEntries } from "./bound-entries.ts";
 import { Commitments } from "./commitments.ts";
 import { Certificates, type CertificateChain } from "./certificates.ts";
 import type { CertificateCache } from "./certificate-cache.ts";
+import { Deliveries } from "./deliveries.ts";
 
 type Result<A> = Effect.Effect<A, ApplicationError | StorageError>;
 interface Loaded { records: readonly Record[]; state: State; tipHash?: string | undefined }
@@ -26,10 +27,11 @@ export class IssuanceRegistry {
   readonly entries: BoundEntries;
   readonly commitments: Commitments;
   readonly certificates: Certificates;
+  readonly deliveries: Deliveries;
   private readonly context: RegistryContext;
   constructor(context: RegistryContext) {
     this.context = context; this.entries = new BoundEntries(context);
-    this.commitments = new Commitments(context); this.certificates = new Certificates(context);
+    this.commitments = new Commitments(context); this.certificates = new Certificates(context); this.deliveries = new Deliveries(context);
   }
   entry(id: string) {
     const c = this.context;

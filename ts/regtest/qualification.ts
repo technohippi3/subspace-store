@@ -14,7 +14,8 @@ export function qualification(repository: string, root: string, name: string) {
     "ts/src/application/bound-entries.ts", "ts/src/application/bound-records.ts", "ts/regtest/entry-lifecycle.ts",
     "ts/src/application/commitments.ts", "ts/src/application/commitment-records.ts", "ts/regtest/commitments.ts",
     "ts/src/application/certificate-cache.ts", "ts/src/application/certificate-records.ts", "ts/src/application/certificates.ts",
-    "ts/src/application/certificate-http.ts", "ts/regtest/certificates.ts", "ts/regtest/qualification.ts"];
+    "ts/src/application/certificate-http.ts", "ts/regtest/certificates.ts", "ts/regtest/qualification.ts",
+    "ts/src/application/deliveries.ts", "ts/src/application/delivery-records.ts", "ts/src/application/delivery-http.ts", "ts/regtest/fulfillment.ts"];
   writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
     files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
     checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -33,5 +34,7 @@ export function qualification(repository: string, root: string, name: string) {
       "bound-entry-lifecycle-restart", "commitment-depth-150-149-150", "commitment-anchor-gate-separate",
       "commitment-stale-tip-and-revision-refused", "commitment-report-restart", "certificate-cache-readiness-with-core",
       "certificate-ancestor-survives-extension", "certificate-reorg-withholds-cache",
-      "certificate-new-verification-after-reorg", "certificate-restart-cache-continuity"] }, null, 2), { mode: 0o600 });
+      "certificate-new-verification-after-reorg", "certificate-restart-cache-continuity", "fulfilled-stickiness-core-reorg",
+      "fulfilled-reverification-retains-first-receipt", "recovery-resolution-keeps-accounting", "fulfillment-restart-history",
+      "no-certificate-on-fulfilled-checkpoint-loss"] }, null, 2), { mode: 0o600 });
 }
