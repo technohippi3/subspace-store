@@ -184,3 +184,33 @@ to use restore and reconcile. No maintenance path signs or sends.
 | Case | Given | When | Then |
 | --- | --- | --- | --- |
 | O153 | an initialized ordinary store or real restore quarantine | shipped maintain CLI and same-database reconciliation with valid, changed or unavailable proofs | pause/unknown barrier precedes observation; only coherent independently verified journal-bound completion is ready; actual restore stays quarantined and missing or uninitialized stores are not bootstrapped |
+
+
+## Installed recovery ownership
+
+The installed profile keeps a separate protected recovery.json beside the
+maintenance lock while its fixed read-only recovery commands run under shared
+ownership. Ordinary TypeScript startup, Python runner/controller construction
+and the Python baseline service refuse this marker before storage, RPC or
+listeners. A systemd mask alone is insufficient to exclude raw entrypoints.
+
+Only the shipped TypeScript restore, recover, reconcile and maintain entrypoints
+select the internal recovery purpose. The Python controller exception requires
+the exact RecoveryStore read-only view; a config field, environment variable,
+subclass or similarly named capability flag grants nothing. The marker must be
+a bounded regular private single-link file owned by root or the current UID,
+with version 1 and applicationPath exactly matching the running application
+code root. The native profile creates it as root with mode 0600 and binds the
+selected verified release's app directory. A different release, malformed,
+unsafe or dangling marker refuses even read-only recovery. A maintenance latch
+or exclusive owner still excludes all shared entrypoints.
+
+The installer keeps ordinary services masked until independent reconciliation,
+live journal proof and bounded ownership adoption finish. It then removes the
+recovery marker before normal paused startup. A failure restores the marker,
+maintenance latch and masks. Recovery grants no payment, signing or sending
+capability and no automatic admission resume.
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| O180 | a persistent installed recovery marker and released exclusive ownership | raw ordinary entrypoints or fixed read-only recovery commands compete | ordinary writers refuse before work; matching read-only commands retain shared exclusion and quarantine without sends; wrong code roots, fake flags and unsafe markers refuse |

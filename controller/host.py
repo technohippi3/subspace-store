@@ -185,7 +185,10 @@ def capabilities(config):
 def build(config, registry, cwd=None):
     """The controller and its publisher, for the store client `registry`."""
     check(config)
-    fence = installation_fence(config)
+    # Only the fixed read-only recovery view permits the installed recovery
+    # marker. A caller-supplied flag or similarly named store is insufficient.
+    from runner.recovery_bridge import RecoveryStore
+    fence = installation_fence(config, recovery=type(registry) is RecoveryStore)
     try:
         cc = _need(config, "controller")
         host = Path(_need(config, "controller", "dir"))

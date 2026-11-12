@@ -18,7 +18,7 @@ import { checked } from "../application/records.ts";
 export function recoveryCommand(mode: "restore" | "recover" | "reconcile" | "maintain", config: RuntimeConfig, controllerConfig?:string) {
   return Effect.gen(function* () {
     config = yield* checked(() => configuration(config));
-    yield* ownConfiguredInstallation(config.maintenanceLock);
+    yield* ownConfiguredInstallation(config.maintenanceLock, "recovery");
     const applicationConfig = {...config, ...backendStorage(config.recoveryBackend), installationExpectation: expectedIdentity(config)};
     if (mode === "restore") return yield* restoreApplication(applicationConfig);
     let bound = expectedIdentity(config);
