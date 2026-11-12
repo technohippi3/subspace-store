@@ -66,6 +66,15 @@ runtime polling never signs or sends. The real regtest stack now qualifies
 one cancellation refund into the buyer's wallet. Maintenance coordination
 and whole-host TypeScript recovery remain separate installer/recovery work.
 
+`docs/spec/APPLICATION-RESTORE.md` adds regtest-only operator commands:
+`node ts/src/main.ts restore <config>` replays a journal into a fresh database,
+and `node ts/src/main.ts recover <config>` inspects fresh chain facts without
+serving or sending. Stop and fence the old instance first. Exit 0 means its
+receipt is acknowledged; it still reports controller reconciliation required.
+Exit 2 means journal acknowledgment is pending. These commands preserve
+quarantine and do not replace wallet backups, coordinated subs/controller
+restore or the eventual installer. Never clear recovery flags by hand.
+
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,
   with the commands in `subs.stop_command` and `subs.start_command`. The

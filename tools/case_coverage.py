@@ -16,7 +16,7 @@ SPEC_FILES = ('PAYMENT-SPEC.md', 'PRIVATE-PURCHASE.md', 'PILOT-SPEC.md', 'STORAG
               'CHECKOUT-SPEC.md', 'CORE-SPEC.md', 'REFUND-PREPARATION.md', 'REFUND-SENDING.md',
               'REFUND-FAMILIES.md', 'REFUND-OBLIGATIONS.md', 'REFUND-ESTIMATES.md',
               'EXCESS-DEADLINES.md', 'OPERATOR-INSPECTION.md', 'REGISTRY-ENTRY.md', 'ENTRY-RECOVERY.md',
-              'ENTRY-RELEASE.md', 'COMMITMENT-TRACKING.md', 'CERTIFICATES.md', 'FULFILLMENT.md', 'RUNTIME.md', 'ATTENDED-REFUNDS.md', 'SUPERSESSION.md')
+              'ENTRY-RELEASE.md', 'COMMITMENT-TRACKING.md', 'CERTIFICATES.md', 'FULFILLMENT.md', 'RUNTIME.md', 'ATTENDED-REFUNDS.md', 'SUPERSESSION.md', 'APPLICATION-RESTORE.md')
 KINDS = ('python-model', 'python-store', 'python-controller', 'ts-model', 'ts-store')
 CONTROLLER_FILES = {'test_controller_host.py', 'test_controller_lock.py',
                     'test_runner.py', 'test_runner_recovery.py',

@@ -8,6 +8,7 @@ import { Effect } from "effect";
 import { BitcoinRpc, type RpcConfig } from "../src/bitcoin/rpc.ts";
 import { refundPolicy } from "../test/production/application-fixture.ts";
 import { amount, object } from "../src/bitcoin/validation.ts";
+import { recoveryQualification } from "./recovery.ts";
 
 const run = <A, E>(value: Effect.Effect<A, E>) => Effect.runPromise(value);
 export async function runtimeQualification(repository: string, root: string, core: RpcConfig, buyer: BitcoinRpc,
@@ -101,5 +102,9 @@ export async function runtimeQualification(repository: string, root: string, cor
     await api("operator", `/operator/refunds/${merchantRefund.gid}/broadcast`, { txid: merchantRefund.txid, confirm: merchantRefund.gid });
     await run(node.call("generatetoaddress", 6, minerAddress));
     assert.equal((await api("buyer", String(request.order_link))).refunded_sats, 2000);
+    await api("operator", "/operator/listings", { handle: "recovery@space", price_sats: 1000 });
+    const unseen = await api("buyer", "/requests", { handle: "recovery@space", script_pubkey: "5120" + "2".padStart(64,"0") });
+    const unpaid = await api("buyer", String(unseen.order_link) + "/quote", {});
+    await stop(); await recoveryQualification(repository, file, buyer, node, minerAddress, String(unpaid.address));
   } finally { await stop(); }
 }

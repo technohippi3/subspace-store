@@ -6,7 +6,7 @@ export interface Fulfillment {
   version: 1; oid: string; entry: string; revision: number; certificateHash: string; proofHash: string;
   relayRoot: string; relayHeight: number; batchHeight: number; anchorHeight: number; tipHeight: number; tipHash: string;
 }
-export const recoveryReasons = ["certificate_checkpoint_lost", "commitment_lost", "superseded", "supersession_reversed"] as const;
+export const recoveryReasons = ["certificate_checkpoint_lost", "commitment_lost", "superseded", "supersession_reversed", "application_restored"] as const;
 export interface RecoveryIncident {
   version: 1; id: number; oid: string; entry: string; revision: number;
   reasons: (typeof recoveryReasons[number])[]; resolution: string | null;

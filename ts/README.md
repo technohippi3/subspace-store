@@ -31,6 +31,9 @@ the operator API/runner contract in `../docs/spec/ATTENDED-REFUNDS.md`.
 Known-transaction confirmed delegate conflicts now have explicit supersession
 and reorg-reversal handling (`../docs/spec/SUPERSESSION.md`). The store checks
 the Core proof; Spaces root exclusion is a trusted controller attestation.
+Journal-only application restore and read-only recovery inspection now follow
+`../docs/spec/APPLICATION-RESTORE.md`. The restored store remains quarantined
+until controller reconciliation; the commands cannot reopen sales.
 Browser checkout, remaining sale/refund scenarios, other supersession paths and full application
 recovery remain. The Python service,
 controller and runner remain the
@@ -215,8 +218,9 @@ Domain rules of `service/ledger.py` still to port, each with its home:
    Pending selection, bound entry, commitment observation, certificate acceptance
    and explicit known-transaction delegate-conflict proof now exist. Generating
    a rollback, repairing the Spaces tree and resolving conflicts remain manual.
-3. Restore from the journal (`restore_from_journal`), which always comes
-   back with sales paused.
+3. Controller/subs reconciliation and a validated quarantine-completion protocol.
+   Journal-only restore now validates application records and comes back paused;
+   read-only inspection refreshes payment/refund facts without serving or sending.
 
 `src/application/` now has strict records, serialized Effect commands,
 public request validation, journal-gated addresses/cancellations and

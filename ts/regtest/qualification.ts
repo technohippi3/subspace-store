@@ -20,7 +20,9 @@ export function qualification(repository: string, root: string, name: string) {
     "ts/src/application/catalog-http.ts", "ts/regtest/runtime.ts",
     "ts/src/application/refund-http.ts", "ts/src/application/refund-receipt.ts",
     "ts/src/application/supersessions.ts", "ts/src/application/supersession-records.ts", "ts/src/application/supersession-http.ts",
-    "ts/src/bitcoin/supersession.ts", "ts/regtest/supersessions.ts"];
+    "ts/src/bitcoin/supersession.ts", "ts/regtest/supersessions.ts",
+    "ts/src/storage/store.ts", "ts/src/application/recovery.ts", "ts/src/application/persistence.ts",
+    "ts/src/runtime/recovery.ts", "ts/regtest/recovery.ts"];
   writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
     files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
     checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -49,5 +51,8 @@ export function qualification(repository: string, root: string, name: string) {
       "attended-refund-late-cancelled-invoice-credit", "attended-refund-merchant-cause-full-principal",
       "supersession-real-signed-delegate-conflict", "supersession-six-deep-core-proof", "supersession-restart-preserves-release",
       "supersession-checkpoint-loss-relocks-paid-order", "supersession-reversal-preserves-cancellation",
-      "supersession-old-retry-never-reactivates", "supersession-restart-preserves-revocation"] }, null, 2), { mode: 0o600 });
+      "supersession-old-retry-never-reactivates", "supersession-restart-preserves-revocation",
+      "application-journal-only-restore-command", "application-restore-unknown-unobserved-payment",
+      "application-recovery-discovers-downtime-payment", "application-recovery-rereads-settled-refunds",
+      "application-recovery-retains-controller-quarantine", "application-recovery-wallet-and-mempool-unchanged"] }, null, 2), { mode: 0o600 });
 }

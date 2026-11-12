@@ -44,7 +44,7 @@ export interface Order {
   id: string; sequence: number; handle: string; space: string; recipient: string; tokenHash: string;
   status: Status; quotedAt: number | null; quotedPrice: number | null; price: number | null;
   destination: Destination | null; payFirst: boolean; grants: Grant[]; everConverted: boolean;
-  paymentHistory: "none" | "detected"; lateEvaluated: boolean;
+  paymentHistory: "none" | "detected" | "unknown"; lateEvaluated: boolean;
 }
 export interface Listing { handle: string; space: string; price: number }
 export interface Output { outpoint: string; script: string; sats: number; confirmations: number }
@@ -53,7 +53,9 @@ export interface Payment extends Output { active: boolean }
 export interface Settings { version: 1; riskBudget: number; paused: boolean; conversions: string[];
   lastTime: number; tip: number; nextOrder: number }
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
+export interface ApplicationRecovery { version: 1; required: true; sourceSequence: number }
 export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[]; pending: string[]; entries: BoundEntry[];
+  recovery: ApplicationRecovery | null;
   closures: EntryClosure[]; arms: EntryArm[];
   commitments: CommitmentRecord[];
   supersessions: Supersession[];
@@ -98,7 +100,7 @@ function order(value: unknown): asserts value is Order {
       value.handle.split("@")[1] !== value.space || !validP2tr(value.recipient) ||
       typeof value.tokenHash !== "string" || !/^[0-9a-f]{64}$/.test(value.tokenHash) ||
       !["requested", "quoted", "unpaid", "converted", "issuing", "ready", "fulfilled", "cancelled", "refund_due"].includes(String(value.status)) ||
-      !["none", "detected"].includes(String(value.paymentHistory))) fail("invalid stored order");
+      !["none", "detected", "unknown"].includes(String(value.paymentHistory))) fail("invalid stored order");
   nullableWhole(value.quotedAt);
   for (const amount of [value.quotedPrice, value.price]) if (amount !== null) sats(amount);
   if (value.destination !== null) destination(value.destination);
@@ -113,6 +115,7 @@ function order(value: unknown): asserts value is Order {
   if ((value.destination === null) !== (value.quotedAt === null) ||
       (value.destination === null) !== (value.quotedPrice === null) ||
       (value.destination === null) !== (value.price === null)) fail("incomplete invoice");
+  if (value.paymentHistory === "unknown" && value.destination === null) fail("unknown payment history without an invoice");
 }
 function payment(value: unknown): asserts value is Payment {
   object(value, "outpoint,script,sats,confirmations,active");
@@ -121,6 +124,7 @@ function payment(value: unknown): asserts value is Payment {
 }
 export function encode(state: State): Record[] {
   return [ { kind: "sales_settings", key: "global", value: state.settings as unknown as Json },
+    ...(state.recovery ? [{ kind: "application_recovery", key: "global", value: state.recovery as unknown as Json }] : []),
     { kind: "registry_pending", key: "global", value: { version: 1, orders: [...state.pending] } },
     ...state.entries.map(value => ({ kind: "issuance_entry", key: value.id, value: value as unknown as Json })),
     ...state.closures.map(value => ({ kind: "entry_closure", key: value.id, value: value as unknown as Json })),
@@ -148,7 +152,7 @@ export function encode(state: State): Record[] {
 export function decode(records: readonly Record[], riskBudget: number, refunds: RefundSettings): State {
   policy(refunds.policy);
   for (const d of refunds.merchantDestinations) destination(d);
-  const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
+  const state: State = { recovery: null, settings: { version: 1, riskBudget, paused: true, conversions: [],
     lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [], entries: [], closures: [], arms: [], commitments: [], supersessions: [], certificates: [], fulfillments: [], incidents: [],
     refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [], assessments: [],
     refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
@@ -157,6 +161,10 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
+      case "application_recovery":
+        object(v, "version,required,sourceSequence"); whole(v.sourceSequence, 1);
+        if (record.key !== "global" || v.version !== 1 || v.required !== true) fail("invalid application recovery marker");
+        state.recovery = v as unknown as ApplicationRecovery; break;
       case "supersession": supersessionRecord(v); if (`${v.entry}:${v.revision}` !== record.key) fail("supersession identity differs"); state.supersessions.push(v); break;
       case "fulfillment": fulfillmentRecord(v); if (v.oid !== record.key) fail("fulfillment identity differs"); state.fulfillments.push(v); break;
       case "recovery_incident": incidentRecord(v); if (String(v.id) !== record.key) fail("incident identity differs"); state.incidents.push(v); break;

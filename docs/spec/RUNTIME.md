@@ -6,6 +6,12 @@ It currently accepts regtest only. It neither installs the application nor
 opens a production sale. No wallet is created, imported or unlocked. The
 operator prepares existing fixture wallets and runtime credential files.
 
+`APPLICATION-RESTORE.md` defines the separate `restore <config>` and
+`recover <config>` commands. They print bounded receipts and exit without
+listeners, signing or sending. A restored application remains quarantined
+until the still-unbuilt controller-completion protocol succeeds; normal
+startup cannot bypass that gate.
+
 ## Configuration and ownership
 
 The version-1 configuration is exact: network, database, journalDirectory,

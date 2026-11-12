@@ -2339,3 +2339,65 @@ wallet, managed credential or mainnet state changed. Complete Spaces
 supersession, browser/buyer-client and application/host restore gates remain,
 followed by installer/Alchemy, safe updates and essential seller commands.
 Paid sales stay closed.
+
+
+## Journal-only TypeScript application restore and inspection, 2026-11-12
+
+`docs/spec/APPLICATION-RESTORE.md` now defines the explicit restore and
+read-only recover commands. Restore validates the full domain projection
+before publishing a fresh database, preserves acknowledged financial and
+issuance history, marks invoices without durable detection unknown,
+invalidates certificate verification and journals quarantine plus a global
+pause. The commands never release controller quarantine or open listeners.
+A pending normalization append returns an unacknowledged receipt and exit 2;
+process death and lost acknowledgment resume through recover without another
+normalization transition or wallet effect.
+
+The recovery marker follows the journal into older database copies. A live
+permission also refuses a newer/conflicting journal head or missing
+acknowledged tail. Tests cover old matching prefixes, stale live writers,
+old coherent databases and clearing only the local restore bit. These
+consistency checks supplement fencing the old instance; they are not a
+cross-host lease or a whole-host recovery protocol.
+
+Core run `core-adapter-2026-11-12T10-36-34-723Z-9bc6f898` passes 79
+checks bound to 64 current source hashes. Its safe qualification JSON is
+retained under `regtest/runs/` with that run ID. The standalone process
+first completes the earlier attended refund checks, then stops with a
+second unpaid invoice. The buyer pays while the store is stopped. The
+shipped restore command rebuilds a new database from the journal alone,
+marks that invoice unknown and withholds current settlement claims. The
+recover command finds the actual three-confirmation payment and converts
+its order, rereads both settled refunds, and still reports ready false
+with controller reconciliation required. Repeated inspection and a normal
+startup attempt retain quarantine. Wallet descriptors, balances, coin locks
+and the mempool remain exactly unchanged by recovery. Core and its payment
+wallet stay live; no wallet onboarding-backup restore is claimed.
+
+Full-stack run `typescript-sale-20261112T104027Z-e77f23` passes all 24
+normal-sale/refund checks against 88 current source hashes. Real Core,
+spaced, subs, libveritas and the isolated relay complete issuance, verified
+delivery, store crashes/restarts and an attended cancellation refund. The
+buyer receives 9,778 sats from its 10,000-sat principal with the 222-sat fee
+below its 300-sat ceiling. The report and both certificate/relay messages
+are retained, and both messages independently reverify offline. This run
+checks the normal bridge after the new persistence/permission guards; it
+does not restore the full stack. It compares fixed spec expectations and
+executes no independent model.
+
+Pinned dependency installation, type checking, 313 TypeScript tests,
+302 Python tests, development coverage and whitespace pass. O78–O87 have
+executable production tests, including killed processes and the shipped
+commands; O78 and O82 also have independent model cases. Coverage reports
+369 fixed-price cases without gaps, 40 deferred cases, and TypeScript
+model/store plus Python controller case counts of 55/196/50. The pilot
+production gate still refuses for 112 cases. Recorded-adapter tests,
+independent models, actual Core transactions and the full-stack normal
+sale remain distinct evidence.
+
+Only fresh isolated fixture wallets were used. No deployed service,
+existing wallet, managed credential or mainnet state changed. Remaining
+work includes controller/subs reconciliation and an explicit durable
+quarantine-completion protocol, wallet/whole-host restore, remaining
+supersession paths and browser/buyer-client gates. Installer/Alchemy,
+signed updates and essential seller commands follow. Paid sales stay closed.

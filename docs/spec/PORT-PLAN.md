@@ -82,6 +82,11 @@ Known-transaction confirmed delegate-conflict proofs and their reversal now
 follow `SUPERSESSION.md`. Real Core conflict/ancestry evidence is separate
 from the trusted controller's Spaces root-exclusion attestation. Rollback
 construction, tree repair and alternative/unknown-transaction paths remain.
+Application journal replay and read-only inspection now follow
+`APPLICATION-RESTORE.md`: restored invoices retain payment uncertainty,
+certificates require re-verification, financial/issuance history survives
+and quarantine is journaled. Controller/subs reconciliation and the explicit
+completion protocol remain unbuilt, so these commands cannot start service.
 Browser checkout, remaining sale/refund scenarios, remaining supersession and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.

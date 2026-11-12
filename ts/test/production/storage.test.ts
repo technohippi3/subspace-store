@@ -29,6 +29,16 @@ function use<A, E>(config: StorageConfig, work: (store: DurableStore) => Effect.
   })));
 }
 const name = (price: number) => ({ kind: "name", key: "one@space", value: { price } });
+test("O87: live confirmation refuses a missing acknowledged tail even for an older matching prefix", async (t) => {
+  const config = fixture(t), journal = new FileJournal(config.journalDirectory);
+  await use({ ...config, makeJournal: () => journal }, store => Effect.gen(function* () {
+    yield* store.commit([name(1000)]); yield* store.commit([name(2000)]);
+    const read = journal.read.bind(journal);
+    journal.read = () => read().slice(0, -1);
+    assert.equal(yield* store.confirm(1), false);
+    journal.read = read; assert.equal(yield* store.confirm(1), true);
+  }));
+});
 class FailingJournal extends FileJournal {
   down = false;
   lostAnswer = false;

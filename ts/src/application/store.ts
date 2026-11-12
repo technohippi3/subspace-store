@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { Effect, Semaphore } from "effect";
 import { canonicalHandle } from "../recipient.ts";
 import { DurableStore, type StorageConfig } from "../storage/store.ts";
-import { ApplicationError, checked, claims, decode, destination, encode, fail, postIssuance, request, sats, verified,
+import { ApplicationError, checked, claims, decode, destination, fail, postIssuance, request, sats, verified,
   type Destination, type Order, type Record, type RefundSettings, type Snapshot, type State } from "./records.ts";
 import { active, admission, grant, refresh, release, total } from "./sales.ts";
 import { policy, type RefundPolicy } from "../refunds/policy.ts";
@@ -19,6 +19,8 @@ import { CertificateCache } from "./certificate-cache.ts";
 import { certificateBytes, checkCertificates, type CertificateChain } from "./certificates.ts";
 import { recoveryView } from "./deliveries.ts";
 import { checkSupersessions, type SupersessionChain } from "./supersessions.ts";
+import { persist } from "./persistence.ts";
+import { inspectRecovered } from "./recovery.ts";
 
 export interface Adapters {
   readonly clock: () => number;
@@ -54,10 +56,10 @@ export class SalesStore {
     return Effect.gen(function* () {
       yield* checked(() => { sats(config.riskBudgetSats); policy(config.refundPolicy); });
       const storage = yield* DurableStore.open(config);
-      const cache = yield* verified(() => new CertificateCache(config.database + ".certificates"));
-      const result = new SalesStore(storage, adapters, config, cache);
       if ((yield* storage.status()).restoreRequired)
         return yield* checked(() => fail("restored application requires controller and chain reconciliation", "unavailable"));
+      const cache = yield* verified(() => new CertificateCache(config.database + ".certificates"));
+      const result = new SalesStore(storage, adapters, config, cache);
       const { records, state } = yield* result.load();
       if ((state.refundSends.length || state.refundObservations.length) && !adapters.refunds?.sender)
         return yield* checked(() => fail("refund reconciliation adapter is required", "unavailable"));
@@ -67,27 +69,26 @@ export class SalesStore {
       return result;
     });
   }
-  private load() {
+  static inspectRecovery(config: Config, adapters: Adapters) {
+    return inspectRecovered(config, adapters, (storage, readOnly) => Effect.gen(function* () {
+      const cache = yield* verified(() => new CertificateCache(config.database + ".certificates"));
+      return yield* new SalesStore(storage, readOnly, config, cache).refresh(true);
+    }));
+  }
+  private load(recovery = false) {
     const self = this;
     return Effect.gen(function* () {
       const records = yield* self.storage.records();
       const state = yield* verified(() => decode(records, self.budget, self.refunds));
+      if (state.recovery && !recovery) return yield* checked(() => fail("restored application requires controller and chain reconciliation", "unavailable"));
       return { records, state };
     });
   }
-  private save(before: readonly Record[], state: State) {
+  private save(before: readonly Record[], state: State) { return persist(this.storage, before, state, this.budget, this.refunds); }
+  private refresh(recovery = false) {
     const self = this;
     return Effect.gen(function* () {
-      const after = yield* verified(() => { const records = encode(state); decode(records, self.budget, self.refunds); return records; });
-      const previous = new Map(before.map(r => [JSON.stringify([r.kind, r.key]), JSON.stringify(r.value)]));
-      const changed = after.filter(r => previous.get(JSON.stringify([r.kind, r.key])) !== JSON.stringify(r.value));
-      if (changed.length) yield* self.storage.commit(changed);
-    });
-  }
-  private refresh() {
-    const self = this;
-    return Effect.gen(function* () {
-      const current = yield* self.load();
+      const current = yield* self.load(recovery);
       const destinations = current.state.orders.flatMap(o => o.destination ? [{ ...o.destination }] : []);
       const transactions = allMembers(current.state).flatMap(m => m.transaction ? [m.transaction] : []), sender = self.adapters.refunds?.sender;
       if ((current.state.refundSends.length || current.state.refundObservations.length) && !sender)
@@ -108,7 +109,7 @@ export class SalesStore {
         yield* verified(() => reconcile(current.state, eligibleExcess, observedAt));
         yield* verified(() => auditRecipients(current.state));
         yield* self.save(current.records, current.state);
-        return { ...(yield* self.load()), tipHash: snapshot.tipHash };
+        return { ...(yield* self.load(recovery)), tipHash: snapshot.tipHash };
       }
       return yield* checked(() => fail("payment and refund observations disagree on the chain tip", "unavailable"));
     });
@@ -144,7 +145,7 @@ export class SalesStore {
         recovery_incident: yield* recoveryView(self.registryContext, state, order.id),
         cancellation: cancelled ? (final ? "final" : "unconfirmed") : null,
         price_sats: order.price,
-        address: rejected ? null : acknowledged?.destination?.address ?? null,
+        address: rejected || order.paymentHistory === "unknown" ? null : acknowledged?.destination?.address ?? null,
         address_pending: !rejected && !!order.destination && !acknowledged?.destination,
         recipient_rejected: rejected,
         acknowledged: !!acknowledged?.destination,

@@ -20,6 +20,10 @@ export interface StorageConfig {
   readonly database: string;
   readonly journalDirectory: string;
   readonly restore?: boolean;
+  /** Recovery inspection may only open an already quarantined database. */
+  readonly requireRestore?: boolean;
+  /** Domain validation runs on the complete projection before publication. */
+  readonly validateRestore?: (records: readonly Change[], sequence: number) => void;
   /** Constructed after ownership; adapters must acknowledge only durable readback. */
   readonly makeJournal?: () => Journal;
 }
@@ -57,7 +61,9 @@ export class DurableStore {
         const journal = config.makeJournal?.() ?? new FileJournal(config.journalDirectory);
         const history = journal.read().map(value => decode(JSON.stringify(value)));
         const existing = existsSync(config.database);
-        if (config.restore && existing) throw Error("restore never overwrites an existing database");
+        if (config.requireRestore && !existing) throw Error("recovery requires an existing restored database");
+        if (config.restore && ["", "-wal", "-shm", "-journal"].some(suffix => existsSync(config.database + suffix)))
+          throw Error("restore never overwrites an existing database or sidecar");
         if (!config.restore && !existing && history.length > 0) throw Error("restore required: journal already has history");
         if (config.restore && history.length === 0) throw Error("journal is empty; nothing to restore");
         const working = config.restore ? config.database + ".restoring" : config.database;
@@ -77,6 +83,7 @@ export class DurableStore {
         }
         const meta = db.prepare("select * from store_meta where id=1").get();
         if (!meta || meta.version !== 1 || typeof meta.store !== "string") throw Error("unsupported storage schema");
+        if (config.requireRestore && meta.restored !== 1) throw Error("database is not awaiting restore reconciliation");
         // Configure only after recognizing the database. Never migrate a
         // Python database or an unknown future version by opening it.
         chmodSync(working, 0o600);
@@ -84,6 +91,7 @@ export class DurableStore {
         const store = new DurableStore(db, journal, release, meta.store);
         if (config.restore && meta.restored !== 1) throw Error("working file is not a restore");
         store.reconcile(history, config.restore ?? false);
+        if (config.restore) config.validateRestore?.(store.projectedRecords(), history.length);
         store.flushSync();
         if (config.restore) {
           // A partially replayed working file is never the serving path.
@@ -196,7 +204,16 @@ export class DurableStore {
       if (!row || row.acknowledged !== 1) return false;
       const expected = decode(row.payload as string);
       try {
-        const value = this.journal.read()[seq - 1];
+        const history = this.journal.read();
+        const local = this.db.prepare("select max(seq) as seq, max(case when acknowledged=1 then seq else 0 end) as ack from outbox").get()!;
+        if (history.length > (local.seq as number) || history.length < (local.ack as number))
+          throw Error("journal head differs from this database; restart and reconcile before progress");
+        const head = history.at(-1);
+        if (head) {
+          const remoteHead = decode(JSON.stringify(head)), localHead = this.db.prepare("select payload from outbox where seq=?").get(remoteHead.seq);
+          if (!localHead || decode(localHead.payload as string).hash !== remoteHead.hash) throw Error("journal head conflicts with this database");
+        }
+        const value = history[seq - 1];
         if (!value) throw Error("journal entry is not currently confirmed");
         const actual = decode(JSON.stringify(value));
         if (actual.seq !== seq || actual.hash !== expected.hash || actual.store !== this.identity)
@@ -218,11 +235,12 @@ export class DurableStore {
         acknowledged: ack?.acknowledged === 1 };
     });
   }
-  records(): Effect.Effect<readonly { kind: string; key: string; value: Json }[], StorageError> {
-    return attempt("records", () => this.db.prepare("select kind,key,value from records order by kind,key")
+  private projectedRecords(): readonly Change[] {
+    return this.db.prepare("select kind,key,value from records order by kind,key")
       .all().map(row => ({ kind: row.kind as string, key: row.key as string,
-        value: JSON.parse(row.value as string) as Json })));
+        value: JSON.parse(row.value as string) as Json }));
   }
+  records(): Effect.Effect<readonly Change[], StorageError> { return attempt("records", () => this.projectedRecords()); }
   /** Last acknowledged value, even when a newer local transition is pending. */
   acknowledged(kind: string, key: string): Effect.Effect<RecordValue | null, StorageError> {
     return attempt("acknowledged", () => {

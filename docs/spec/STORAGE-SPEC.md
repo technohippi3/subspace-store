@@ -33,7 +33,9 @@ sequence. A caller must not expose an address, final cancellation or send
 intent until the corresponding receipt is acknowledged. That receipt is a
 historical durability marker, not a live availability check. Application
 broadcast handlers must call `confirm(seq)` immediately before the RPC,
-as well as applying their financial and controller guards. The storage
+as well as applying their financial and controller guards. Live confirmation
+also refuses a newer or conflicting journal head, or a missing acknowledged
+tail; an older matching entry alone cannot bypass that inconsistency. The storage
 component does not itself authorize a broadcast. The component
 returns pending receipts during a journal outage; that is not authorization
 for any external effect. Operator diagnostics retain the journal failure. This backend interface is
@@ -68,10 +70,16 @@ Explicit restore writes a separate working database and atomically publishes
 it only after replay and checkpointing. It never overwrites a serving
 path. A killed restore can reuse its working file, but cannot supplement
 the recovery set with local history beyond the journal. Restored metadata
-requires reconciliation; the future application must keep admission paused
+requires reconciliation; the application keeps admission paused
 until its payment/chain recovery is checked. Storage-level record replay
 alone does not establish the buyer's payment-history marker or on-chain
 readiness.
+
+`APPLICATION-RESTORE.md` now adds domain validation before publication,
+operator restore/inspection commands, payment-history uncertainty and a
+journaled quarantine. Controller/subs reconciliation and quarantine
+completion remain separate work. Neither the local restore bit nor record
+replay alone establishes that the application can serve again.
 
 Records include names, orders, historical addresses, certificates, issued
 handles and future accounting records. This generic persistence component
