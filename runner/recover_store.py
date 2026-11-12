@@ -11,20 +11,20 @@ from .recovery_bridge import RecoveryStore, digest
 
 def main():
     request = json.loads(sys.stdin.buffer.read(4_194_305))
-    if len(json.dumps(request)) > 4_194_304 or set(request) != {"inventory", "database", "journalDirectory", "core"}:
+    if len(json.dumps(request)) > 4_194_304 or set(request) != {"inventory", "network", "database", "journalDirectory", "core"}:
         raise Refused("invalid recovery request")
     config = json.loads(Path(sys.argv[1]).read_text())
     check(config)
-    if config.get("network") != "regtest" or config["store"].get("implementation") != "typescript" or \
+    if request.get("network") not in {"main", "regtest"} or config.get("network") != {"main":"mainnet", "regtest":"regtest"}[request["network"]] or config["store"].get("implementation") != "typescript" or \
             Path(config["store"]["db"]).resolve() != Path(request["database"]).resolve() or \
             Path(config["store"]["journal_dir"]).resolve() != Path(request["journalDirectory"]).resolve() or \
             config["bitcoind"]["url"].rstrip("/") != request["core"]["url"].rstrip("/") or \
             Path(config["bitcoind"]["cookie_file"]).resolve() != Path(request["core"]["cookiePath"]).resolve():
         raise Refused("runner and store recovery configuration differ")
-    registry = RecoveryStore(request["inventory"])
+    registry = RecoveryStore(request["inventory"], network=request["network"])
     c, publisher = build(config, registry)
     try:
-        r = Runner(registry, c, network="regtest")
+        r = Runner(registry, c, network=config["network"], recovery_only=True)
         if c.recovery_state() is not None:
             r.restore()
         else:

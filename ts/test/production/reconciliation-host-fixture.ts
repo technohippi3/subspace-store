@@ -13,7 +13,7 @@ export async function recoveryHost(t:TestContext,core:Awaited<ReturnType<typeof 
     if(call.method==="walletgetinfo")return{result:{tip:state.walletTip}};
     if(call.method==="walletlisttransactions")return{result:state.walletIds.map(txid=>({txid}))};
     if(call.method==="getcommitment")return{result:state.chainRoot?{state_root:state.chainRoot,block_height:90}:null};
-    if(call.method==="getblockhash")return{result:"b".repeat(64)};
+    if(call.method==="getblockhash"&&call.params[0]!==0)return{result:"b".repeat(64)};
     if(call.method==="getrawtransaction")return{result:{txid:state.transactionId,blockhash:"b".repeat(64),
       vin:[{txid:state.input,vout:0}],vout:[{scriptPubKey:{hex:"6a20"+state.txRoot}}]}};
     return undefined;

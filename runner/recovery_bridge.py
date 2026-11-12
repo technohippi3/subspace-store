@@ -17,7 +17,10 @@ class RecoveryStore:
     bound_entries = True
     offline_recovery = True
 
-    def __init__(self, inventory):
+    def __init__(self, inventory, network="regtest"):
+        if network not in {"main", "regtest"}:
+            raise Refused("invalid recovery network")
+        self.network = network
         self.inventory = inventory
         if not isinstance(inventory, dict) or set(inventory) != set("version store sourceSequence sequence tipHeight tipHash orders entries spaces".split()):
             raise Refused("invalid recovery inventory")
@@ -48,7 +51,7 @@ class RecoveryStore:
 
     def status(self):
         i = self.inventory
-        return dict(chain=dict(network="regtest", best_block_hash=i["tipHash"], blocks=i["tipHeight"]),
+        return dict(chain=dict(network=self.network, best_block_hash=i["tipHash"], blocks=i["tipHeight"]),
                     application_recovery=dict(required=True))
 
     def journal_ok(self, oid):

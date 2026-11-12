@@ -1,3 +1,4 @@
+import { bindIdentity, checkStoredIdentity, type InstallationIdentity } from "../bitcoin/identity.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { Effect, Semaphore } from "effect";
 import { canonicalHandle } from "../recipient.ts";
@@ -26,6 +27,7 @@ import { inspectRecovered } from "./recovery.ts";
 import { reconcileRecovered, type RecoveryController } from "./reconciliation.ts";
 
 export interface Adapters {
+  readonly installationIdentity?: Effect.Effect<InstallationIdentity, ApplicationError>;
   readonly clock: () => number;
   readonly snapshot: (destinations: readonly Destination[]) => Effect.Effect<Snapshot, ApplicationError>;
   readonly newDestination: Effect.Effect<Destination, ApplicationError>;
@@ -34,7 +36,7 @@ export interface Adapters {
   readonly supersessionChain?: SupersessionChain;
   readonly chainStatus?: Effect.Effect<{ network: string; best_block_hash: string; blocks: number }, ApplicationError>;
 }
-export interface Config extends StorageConfig { readonly riskBudgetSats: number;
+export interface Config extends StorageConfig { readonly network?: "main" | "regtest"; readonly installationExpectation?: InstallationIdentity | undefined; readonly riskBudgetSats: number;
   readonly refundPolicy: RefundPolicy; readonly merchantDestinations?: readonly Destination[] }
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 /** One serialized application queue, including asynchronous wallet/chain work.
@@ -45,11 +47,12 @@ export class SalesStore {
   private readonly queue = Semaphore.makeUnsafe(1);
   private readonly storage: DurableStore;
   private readonly adapters: Adapters;
+  private readonly config: Config;
   private readonly budget: number;
   private readonly refunds: RefundSettings;
   private readonly registryContext: RegistryContext;
   private constructor(storage: DurableStore, adapters: Adapters, config: Config, certificateCache: CertificateCache) {
-    this.storage = storage; this.adapters = adapters; this.budget = config.riskBudgetSats;
+    this.config = config; this.storage = storage; this.adapters = adapters; this.budget = config.riskBudgetSats;
     this.refunds = configuration({ version: 1, policy: structuredClone(config.refundPolicy), merchantDestinations: structuredClone([...(config.merchantDestinations ?? [])]) });
     this.registryContext = { storage, certificateCache, ...(adapters.certificateChain ? { certificateChain: adapters.certificateChain } : {}),
       ...(adapters.supersessionChain ? { supersessionChain: adapters.supersessionChain } : {}),
@@ -67,10 +70,15 @@ export class SalesStore {
       const cache = yield* verified(() => new CertificateCache(config.database + ".certificates"));
       const result = new SalesStore(storage, adapters, config, cache);
       const { records, state } = yield* result.load();
+      if (adapters.installationIdentity) {
+        const observed = yield* adapters.installationIdentity;
+        yield* checked(() => { state.installation = bindIdentity(state.installation, observed, records.length > 0); });
+      }
       if ((state.refundSends.length || state.refundObservations.length) && !adapters.refunds?.sender)
         return yield* checked(() => fail("refund reconciliation adapter is required", "unavailable"));
       yield* verified(() => auditRecipients(state));
       yield* result.save(records, state);
+      if (adapters.installationIdentity) { yield* storage.flush(); const position = yield* storage.status(); if (!(yield* storage.confirm(position.seq))) return yield* checked(() => fail("installation identity journal acknowledgment required", "unavailable")); }
       if (state.supersessions.length || state.certificates.length || (adapters.refunds?.sender && state.groups.some(g => g.transaction))) yield* result.refresh();
       return result;
     });
@@ -92,6 +100,7 @@ export class SalesStore {
     return Effect.gen(function* () {
       const records = yield* self.storage.records();
       const state = yield* verified(() => decode(records, self.budget, self.refunds));
+      yield* checked(() => checkStoredIdentity(state.installation, self.config.network, self.config.installationExpectation, records.length > 0));
       if (state.recovery?.required && !recovery) return yield* checked(() => fail("restored application requires controller and chain reconciliation", "unavailable"));
       return { records, state };
     });
@@ -101,6 +110,10 @@ export class SalesStore {
     const self = this;
     return Effect.gen(function* () {
       const current = yield* self.load(recovery);
+      if (self.adapters.installationIdentity) {
+        const observed = yield* self.adapters.installationIdentity;
+        yield* checked(() => { current.state.installation = bindIdentity(current.state.installation, observed, current.records.length > 0); });
+      }
       const destinations = current.state.orders.flatMap(o => o.destination ? [{ ...o.destination }] : []);
       const transactions = allMembers(current.state).flatMap(m => m.transaction ? [m.transaction] : []), sender = self.adapters.refunds?.sender;
       if ((current.state.refundSends.length || current.state.refundObservations.length) && !sender)
@@ -325,7 +338,7 @@ export class SalesStore {
       })) : null;
       return { orders: structuredClone(state.monitors), alerts: structuredClone(state.alerts), assessments: structuredClone(state.assessments),
         recovery_incidents: structuredClone(state.incidents), acknowledged: position.acknowledged === position.seq,
-        chain, paused: state.settings.paused, application_recovery: state.recovery,
+        chain, installation_identity: state.installation, production_ready: !!chain && position.acknowledged === position.seq && !!state.installation && (state.installation.network !== "main" || state.seller.configured), paused: state.settings.paused, application_recovery: state.recovery,
         seller: self.seller.inspect(state), pending_refund_rebroadcast: state.refundSends.filter(s=>state.refundObservations.some(o=>o.txid===s.txid&&o.seen==="absent")).map(s=>({group:s.group,txid:s.txid})) };
     }));
   }

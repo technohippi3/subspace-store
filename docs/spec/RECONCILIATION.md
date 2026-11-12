@@ -3,7 +3,8 @@
 This extends `APPLICATION-RESTORE.md` with an offline completion command for
 known issuance histories. The independent lifecycle model is
 `ts/model/recovery.ts`. Python's frozen store behavior is unchanged; its
-controller remains the issuance adapter. These commands remain regtest-only.
+controller remains the issuance adapter. `NETWORK-READINESS.md` now binds their explicit parent network, including the
+main/mainnet mapping, without changing the supported history or no-send scope.
 
 ```text
 node ts/src/main.ts reconcile <runtime-config.json> <runner-config.json>

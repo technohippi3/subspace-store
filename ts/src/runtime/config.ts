@@ -3,10 +3,13 @@ import { isAbsolute, resolve, sep } from "node:path";
 import { Effect } from "effect";
 import { ApplicationError, destination, sats, whole, type Destination } from "../application/records.ts";
 import { policy, type RefundPolicy } from "../refunds/policy.ts";
+import { identity, type InstallationIdentity } from "../bitcoin/identity.ts";
 import { BitcoinRpc } from "../bitcoin/rpc.ts";
 
 export interface RuntimeConfig {
-  version: 1; network: "regtest";
+  version: 1 | 2; network: "main" | "regtest";
+  maintenanceLock?: string;
+  installation?: { genesis: string; descriptorHash: string };
   database: string; journalDirectory: string;
   listen: { buyer: number; operator: number; subs: number };
   core: { url: string; cookiePath: string; wallet: string };
@@ -14,7 +17,7 @@ export interface RuntimeConfig {
   riskBudgetSats: number; refundPolicy: RefundPolicy;
   merchantDestinations: Destination[]; pollMilliseconds: number;
 }
-const invalid = () => new ApplicationError({ code: "invalid", message: "invalid regtest runtime configuration" });
+const invalid = () => new ApplicationError({ code: "invalid", message: "invalid runtime configuration" });
 function fields(value: unknown, names: string): asserts value is { [key: string]: unknown } {
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).sort().join() !== names.split(",").sort().join()) throw invalid();
 }
@@ -23,8 +26,9 @@ function path(value: unknown): asserts value is string {
 }
 export function configuration(value: unknown): RuntimeConfig {
   try {
-    fields(value, "version,network,database,journalDirectory,listen,core,credentials,riskBudgetSats,refundPolicy,merchantDestinations,pollMilliseconds");
-    if (value.version !== 1 || value.network !== "regtest") throw invalid();
+    fields(value, "version,network,database,journalDirectory,listen,core,credentials,riskBudgetSats,refundPolicy,merchantDestinations,pollMilliseconds" +
+      ((value as {version?:unknown})?.version === 2 ? ",installation,maintenanceLock" : ""));
+    if (value.version === 1 ? value.network !== "regtest" : value.version !== 2 || (value.network !== "main" && value.network !== "regtest")) throw invalid();
     fields(value.listen, "buyer,operator,subs");
     for (const port of Object.values(value.listen)) { whole(port, 1); if (port > 65535) throw invalid(); }
     if (new Set(Object.values(value.listen)).size !== 3) throw invalid();
@@ -32,8 +36,9 @@ export function configuration(value: unknown): RuntimeConfig {
     path(value.database); path(value.journalDirectory); path(value.core.cookiePath);
     if (typeof value.core.url !== "string" || typeof value.core.wallet !== "string") throw invalid();
     new BitcoinRpc(value.core as RuntimeConfig["core"]);
+    if (value.version === 2) { path(value.maintenanceLock); fields(value.installation, "genesis,descriptorHash"); expectedIdentity(value as unknown as RuntimeConfig); }
     fields(value.credentials, "operator,subs"); path(value.credentials.operator); path(value.credentials.subs);
-    const paths = [value.database, value.journalDirectory, value.core.cookiePath, value.credentials.operator, value.credentials.subs].map(p => resolve(p));
+    const paths = [value.database, value.journalDirectory, value.core.cookiePath, value.credentials.operator, value.credentials.subs, ...(value.version === 2 ? [value.maintenanceLock as string] : [])].map(p => resolve(p));
     if (new Set(paths).size !== paths.length || paths.some(p => p !== paths[1] && p.startsWith(paths[1]! + sep))) throw invalid();
     sats(value.riskBudgetSats); policy(value.refundPolicy); whole(value.pollMilliseconds, 100);
     if (value.pollMilliseconds > 60_000 || !Array.isArray(value.merchantDestinations)) throw invalid();
@@ -48,4 +53,8 @@ export function loadConfiguration(file: string) {
     if (bytes.length > 65_536) throw invalid();
     return configuration(JSON.parse(bytes.toString("utf8")) as unknown);
   }, catch: () => invalid() });
+}
+
+export function expectedIdentity(config: RuntimeConfig): InstallationIdentity | undefined {
+  return config.version === 2 ? identity({version:1, network:config.network, wallet:config.core.wallet, ...config.installation}) : undefined;
 }

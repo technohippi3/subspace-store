@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export function qualification(repository: string, root: string, name: string) {
-  const files = ["ts/src/bitcoin/rpc.ts", "ts/src/bitcoin/core.ts", "ts/src/bitcoin/validation.ts", "ts/src/bitcoin/refunds.ts",
+  const files = ["ts/src/runtime/installation-fence.ts", "controller/installation_fence.py", "ts/src/bitcoin/identity.ts", "ts/src/bitcoin/observe-identity.ts", "ts/src/bitcoin/rpc.ts", "ts/src/bitcoin/core.ts", "ts/src/bitcoin/validation.ts", "ts/src/bitcoin/refunds.ts",
     "ts/src/refunds/policy.ts", "ts/src/refunds/records.ts", "ts/src/refunds/types.ts", "ts/src/refunds/book.ts",
     "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts",
     "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
@@ -26,7 +26,7 @@ export function qualification(repository: string, root: string, name: string) {
     "ts/src/application/reconciliation-records.ts", "ts/src/runtime/reconciliation.ts"];
   writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
     files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
-    checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
+    checks: ["installation-genesis-and-public-descriptor-identity", "identity-stable-across-keypool-advance", "identity-mismatch-blocks-address-allocation", "payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
       "replacement", "mempool-entry-time-preserved", "mempool-entry-height-reconstructed", "missing-mempool-without-rebroadcast",
       "refund-preparation-with-capped-buyer-fee", "refund-from-proven-order-change", "application-refund-send",
       "lost-refund-reply-and-store-restart", "refund-settlement-6-5-6", "deep-refund-reorg-and-remining",

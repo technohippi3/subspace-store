@@ -11,13 +11,14 @@ import { object, integer, hex } from "../bitcoin/validation.ts";
 import type { RuntimeConfig } from "./config.ts";
 
 const unavailable=()=>new ApplicationError({code:"unavailable",message:"controller recovery evidence unavailable or changed"});
-interface Host { controller:{journal_dir:string;journal_name?:string;operator_wallet:string};
+interface Host { network: "mainnet" | "regtest"; controller:{journal_dir:string;journal_name?:string;operator_wallet:string};
   spaced:{url:string;cookie_file:string}; subs:{url:string;write_url?:string} }
-function host(file:string):Host{
+function host(file:string,network:RuntimeConfig["network"]):Host{
   const raw=readFileSync(file);if(raw.length>65536)throw unavailable();
   const v=object(JSON.parse(raw.toString("utf8"))),c=object(v.controller),s=object(v.spaced),u=object(v.subs);
   for(const item of [c.journal_dir,c.operator_wallet,s.url,s.cookie_file,u.url])if(typeof item!=="string"||!item||item.length>4096)throw unavailable();
   if(c.journal_name!==undefined&&(typeof c.journal_name!=="string"||!/^[a-zA-Z0-9_-]{1,64}$/.test(c.journal_name)))throw unavailable();
+  if(v.network!==(network==="main"?"mainnet":"regtest"))throw unavailable();
   return v as unknown as Host;
 }
 /** Spawn with cancellation and a bounded response; inventory contains neither
@@ -29,7 +30,7 @@ function runController(file:string,config:RuntimeConfig,input:RecoveryInventory)
     child.stdout.on("data",data=>{size+=data.length;if(size>4194304)child.kill("SIGKILL");else output+=String(data);});
     child.stderr.on("data",()=>{});child.once("error",reject);
     child.once("close",code=>{clearTimeout(timer);try{if(code!==0||size>4194304)throw unavailable();resolvePromise(JSON.parse(output));}catch{reject(unavailable());}});
-    child.stdin.on("error",reject);child.stdin.end(JSON.stringify({inventory:input,database:config.database,journalDirectory:config.journalDirectory,core:config.core}));
+    child.stdin.on("error",reject);child.stdin.end(JSON.stringify({inventory:input,network:config.network,database:config.database,journalDirectory:config.journalDirectory,core:config.core}));
   }),catch:unavailable});
 }
 function confirmController(h:Host,receipt:ControllerReceipt){
@@ -49,9 +50,9 @@ function verify(config:RuntimeConfig,h:Host,receipt:ControllerReceipt){
   return Effect.tryPromise({try:async()=>{
     const s=receipt.statement,{wallet:_wallet,...c}=config.core,node=new BitcoinRpc(c),spaced=new BitcoinRpc({url:h.spaced.url,cookiePath:h.spaced.cookie_file});
     const rpc=(client:BitcoinRpc,method:string,...params:unknown[])=>Effect.runPromise(client.call(method,...params));
-    const tip=object(await rpc(node,"getblockchaininfo"));if(tip.bestblockhash!==s.tipHash||tip.blocks!==s.tipHeight)throw unavailable();
+    const tip=object(await rpc(node,"getblockchaininfo"));if(tip.chain!==config.network||tip.bestblockhash!==s.tipHash||tip.blocks!==s.tipHeight)throw unavailable();
     const info=object(await rpc(spaced,"getserverinfo")),wallet=object(await rpc(spaced,"walletgetinfo",h.controller.operator_wallet));
-    if(info.network!=="regtest"||object(info.tip).hash!==s.tipHash||wallet.tip!==s.tipHeight)throw unavailable();
+    if(info.network!==(config.network==="main"?"mainnet":"regtest")||object(info.tip).hash!==s.tipHash||wallet.tip!==s.tipHeight)throw unavailable();
     const known=new Set<string>();let complete=false;
     for(let page=0;page<1000;page++){
       const rows=await rpc(spaced,"walletlisttransactions",h.controller.operator_wallet,100,page*100);
@@ -79,6 +80,6 @@ function verify(config:RuntimeConfig,h:Host,receipt:ControllerReceipt){
   },catch:unavailable});
 }
 export function controllerRecovery(config:RuntimeConfig,file:string):RecoveryController{
-  const h=host(file);
+  const h=host(file,config.network);
   return {run:input=>runController(file,config,input),verify:receipt=>verify(config,h,receipt),confirm:receipt=>confirmController(h,receipt)};
 }

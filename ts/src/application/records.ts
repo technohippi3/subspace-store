@@ -1,3 +1,4 @@
+import { identity as installationIdentity, type InstallationIdentity } from "../bitcoin/identity.ts";
 import { Data, Effect } from "effect";
 import { canonicalHandle, validP2tr } from "../recipient.ts";
 import type { Json } from "../storage/codec.ts";
@@ -57,7 +58,7 @@ export interface Settings { version: 1; riskBudget: number; paused: boolean; con
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
 export type ApplicationRecovery = { version: 1; required: true; sourceSequence: number } |
   { version: 2; required: false; sourceSequence: number; proofHash: string; controllerSequence: number; tipHeight: number; tipHash: string };
-export interface State { seller: SellerSettings; spaces: SpacePolicy[]; namePolicies: NamePolicy[]; withdrawals: InvoiceWithdrawal[]; ownerAuthorizations: OwnerAuthorization[]; settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[]; pending: string[]; entries: BoundEntry[];
+export interface State { installation: InstallationIdentity | null; seller: SellerSettings; spaces: SpacePolicy[]; namePolicies: NamePolicy[]; withdrawals: InvoiceWithdrawal[]; ownerAuthorizations: OwnerAuthorization[]; settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[]; pending: string[]; entries: BoundEntry[];
   recovery: ApplicationRecovery | null;
   closures: EntryClosure[]; arms: EntryArm[];
   commitments: CommitmentRecord[];
@@ -126,7 +127,8 @@ function payment(value: unknown): asserts value is Payment {
   if (!value.outpoint || value.outpoint.length > 256) fail("invalid outpoint");
 }
 export function encode(state: State): Record[] {
-  return [ { kind: "seller_settings", key: "global", value: state.seller as unknown as Json },
+  return [ ...(state.installation ? [{ kind: "installation_identity", key: "global", value: state.installation as unknown as Json }] : []),
+    { kind: "seller_settings", key: "global", value: state.seller as unknown as Json },
     ...state.spaces.map(value => ({kind:"space_policy",key:value.space,value:value as unknown as Json})),
     ...state.namePolicies.map(value => ({kind:"name_policy",key:value.handle,value:value as unknown as Json})),
     ...state.withdrawals.map(value => ({kind:"invoice_withdrawal",key:value.order,value:value as unknown as Json})),
@@ -160,7 +162,7 @@ export function encode(state: State): Record[] {
 export function decode(records: readonly Record[], riskBudget: number, refunds: RefundSettings): State {
   policy(refunds.policy);
   for (const d of refunds.merchantDestinations) destination(d);
-  const state: State = { seller: defaultSeller(), spaces: [], namePolicies: [], withdrawals: [], ownerAuthorizations: [], recovery: null, settings: { version: 1, riskBudget, paused: true, conversions: [],
+  const state: State = { installation: null, seller: defaultSeller(), spaces: [], namePolicies: [], withdrawals: [], ownerAuthorizations: [], recovery: null, settings: { version: 1, riskBudget, paused: true, conversions: [],
     lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [], entries: [], closures: [], arms: [], commitments: [], supersessions: [], certificates: [], fulfillments: [], incidents: [],
     refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [], assessments: [],
     refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
@@ -171,6 +173,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
+      case "installation_identity": if(record.key!=="global")fail("invalid installation identity"); state.installation=installationIdentity(v); break;
       case "seller_settings": sellerRecord(record.kind,v); if(record.key!=="global") fail("invalid seller settings identity"); state.seller=v as unknown as SellerSettings; break;
       case "space_policy": sellerRecord(record.kind,v); if(record.key!==(v as SpacePolicy).space) fail("space identity differs"); state.spaces.push(v as SpacePolicy); break;
       case "name_policy": sellerRecord(record.kind,v); if(record.key!==(v as NamePolicy).handle) fail("name policy identity differs"); state.namePolicies.push(v as NamePolicy); break;

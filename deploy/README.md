@@ -324,3 +324,25 @@ and cannot substitute for explicit funded-installation settings.
 funded owner invoices and private link files. Maintenance inspection is
 `GET /operator/maintenance` as defined in `docs/spec/RUNTIME.md`; it does not
 replace the updater's lifetime writer fence or coordinated checkpoint.
+
+
+## Explicit TypeScript network configuration
+
+`../docs/spec/NETWORK-READINESS.md` defines version 2 runtime configuration:
+select `main` or `regtest` and supply `installation` with the expected genesis
+and public descriptor fingerprint plus the package-created `maintenanceLock`.
+The Python runner uses top-level version 2 and `maintenance_lock` for the same
+protected ownership file. Both derive the durable sibling maintenance latch and
+refuse normal starts while the updater owns maintenance. Version 1 remains regtest-only. Bind the
+existing payment wallet before serving and preserve its installation identity
+in the recovery journal. Public descriptors and credentials do not belong in
+release state or public evidence.
+
+For the TypeScript attended runner, select `store.implementation: "typescript"`
+and exact `public_pilot` fields `version: 1`, `space` without `@`,
+`minimum_fee_rate_sat_vb` and `maximum_fee_rate_sat_vb`. Runner network spelling
+is `mainnet` or `regtest`. Public and private modes are separate. Every issue
+requires an explicit rate within those bounds and exact attended confirmation.
+Configure one space and acknowledge explicit admission limits through the
+operator listener before public pilot readiness. The paused listener is
+available for this setup; it is not permission to open sales.

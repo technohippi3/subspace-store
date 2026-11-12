@@ -70,7 +70,10 @@ finality and reorgs (`docs/spec/COMMITMENT-TRACKING.md`). Bound certificate
 readiness and binary buyer download now have separate qualification
 (`docs/spec/CERTIFICATES.md`). Bound verified-delivery callbacks and sticky
 fulfilled recovery incidents now follow `docs/spec/FULFILLMENT.md`. The
-standalone regtest process now follows `docs/spec/RUNTIME.md`. One JSON-API
+standalone process now follows `docs/spec/RUNTIME.md`.
+`docs/spec/NETWORK-READINESS.md` adds explicit main or regtest installation
+identity and the separate TypeScript public pilot runner.
+Its source checks do not authorize deployment or opening sales. One JSON-API
 sale through real Spaces, subs, libveritas and the local relay passes with
 store crashes/restarts. Attended refund HTTP/runner commands and a real
 cancellation refund now follow `docs/spec/ATTENDED-REFUNDS.md`.

@@ -2544,3 +2544,35 @@ service, existing wallet, managed secret or mainnet state changed. Only
 fresh isolated fixture wallets were used. Installer/Alchemy, Infisical,
 signed updates and essential seller commands remain planned. Paid sales
 stay closed.
+
+
+## Explicit installation identity qualification, 2026-11-12
+
+Core run `core-adapter-2026-11-12T13-47-08-029Z-f9e6d572` passed the isolated
+Core 31.2 adapter/runtime/refund/recovery scenario in 50.918 seconds. Its
+qualification manifest now includes the identity and read-only observation
+sources. It adds actual genesis/public descriptor identity observation,
+stability across keypool advancement and refusal of a configured fingerprint
+that differs before address allocation. The retained qualification receipt
+contains source hashes and check names, not descriptors or wallet credentials.
+
+This is regtest evidence with fresh isolated fixture wallets. Main network
+configuration and mismatch refusal have recording-peer coverage; no mainnet
+payment, wallet creation or send was attempted. The public runner's new
+configuration, indexed-node/peer checks, fee bounds and recovery-only capability
+are production component tests, not a Spaces sale or buyer acceptance result.
+Packaging's host fence, maintenance and full replacement rehearsal need their
+own integrated qualification before packaged readiness can be claimed.
+
+
+After integrating the raw-entrypoint maintenance fence, final Core run
+`core-adapter-2026-11-12T13-55-47-368Z-80b8186a` passed the same 82 checks
+against 71 matching source hashes in 67.555 seconds. The safe qualification
+receipt is retained under `regtest/runs/`. The default suites pass 416
+TypeScript tests and 313 Python tests, the latter in 99.808 seconds. Clean
+installation with scripts disabled, type checking, development case coverage
+and whitespace checks pass. O126–O128 exercise actual cross-language Linux
+ownership and raw-entrypoint/latch refusal. These checks establish neither a
+complete installer nor a completed pilot production gate; 75 production cases
+remain absent at this increment, and complete package and buyer acceptance
+qualification remains separate.

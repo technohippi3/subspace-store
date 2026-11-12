@@ -111,8 +111,14 @@ def _confirm(what, expected, given, ask):
 
 class Runner:
     def __init__(self, store, controller, publisher=None, ask=None, network="regtest",
-                 private_purchase=None):
-        if network == "mainnet" and private_purchase is None:
+                 private_purchase=None, public_pilot=None, recovery_only=False):
+        if network not in NAMES or (recovery_only and not getattr(store, "offline_recovery", False)):
+            raise NotConfirmed("invalid runner network or offline recovery capability")
+        if private_purchase is not None and public_pilot is not None:
+            raise NotConfirmed("private test and public pilot are separate modes")
+        if public_pilot is not None and not getattr(store, "bound_entries", False):
+            raise NotConfirmed("public pilot requires the TypeScript store")
+        if network == "mainnet" and private_purchase is None and public_pilot is None and not recovery_only:
             raise NotConfirmed("mainnet requires the explicit private attended test")
         self.store = store
         self.c = controller
@@ -120,6 +126,16 @@ class Runner:
         self.ask = ask
         self.network = network
         self.private_purchase = private_purchase
+        self.public_pilot = public_pilot
+        self.recovery_only = recovery_only
+
+    def _require_active(self):
+        if self.recovery_only:
+            raise NotConfirmed("offline recovery cannot prepare, sign or send transactions")
+
+    def _pilot_space(self, space):
+        if self.public_pilot and (not isinstance(space, str) or space.lstrip("@") != self.public_pilot.space):
+            raise NotConfirmed("batch space differs from the configured public pilot; nothing was sent")
 
     def close(self):
         try:
@@ -150,6 +166,8 @@ class Runner:
         if info.get("wallet") != self.c.operator_wallet:
             problems.append(f"{who} uses wallet {info.get('wallet')!r}, not the configured "
                             f"{self.c.operator_wallet!r}")
+        if self.public_pilot and (tip != self._current_tip["bestblockhash"] or (sp.get("tip") or {}).get("height") != self._current_tip["blocks"]):
+            problems.append(f"{who} is not at the current Core tip")
         return sp.get("network")
 
     def networks(self, subs=True):
@@ -167,6 +185,7 @@ class Runner:
         try:
             btc = self.c.btc.call("getblockchaininfo")
             sp = self.c.spaced.call("getserverinfo")
+            self._current_tip = btc
             status = self.store.status() or {}
             store = status.get("chain") or {}
             if self.private_purchase and status.get("private_attended_test") != vars(self.private_purchase):
@@ -174,6 +193,9 @@ class Runner:
             if self.network == "mainnet":
                 from service.private_purchase import require_indexed_node
                 require_indexed_node(self.c.btc)
+            if self.public_pilot:
+                from .public_pilot import qualify
+                qualify(self, status, btc, sp)
             seen = {"bitcoind": btc.get("chain"), "spaced": sp.get("network"),
                     "store": store.get("network")}
             if subs:
@@ -194,6 +216,15 @@ class Runner:
         if not best or not self._on_best_chain(best):
             problems.append("the store's node best block isn't on the controller's bitcoind "
                             "best chain")
+        if self.public_pilot:
+            try:
+                again = self.c.btc.call("getblockchaininfo")
+                if (again.get("bestblockhash"), again.get("blocks")) != (btc.get("bestblockhash"), btc.get("blocks")):
+                    problems.append("Core tip changed during public pilot readiness")
+                if (self.c.spaced.call("getserverinfo").get("tip") or {}).get("hash") != btc.get("bestblockhash"):
+                    problems.append("Spaces tip changed during public pilot readiness")
+            except Exception:
+                problems.append("public pilot readiness could not be refreshed")
         return {"ok": not problems, "problems": problems, "seen": seen}
 
     def require_networks(self, subs=True):
@@ -351,6 +382,10 @@ class Runner:
 
     def prepare(self, space):
         """Freeze, stage with readback, commit locally, prove, checkpoint."""
+        self._require_active()
+        self._pilot_space(space)
+        if self.public_pilot:
+            self.require_networks()
         self.require_recovered()
         c = self.c
         bid = c.freeze(space)
@@ -375,6 +410,7 @@ class Runner:
     def certify(self, bid):
         """Verify every member's certificate; deliver only the verified ones
         to the store's order pages."""
+        self._require_active()
         b = self.c.batch(bid)
         try:
             self.c.subs.post("/registry/notify", {"space": b["space"], "root": b["root"]})
@@ -396,6 +432,7 @@ class Runner:
         return {"bid": bid, "members": out}
 
     def publish(self, bid):
+        self._require_active()
         p = self.publisher
         added = p.enroll(bid)
         calls = p.publish_outstanding(bid)
@@ -406,10 +443,14 @@ class Runner:
                 "delivery": delivery, "outstanding": p.outstanding(bid)}
 
     def cancel(self, oid):
+        self._require_active()
         return dict(self.store.cancel(oid), oid=oid)
 
     def refund(self, oid, kind="cancellation", cause=None):
         """Build/sign only. TypeScript requires an explicit fee-cause decision."""
+        self._require_active()
+        if self.public_pilot:
+            self.require_networks()
         if getattr(self.store, "bound_entries", False):
             if kind not in ("cancellation", "excess") or cause not in ("buyer", "merchant"):
                 raise NotConfirmed("TypeScript refund requires --cause buyer or merchant; nothing was sent")
@@ -424,6 +465,7 @@ class Runner:
         return self.store.refund_group(gid)
 
     def supersede(self, bid, conflict, confirm=None):
+        self._require_active()
         if not getattr(self.store, "bound_entries", False):
             raise NotConfirmed("supersession acknowledgment requires the TypeScript store")
         if confirm is None and self.ask is not None:
@@ -435,6 +477,13 @@ class Runner:
     # Sends a transaction: confirmed by the operator
 
     def _fee_rate(self, rate):
+        self._require_active()
+        if self.public_pilot:
+            from .public_pilot import ConfigError
+            try:
+                return self.public_pilot.fee_rate(rate)
+            except ConfigError as e:
+                raise NotConfirmed(str(e) + "; nothing was sent") from e
         if self.private_purchase:
             from service.private_purchase import ConfigError
             try:
@@ -447,8 +496,10 @@ class Runner:
         fee_rate = self._fee_rate(fee_rate)
         if self.network == "mainnet":
             self.require_networks()
+        self._require_active()
         self.require_recovered()
         b = self.c.batch(bid)
+        self._pilot_space(b.get("space", ""))
         if b["state"] != "checkpointed":
             raise NotConfirmed(f"{bid} is {b['state']}, not checkpointed; nothing was sent")
         _confirm("batch id", bid, confirm, self.ask)
@@ -460,11 +511,13 @@ class Runner:
     def resume(self, bid, confirm=None):
         """Resume a known-unsent release, or recheck an issuing batch
         before acquiring its one-use permission and sending."""
+        self._require_active()
         self.require_recovered()
         b = self.c.batch(bid)
+        self._pilot_space(b.get("space", ""))
         release = (getattr(self.store, "bound_entries", False) and b["state"] in ("releasing", "rebuilding", "rebuilt")
                    and b.get("release_failed") is not None)
-        if self.private_purchase and not release:
+        if (self.private_purchase or self.public_pilot) and not release:
             self._fee_rate(b.get("fee_rate"))
         if self.network == "mainnet":
             self.require_networks()
@@ -481,8 +534,10 @@ class Runner:
     def rebroadcast(self, bid, confirm=None):
         """Send the identical journaled bytes of a commitment that this node
         has on neither its chain nor its mempool. Never /broadcast."""
+        self._require_active()
         b = self.c.batch(bid)
-        if self.private_purchase:
+        self._pilot_space(b.get("space", ""))
+        if self.private_purchase or self.public_pilot:
             self._fee_rate(b.get("fee_rate"))
         if self.network == "mainnet":
             self.require_networks()
@@ -497,6 +552,7 @@ class Runner:
                 "ancestors": [{"txid": a, "in_mempool": a in pool} for a in ancestors]}
 
     def broadcast_refund(self, gid, confirm=None, txid=None):
+        self._require_active()
         if self.network == "mainnet":
             self.require_networks()
         _confirm("refund group id", gid, confirm, self.ask)
@@ -518,7 +574,12 @@ NETWORKS = ("regtest", "mainnet")  # mainnet additionally requires the private t
 def build(config, ask=None):
     from service.private_purchase import ConfigError, private_config, private_runner_urls
     try:
-        private = private_config(config)
+        from .public_pilot import public_config, ConfigError as PilotConfigError
+        try:
+            pilot = public_config(config)
+        except PilotConfigError as e:
+            raise ConfigError(str(e)) from e
+        private = None if pilot else private_config(config)
     except ConfigError as e:
         raise SystemExit(str(e)) from e
     from controller import host
@@ -526,18 +587,28 @@ def build(config, ask=None):
 
     try:
         host.check(config)
-        if private:
+        if private or pilot:
             private_runner_urls(config)
     except (host.ConfigError, ConfigError) as e:
         raise SystemExit(f"configuration: {e}")
-    s = config["store"]
-    store = configured_store(s)
+    import os
+    from controller.installation_fence import configured as installation_fence, attach as attach_fence
+    fence = installation_fence(config)
     try:
-        controller, publisher = host.build(config, store)
-    except host.ConfigError as e:
-        raise SystemExit(f"configuration: {e}")
-    return Runner(store, controller, publisher, ask=ask, network=config["network"],
-                  private_purchase=private)
+        s = config["store"]
+        store = configured_store(s)
+        try:
+            controller, publisher = host.build(config, store)
+        except host.ConfigError as e:
+            raise SystemExit(f"configuration: {e}")
+        result = Runner(store, controller, publisher, ask=ask, network=config["network"],
+                        private_purchase=private, public_pilot=pilot)
+        attach_fence(result, fence)
+        fence = None
+        return result
+    finally:
+        if fence is not None:
+            os.close(fence)
 
 
 def main(argv=None, ask=None):

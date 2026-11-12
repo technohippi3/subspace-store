@@ -53,6 +53,8 @@ export function nodeFixture(t: TestContext) {
   return rpcFixture(t, call => {
     const changed = state.mutate?.(call); if (changed) return changed;
     switch (call.method) {
+      case "getblockhash": return { result: call.params[0] === 0 ? (state.chain === "main" ? "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" : "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206") : block };
+      case "listdescriptors": return { result: { descriptors: [{desc:"tr(mock-public-expression/*)#fixture",active:true,internal:false}] } };
       case "getnetworkinfo": return { result: { version: state.version } };
       case "getmempoolinfo": return { result: { loaded: state.loaded } };
       case "getblockchaininfo": return { result: { chain: state.chain, blocks: state.height,

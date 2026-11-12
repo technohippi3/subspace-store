@@ -1,3 +1,4 @@
+import { checkStoredIdentity } from "../bitcoin/identity.ts";
 import { Effect } from "effect";
 import { DurableStore, type StorageError } from "../storage/store.ts";
 import { configuration } from "../refunds/book.ts";
@@ -27,6 +28,7 @@ export function prepareStoredRecovery(storage: DurableStore, config: Config, fre
   return Effect.gen(function* () {
     const records = yield* storage.records();
     const state = yield* checked(() => decode(records, config.riskBudgetSats, refundSettings(config)));
+    yield* checked(() => checkStoredIdentity(state.installation, config.network, config.installationExpectation, records.length > 0));
     const position = yield* storage.status();
     yield* checked(() => { validateRecoverySequence(state, position.seq); prepareRecovery(state, position.seq, fresh); });
     yield* persist(storage, records, state, config.riskBudgetSats, refundSettings(config));
@@ -60,7 +62,9 @@ export function restoreApplication(config: Config) {
     const storage = yield* DurableStore.open({ ...config, restore: true,
       validateRestore: (records, sequence) => {
         if (!records.length) fail("empty application recovery set");
-        validateRecoverySequence(decode(records, config.riskBudgetSats, refunds), sequence);
+        const state = decode(records, config.riskBudgetSats, refunds);
+        checkStoredIdentity(state.installation, config.network, config.installationExpectation, records.length > 0);
+        validateRecoverySequence(state, sequence);
       } });
     return yield* receipt(storage, yield* prepareStoredRecovery(storage, config, true));
   });

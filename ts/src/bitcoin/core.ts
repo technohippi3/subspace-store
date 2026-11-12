@@ -1,3 +1,4 @@
+import { bindIdentity, descriptorFingerprint, type InstallationIdentity } from "./identity.ts";
 import { Effect } from "effect";
 import { ApplicationError, destination, verified, type Destination, type Output, type Snapshot } from "../application/records.ts";
 import { validP2tr } from "../recipient.ts";
@@ -7,6 +8,7 @@ import type { ChainCheckpoint } from "../application/certificate-records.ts";
 
 export interface CoreConfig extends Omit<RpcConfig, "wallet"> {
   readonly wallet: string;
+  readonly identity?: () => InstallationIdentity | undefined;
   readonly network: "main" | "test" | "testnet4" | "signet" | "regtest";
 }
 interface Tip { hash: string; height: number }
@@ -61,7 +63,16 @@ export class CoreAdapter {
     return Effect.gen(function* () {
       const info = yield* self.rpc(self.node, "getnetworkinfo");
       yield* verified(() => { if (object(info).version !== 310200) invalid("Core 31.2 is required"); });
-      const tip = yield* self.tip(); yield* self.walletReady(tip); return tip;
+      const tip = yield* self.tip(); yield* self.walletReady(tip);
+      const expected = self.config.identity?.();
+      if (expected) {
+        const genesis = yield* self.rpc(self.node, "getblockhash", 0);
+        const descriptors = yield* self.rpc(self.wallet, "listdescriptors", false);
+        yield* verified(() => bindIdentity(expected, {version:1, network:self.config.network, genesis, wallet:self.config.wallet, descriptorHash:descriptorFingerprint(descriptors)}, true));
+        const end = yield* self.tip(); yield* self.walletReady(end);
+        if (end.hash !== tip.hash || end.height !== tip.height) return yield* Effect.fail(unavailable("chain changed during installation identity guard"));
+      }
+      return tip;
     });
   }
   /** Readiness guard shared with the explicit refund builder. */

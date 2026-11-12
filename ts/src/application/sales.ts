@@ -107,6 +107,7 @@ export function refresh(state: State, now: number, snapshot: Snapshot): void {
   }
 }
 export function admission(state: State, order: Order): boolean {
+  if (state.installation?.network === "main" && !state.seller.configured) fail("explicit installation admission limits are required");
   if (state.settings.paused || state.spaces.some(s=>s.space===order.space && s.paused)) fail("sales are paused");
   if (unavailable(state,order)) fail("name is unavailable");
   if (owner(state, order.handle)) fail("taken for now");

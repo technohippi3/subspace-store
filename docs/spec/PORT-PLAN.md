@@ -34,6 +34,8 @@ fix is store process ownership, now implemented and specified as H12 in
 The runner's live per-order journal readback before its send guard is a
 further safety amendment, specified and exercised in `REGISTRY-ENTRY.md`.
 It does not backport TypeScript pilot payment rules to the Python store.
+`NETWORK-READINESS.md` adds the installation-wide lifetime fence to raw Python
+and TypeScript entrypoints as another lifecycle-only safety amendment.
 
 The public pilot uses the TypeScript store with the Python controller and
 attended runner. Those components retain the applicable controller rules
@@ -72,7 +74,7 @@ separate qualification (`ENTRY-RELEASE.md`). Commitment observations now track
 finality and reorgs (`COMMITMENT-TRACKING.md`). Bound certificate readiness
 and buyer download follow in `CERTIFICATES.md`. Bound delivery callbacks and
 sticky fulfilled recovery incidents follow in `FULFILLMENT.md`. The standalone
-regtest process, sequential observation, injected credentials and live runner
+process, sequential observation, injected credentials and live runner
 network status follow in `RUNTIME.md`. One JSON-API sale through real Spaces,
 subs, libveritas and the local relay now passes with store crashes/restarts.
 The attended refund API/runner boundary now follows `ATTENDED-REFUNDS.md`,
@@ -96,7 +98,10 @@ the complete multi-space in-flight recovery gate remains separate.
 The TypeScript browser checkout now has production C1–C12 coverage through
 the same commands as JSON (`CHECKOUT-SPEC.md`). Real-stack browser sale/refund
 qualification, Nacho acceptance, remaining sale/refund scenarios, remaining
-supersession and application recovery remain. The release gate stays blocked; neither component
+supersession and application recovery remain. `NETWORK-READINESS.md` adds
+explicit production network and durable payment wallet identity, authenticated
+paused bootstrap and a separate TypeScript public pilot runner path. Its component tests do not establish mainnet transactions.
+The release gate stays blocked; neither component
 nor model tests open sales.
 
 ## Work order and gates

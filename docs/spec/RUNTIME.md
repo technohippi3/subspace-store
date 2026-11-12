@@ -1,8 +1,9 @@
-# Standalone TypeScript regtest process
+# Standalone TypeScript process
 
 `node ts/src/main.ts <config.json>` wires the existing Effect-scoped store,
 Core payment/refund observers and three separate loopback HTTP listeners.
-It currently accepts regtest only. It neither installs the application nor
+Version 1 accepts regtest only; explicit version 2 supports main and regtest
+with the installation identity checks in `NETWORK-READINESS.md`. It neither installs the application nor
 opens a production sale. No wallet is created, imported or unlocked. The
 operator prepares existing fixture wallets and runtime credential files.
 

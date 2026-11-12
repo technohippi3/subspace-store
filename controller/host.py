@@ -38,10 +38,12 @@ TypeScript pilot requires an explicit selection; no server is probed to
 guess the protocol, and an error never chooses another one.
 """
 
+import os
 import subprocess
 import urllib.parse
 from pathlib import Path
 
+from .installation_fence import configured as installation_fence, attach as attach_fence
 from .core import Capabilities, Clients, Controller
 from .journal import Journal
 from .publication import Publisher
@@ -175,23 +177,30 @@ def capabilities(config):
 def build(config, registry, cwd=None):
     """The controller and its publisher, for the store client `registry`."""
     check(config)
-    cc = _need(config, "controller")
-    host = Path(_need(config, "controller", "dir"))
-    host.mkdir(parents=True, exist_ok=True)
-    journal = Journal(_need(config, "controller", "journal_dir"), cc.get("journal_name", "runner"))
-    s = _need(config, "subs")
-    subs = CommandSubs(_need(config, "subs", "data_dir"), _need(config, "subs", "stop_command"),
-                       _need(config, "subs", "start_command"), s.get("command_timeout", 300),
-                       cwd=cwd)
-    controller = Controller(host / "controller.db", journal, registry, clients(config), subs,
-                            Path(_need(config, "verifier")), host / "certs",
-                            _need(config, "controller", "operator_wallet"), capabilities(config),
-                            snapshot_dir=cc.get("snapshot_dir"),
-                            ready_timeout=s.get("ready_timeout", 120))
+    fence = installation_fence(config)
     try:
-        publisher = Publisher(controller, registry, journal, host / "publication.db",
-                              controller.subs, _need(config, "relay", "url"))
-    except BaseException:
-        controller.close()
-        raise
-    return controller, publisher
+        cc = _need(config, "controller")
+        host = Path(_need(config, "controller", "dir"))
+        host.mkdir(parents=True, exist_ok=True)
+        journal = Journal(_need(config, "controller", "journal_dir"), cc.get("journal_name", "runner"))
+        s = _need(config, "subs")
+        subs = CommandSubs(_need(config, "subs", "data_dir"), _need(config, "subs", "stop_command"),
+                           _need(config, "subs", "start_command"), s.get("command_timeout", 300),
+                           cwd=cwd)
+        controller = Controller(host / "controller.db", journal, registry, clients(config), subs,
+                                Path(_need(config, "verifier")), host / "certs",
+                                _need(config, "controller", "operator_wallet"), capabilities(config),
+                                snapshot_dir=cc.get("snapshot_dir"),
+                                ready_timeout=s.get("ready_timeout", 120))
+        attach_fence(controller, fence)
+        fence = None
+        try:
+            publisher = Publisher(controller, registry, journal, host / "publication.db",
+                                  controller.subs, _need(config, "relay", "url"))
+        except BaseException:
+            controller.close()
+            raise
+        return controller, publisher
+    finally:
+        if fence is not None:
+            os.close(fence)

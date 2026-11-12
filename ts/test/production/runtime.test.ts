@@ -13,14 +13,14 @@ import { fixture, use } from "./application-fixture.ts";
 import { serveOperator } from "../../src/application/operator-http.ts";
 import { credential } from "./entry-http-fixture.ts";
 
-test("O55: strict regtest runtime configuration refuses unsafe or incomplete settings before opening storage", async (t) => {
+test("O55: strict version-1 regtest runtime configuration refuses unsafe or incomplete settings before opening storage", async (t) => {
   const f = await runtimeFixture(t);
   for (const bad of [{ network: "main" }, { version: 2 }, { unknown: true }, { database: "relative.db" },
     { core: { ...f.config.core, url: "https://example.invalid" } }, { riskBudgetSats: 0 }, { pollMilliseconds: 99 },
     { listen: { ...f.config.listen, subs: f.config.listen.operator } }, { merchantDestinations: [{ address: "x", script: "bad" }] },
     { database: join(f.config.journalDirectory, "store.db") }, { credentials: { operator: f.config.credentials.operator, subs: f.config.credentials.operator } }]) {
     const config = { ...f.config, ...bad };
-    assert.throws(() => configuration(config), /invalid regtest runtime configuration/);
+    assert.throws(() => configuration(config), /invalid runtime configuration/);
     const result = await Effect.runPromiseExit(Effect.scoped(startRuntime(config))); assert(Exit.isFailure(result));
     assert.equal(existsSync(f.config.database), false); assert.equal(f.calls.length, 0);
   }

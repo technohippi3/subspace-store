@@ -18,7 +18,7 @@ try {
       return;
     }
     yield* startRuntime(config);
-    process.stdout.write(JSON.stringify({ event: "ready", network: "regtest" }) + "\n");
+    process.stdout.write(JSON.stringify({ event: "ready", network: config.network }) + "\n");
     yield* Effect.never;
   })), { signal: controller.signal });
 } catch {

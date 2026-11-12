@@ -1,3 +1,4 @@
+import { ownConfiguredInstallation } from "./installation-fence.ts";
 import { Effect } from "effect";
 import { SalesStore } from "../application/store.ts";
 import { serve } from "../application/http.ts";
@@ -6,7 +7,9 @@ import { servePending } from "../application/pending-http.ts";
 import { CoreAdapter } from "../bitcoin/core.ts";
 import { CoreRefundWallet } from "../bitcoin/refunds.ts";
 import { CoreRefundSender } from "../bitcoin/refund-sender.ts";
-import { configuration } from "./config.ts";
+import { observeIdentity } from "../bitcoin/observe-identity.ts";
+import { bindIdentity } from "../bitcoin/identity.ts";
+import { configuration, expectedIdentity } from "./config.ts";
 import { credentials } from "./credentials.ts";
 import { checked } from "../application/records.ts";
 import { conflictVerifier } from "../bitcoin/supersession.ts";
@@ -14,13 +17,17 @@ import { conflictVerifier } from "../bitcoin/supersession.ts";
 /** One process, one store owner and one sequential observer. Never sends refunds. */
 export function startRuntime(value: unknown) {
   return Effect.gen(function* () {
-    const config = yield* checked(() => configuration(value)), tokens = credentials(config.credentials);
+    const config = yield* checked(() => configuration(value));
+    yield* ownConfiguredInstallation(config.maintenanceLock);
+    const tokens = credentials(config.credentials);
     yield* tokens.operator;
-    const coreConfig = { ...config.core, network: config.network };
+    let bound = expectedIdentity(config);
+    const coreConfig = { ...config.core, network: config.network, identity: () => bound };
+    const installationIdentity = observeIdentity(coreConfig).pipe(Effect.flatMap(observed => checked(() => { bound = bindIdentity(bound ?? null, observed, false); return bound; })));
     const core = yield* CoreAdapter.make(coreConfig), refunds = yield* CoreRefundWallet.make(coreConfig), sender = yield* CoreRefundSender.make(coreConfig);
     const supersessionChain = yield* conflictVerifier(coreConfig);
-    const store = yield* SalesStore.open(config, {
-      clock: () => Math.floor(Date.now() / 1000), snapshot: destinations => core.snapshot(destinations),
+    const store = yield* SalesStore.open({...config, installationExpectation: expectedIdentity(config)}, {
+      installationIdentity, clock: () => Math.floor(Date.now() / 1000), snapshot: destinations => core.snapshot(destinations),
       newDestination: core.newDestination(), certificateChain: checkpoint => core.containsBlock(checkpoint),
       supersessionChain,
       chainStatus: core.checkReady().pipe(Effect.map(tip => ({ network: config.network, best_block_hash: tip.hash, blocks: tip.height }))),
