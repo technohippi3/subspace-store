@@ -1800,3 +1800,106 @@ c7aca7cdd3b88784bea311b56643bf85d46d4bf4ee5e3d5e8f07d7d70043b84c  ts/src/applica
 1650655adfafb57a05c1014e68a636d76ccae77a2aad4e44b0fef5c9cec2f00e  ts/src/application/commitment-records.ts
 4f202525da1cb5acd90b60531d898db51928be25deba8e36eb697e73d1517e22  ts/regtest/commitments.ts
 ```
+
+
+## TypeScript bound certificate readiness and download, 2026-11-12
+
+Core run `core-adapter-2026-11-12T06-39-20-824Z-a6b40686` passes
+48 checks bound to 42 source hashes. Certificate bytes and Spaces root/
+anchor facts are explicit mocks. Core supplies real checkpoint ancestry:
+a descendant tip preserves availability, invalidating the verification tip
+withdraws the certificate and returns ready to issuing, and returning the
+old chain does not revive it. A newer observation and fresh callback restore
+availability. Restart retains the verified digest and cache, and price
+reservation remains allocated. This is not real Spaces certificate
+verification, buyer acceptance or a complete sale.
+
+Separate HTTP/controller tests run the shipped verification loop, client
+and runner against the TypeScript listener, SQLite and journals. Core,
+spaced, subs and the verifier executable are recording stand-ins. Own-root
+and later-root callbacks recover after replies lost before/after forwarding
+and process death after acceptance. Changed chain evidence, wrong recipient,
+dependent status, nonzero verifier exit and nonboolean verification refuse
+readiness. The runner does not repeat an anonymous delivery after a bound
+callback. Controller journal confirmation precedes the callback; live store
+confirmation gates the receipt and buyer download.
+
+Certificate metadata, digest and invalidation are journaled. Bytes are
+private reconstructible cache, atomically written and verified on read.
+Missing/corrupt bytes are withheld and exact verified redelivery repairs
+them. Only certificate upload has the larger base64 transport allowance;
+messages remain bounded to 1 MiB and other bodies to 65,536 bytes. Buyer
+responses are exact binary attachments with no-store/no-referrer/nosniff.
+A ready order keeps its name, recipient and price reserve, cannot cancel,
+and retains post-issuance deficit and excess-refund accounting.
+
+The independent certificate model imports no production code. Named
+additions O36–O45 and A36–A39 accompany the specification. All existing
+certificate tests are retained. Development coverage reports 316 fixed-price
+cases without gaps and 40 deferred cases; TypeScript model/store and Python
+controller counts are 46/154/39. Final local checks pass 291 Python tests,
+261 TypeScript tests, pinned dependency installation, type checking and
+whitespace. The pilot production gate still refuses for 112 cases.
+
+A development Core launch failed before node startup with
+`ERR_MODULE_NOT_FOUND` because dependency installation ran concurrently.
+Qualification was rerun after installation. The first full TypeScript run
+also found `EISDIR: illegal operation on a directory, read`: a checkout
+privacy test assumed that every data-directory entry was a file. It now
+checks every file recursively, including the certificate cache; final full
+suites pass. A test-file name collision was corrected before publication,
+restoring the original A19 tests unchanged and adding bound tests separately.
+
+The earlier payment/reorg, refund-family, fee, entry and commitment scenarios
+remain. Only fresh isolated regtest wallets were used. The frozen Python
+store's payment rules are unchanged. Verified relay fulfillment, sticky
+fulfilled recovery incidents, supersession, a complete TypeScript sale
+through the real Spaces stack and whole-application recovery remain. No
+existing wallet, managed credential, deployment or mainnet state changed.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+9aec8bd7f33982b2df7de63fa463e0a83ee27ce459a15ef062e9af9828868119  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+9fb2512bba7c820ebcab8c11ab7745fe63979bde2cbeed1c8f07e381574e0646  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a  ts/src/refunds/types.ts
+9023af566c4978d910bd776cb3a9038dc2002f4eeb17a82a751c6f8ff8556d2a  ts/src/refunds/book.ts
+e076813cfe0a9e09d0100e709c14e0c4b1e6f5bb74a5bb11744d1ef817c2816e  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+38e5738a63aa4e2c8151e850231bf9b69bbddbce69a99ce02d0a3fd52ca8229b  ts/src/application/records.ts
+f010da60edf07a79c9d5a26b219e5bbc25bd29b9c06c253cce3db7a6ed7d8350  ts/regtest/core.test.ts
+7d10c5be62c77a6915c9b5212364c93203cbc90eb01e69b02ecb2939c5a8a5c1  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+c0eb3c38fb6a8fdab80a8e52a282e289706ed5f1164c64cb44f24972cb35cc13  ts/src/application/monitor.ts
+0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
+d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin/excess-fee.ts
+09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0  ts/src/application/assessments.ts
+c5f04aaba4706dc0b1dd1e710dc9e7648c10f978b1c2e2f955ff68adc5c1bd9d  ts/src/application/http.ts
+54af8c89b93910c734cdc1fcd7f42585198ede2042b1185c5695403e965ee09f  ts/src/application/operator-http.ts
+205663367370e64521a8aad08d442ee1b9a5c3afa50837bf32660dd05b5996e1  ts/src/application/authenticated-http.ts
+8cd0b89fbf629272935bfff87fbfdb91701dd2cfe8caa63b02338387e475378c  ts/src/application/pending-http.ts
+57bc3a4b9283abc046dec320eee171a1f558d7de5b134cd28c8ffda8b2d86661  ts/src/application/entry.ts
+45ebc4dddf81d3dd4066c9b9a72d6b590cf3e520fb93d89a82bc17631db2e745  ts/src/application/registry.ts
+f1e0ba998513d08d745b215c1343b3805e464ce28b15139c5e8bbe52273c4e73  ts/src/application/bound-entries.ts
+8ad1cc8fd2671416e1dd6dd7a621a0169436c03abf4239ab556ec764675cdc1e  ts/src/application/bound-records.ts
+8d77f6124e99851cb63fd59f0d18605fe01cd2df7ceee47464cdc46613d8b55a  ts/regtest/entry-lifecycle.ts
+e6d7c49bb416aa17b89a293fbd6f2f410dbedad74c2adbf8e6dd3e08f6ee1931  ts/src/application/commitments.ts
+1650655adfafb57a05c1014e68a636d76ccae77a2aad4e44b0fef5c9cec2f00e  ts/src/application/commitment-records.ts
+4f202525da1cb5acd90b60531d898db51928be25deba8e36eb697e73d1517e22  ts/regtest/commitments.ts
+cc420b4301f03a4a570d1f375359e58b56a32dc10909943456044bab0daf0a52  ts/src/application/certificate-cache.ts
+e20289bf357408e8701dc542a2633ceea2011ec910650c1565e4f79e2caaa7f3  ts/src/application/certificate-records.ts
+a8051965295a2a8f6b3ae814e6c1f71416f5bfc9c976ae74c7d55aff54d08e05  ts/src/application/certificates.ts
+d5ff3084d0a67647524d023123c7fcb478a06eb687c83a12542d0e3cfd028bd3  ts/src/application/certificate-http.ts
+a7dea4d9dec77177d2f7ef85faf40a3023a769a8bcf40389a129056ff57c4b42  ts/regtest/certificates.ts
+e3de042392aa21c877903f2d0bc00d181bc83e904f6dad9cf33b83505568ba2e  ts/regtest/qualification.ts
+```

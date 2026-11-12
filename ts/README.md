@@ -20,8 +20,10 @@ the HTTP controller protocol requires an exact entry/root/member binding.
 Known-unsent bound-entry release/rebuild now follows `../docs/spec/ENTRY-RELEASE.md`.
 Permanent closure cannot unlock a successor, and one-use broadcast permission
 prevents a stale controller from releasing a possibly sent entry. Bound
-commitment observations now track finality and reorgs (`../docs/spec/COMMITMENT-TRACKING.md`). Certificate callbacks,
-delivery and full application recovery remain. The Python service,
+commitment observations now track finality and reorgs (`../docs/spec/COMMITMENT-TRACKING.md`).
+Bound certificate readiness, local cache and binary buyer download now follow
+`../docs/spec/CERTIFICATES.md`. Verified relay fulfillment, full Spaces-stack
+sale and full application recovery remain. The Python service,
 controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.
 
@@ -182,8 +184,9 @@ off-host for actual host-loss recovery; no object-store adapter is claimed.
 
 Domain rules of `service/ledger.py` still to port, each with its home:
 
-1. Certificate availability/delivery and refund information in order views.
-2. The registry callbacks (`pending_for`, `subs_ack`, `subs_committed`).
+1. Complete order views and verified relay fulfillment/recovery incidents.
+2. Remaining registry recovery and supersession callbacks. Pending selection,
+   bound entry, commitment observation and certificate acceptance now exist.
 3. Restore from the journal (`restore_from_journal`), which always comes
    back with sales paused.
 
@@ -247,8 +250,11 @@ uncertain and are never repeated. An older controller database adopts its
 newer journal identity, conservatively treating a newer issuing intent as
 uncertain. The former anonymous issuing HTTP route is absent.
 
-Next add safe bound-entry release/rebuild, commitment callbacks, certificate delivery, recovery transitions and complete order
-views and application recovery, then run the production gates above. The
+Safe bound-entry release/rebuild, commitment observation and certificate
+acceptance now have their own protocol specifications. Certificate bytes
+are reconstructible local cache; their binding and invalidation are journaled.
+Next complete verified relay fulfillment, supersession, order views and
+application recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.
 

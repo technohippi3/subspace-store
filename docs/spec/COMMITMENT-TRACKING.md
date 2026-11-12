@@ -72,13 +72,13 @@ acknowledgment. A lookup also checks the controller's transaction identity.
 
 ## Scope and remaining work
 
-Order state stays `issuing` through all these reports. Payment loss still
+Without a certificate callback, order state stays `issuing` through these reports. Payment loss still
 records a post-issuance deficit and never unlocks a name, frees its price
-reservation or permits cancellation. Readiness, certificate persistence,
-verified delivery and invalidation of delivered certificates still need
-their bound callbacks. The TypeScript controller refuses certificate work
-before fetching messages; its status says `awaiting_certificate_verification`
-when final and covered, rather than claiming verification. Supersession and
+reservation or permits cancellation. `CERTIFICATES.md` now adds bound
+readiness, reconstructible bytes, buyer download and invalidation. The
+TypeScript controller requires a successful verification callback before
+reporting certificates verified. Covered finality alone says
+`awaiting_certificate_verification`. Verified relay fulfillment, supersession and
 whole-application recovery remain unported. Sales remain closed.
 
 The independent deterministic model checks revision ordering, depth,
@@ -100,6 +100,6 @@ must be reported separately.
 | O33 | invalid commitment version, revision, height or absent arm | open application | refuse and preserve evidence while releasing process ownership |
 | O34 | actual controller/client and recording chain RPCs | watch mining, finality, root loss and reorgs | same bound entry and transaction, fresh reports, one alert per loss, no additional send or order unlock |
 | O35 | an observation request | drop reply before/after forwarding or exit after store commit | next watch reconciles revision and fresh facts, one original send |
-| A33 | controller or store acknowledgment unavailable | watch and recover repeatedly, then request certificates | no report without controller journal, no controller progress without store acknowledgment, fresh retries, certificate callback refuses |
+| A33 | controller or store acknowledgment unavailable | watch and recover repeatedly, then request certificates without finality | no report without controller journal, no controller progress without store acknowledgment, fresh retries, no certificate without finality |
 | A34 | Core/spaced observations | change tip mid-read or return a root at another height | retry coherent snapshot up to three times; wrong root height never establishes finality |
 | A35 | a malformed or inconsistent commitment receipt | validate report acknowledgment | reject changed binding/revision, malformed hashes/heights and inconsistent phase/depth/coverage |

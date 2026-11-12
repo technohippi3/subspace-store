@@ -6,11 +6,15 @@ import { entryOk, members, orderById, orderIds } from "./entry.ts";
 import { reconcile } from "./monitor.ts";
 import { BoundEntries } from "./bound-entries.ts";
 import { Commitments } from "./commitments.ts";
+import { Certificates, type CertificateChain } from "./certificates.ts";
+import type { CertificateCache } from "./certificate-cache.ts";
 
 type Result<A> = Effect.Effect<A, ApplicationError | StorageError>;
 interface Loaded { records: readonly Record[]; state: State; tipHash?: string | undefined }
 export interface RegistryContext {
   readonly storage: DurableStore;
+  readonly certificateCache: CertificateCache;
+  readonly certificateChain?: CertificateChain;
   readonly queue: ReturnType<typeof Semaphore.makeUnsafe>;
   readonly load: () => Result<Loaded>;
   readonly refresh: () => Result<Loaded>;
@@ -21,8 +25,12 @@ export interface RegistryContext {
 export class IssuanceRegistry {
   readonly entries: BoundEntries;
   readonly commitments: Commitments;
+  readonly certificates: Certificates;
   private readonly context: RegistryContext;
-  constructor(context: RegistryContext) { this.context = context; this.entries = new BoundEntries(context); this.commitments = new Commitments(context); }
+  constructor(context: RegistryContext) {
+    this.context = context; this.entries = new BoundEntries(context);
+    this.commitments = new Commitments(context); this.certificates = new Certificates(context);
+  }
   entry(id: string) {
     const c = this.context;
     return c.queue.withPermit(Effect.gen(function* () {

@@ -380,9 +380,12 @@ class Runner:
             entry = {"handle": res["handle"], "verified": res["ok"],
                      "checks": res["checks"], "delivered": False}
             if res["ok"]:
-                msg = Path(res["artifacts"]) / f"{res['handle']}.message.bin"
-                self.store.deliver_certificate(oid, msg.read_bytes())
-                entry["delivered"] = True
+                if getattr(self.store, "bound_entries", False):
+                    entry["delivered"] = res.get("stored", False)
+                else:
+                    msg = Path(res["artifacts"]) / f"{res['handle']}.message.bin"
+                    self.store.deliver_certificate(oid, msg.read_bytes())
+                    entry["delivered"] = True
             out[oid] = entry
         return {"bid": bid, "members": out}
 

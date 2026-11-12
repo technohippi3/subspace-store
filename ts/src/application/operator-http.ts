@@ -3,6 +3,7 @@ import { ApplicationError } from "./records.ts";
 import type { SalesStore } from "./store.ts";
 import { body } from "./http.ts";
 import { listenAuthenticated, type OperatorToken } from "./authenticated-http.ts";
+import { certificateBody } from "./certificate-http.ts";
 export type { OperatorToken } from "./authenticated-http.ts";
 
 function empty(request: import("node:http").IncomingMessage) {
@@ -61,6 +62,7 @@ export function serveOperator(store: SalesStore, token: OperatorToken, port = 0)
     if (request.method === "GET" && path === "/operator/status") return { code: 200, value: yield* store.operatorStatus() };
     if (request.method === "GET" && path === "/operator/alerts") return { code: 200, value: { alerts: (yield* store.operatorStatus()).alerts } };
     if (request.method === "POST") {
+      if (path === "/operator/certificates") return { code: 200, value: yield* store.registry.certificates.accept(yield* certificateBody(request)) };
       if (path === "/operator/commitments/lookup") return { code: 200, value: yield* store.registry.commitments.current(yield* bound(request, true)) };
       if (path === "/operator/commitments") return { code: 200, value: yield* store.registry.commitments.observe(yield* commitment(request)) };
       if (path === "/operator/issuance-entries") return { code: 200, value: yield* store.registry.entries.enter(yield* bound(request)) };

@@ -24,27 +24,28 @@ function parseRequest(raw: string): unknown {
   try { return JSON.parse(raw) as unknown; }
   catch { throw new ApplicationError({ code: "invalid", message: "invalid recipient request" }); }
 }
-export async function body(request: IncomingMessage): Promise<string> {
-  if (Number(request.headers["content-length"] ?? 0) > 65_536)
+export async function body(request: IncomingMessage, maximum = 65_536): Promise<string> {
+  if (Number(request.headers["content-length"] ?? 0) > maximum)
     throw new ApplicationError({ code: "invalid", message: "body too large" });
   const parts: Buffer[] = []; let length = 0;
   for await (const data of request) {
     const part = Buffer.isBuffer(data) ? data : Buffer.from(data as string);
     length += part.length;
-    if (length > 65_536) throw new ApplicationError({ code: "invalid", message: "body too large" });
+    if (length > maximum) throw new ApplicationError({ code: "invalid", message: "body too large" });
     parts.push(part);
   }
   return Buffer.concat(parts).toString("utf8");
 }
 export function send(response: ServerResponse, code: number, value: unknown): void {
   if (response.destroyed) return;
-  const data = JSON.stringify(value);
-  response.writeHead(code, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data),
+  const binary = Buffer.isBuffer(value), data = binary ? value : JSON.stringify(value);
+  response.writeHead(code, { "Content-Type": binary ? "application/octet-stream" : "application/json", "Content-Length": Buffer.byteLength(data),
+    ...(binary ? { "Content-Disposition": 'attachment; filename="certificate.message"' } : {}),
     "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" });
   response.end(data);
 }
 /** Buyer JSON API only, bound to loopback for the future HTTPS proxy.
- * No operator, registry, wallet, certificate or public-listening interface. */
+ * No operator, registry, wallet or public-listening interface. */
 export function serve(store: SalesStore, port = 0) {
   return Effect.acquireRelease(Effect.tryPromise({ try: async () => {
     const controllers = new Set<AbortController>(), pending = new Set<Promise<void>>();
@@ -54,11 +55,13 @@ export function serve(store: SalesStore, port = 0) {
       const work = (async () => {
         try {
           const path = request.url ?? "", method = request.method;
-          const match = /^\/orders\/([A-Za-z0-9_-]{32})(\/(?:quote|cancel|refund-destination))?$/.exec(path);
+          const match = /^\/orders\/([A-Za-z0-9_-]{32})(\/(?:quote|cancel|refund-destination|certificate))?$/.exec(path);
           const operation: Effect.Effect<{ code: number; value: unknown }, unknown> = method === "POST" && path === "/requests" ?
             store.request(parseRequest(await body(request))).pipe(Effect.map(value => ({ code: 201, value }))) :
             match && method === "GET" && !match[2] ?
               store.order(match[1]!).pipe(Effect.map(value => ({ code: 200, value }))) :
+            match && method === "GET" && match[2] === "/certificate" ?
+              store.certificate(match[1]!).pipe(Effect.map(value => ({ code: 200, value }))) :
             match && method === "POST" && match[2] === "/quote" ?
               store.quote(match[1]!).pipe(Effect.map(value => ({ code: value.acknowledged ? 200 : 503, value }))) :
             match && method === "POST" && match[2] === "/cancel" ?

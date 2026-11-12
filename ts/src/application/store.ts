@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { Effect, Semaphore } from "effect";
 import { canonicalHandle } from "../recipient.ts";
 import { DurableStore, type StorageConfig } from "../storage/store.ts";
-import { ApplicationError, checked, claims, decode, destination, encode, fail, request, sats, verified,
+import { ApplicationError, checked, claims, decode, destination, encode, fail, postIssuance, request, sats, verified,
   type Destination, type Order, type Record, type RefundSettings, type Snapshot, type State } from "./records.ts";
 import { active, admission, grant, refresh, release, total } from "./sales.ts";
 import { policy, type RefundPolicy } from "../refunds/policy.ts";
@@ -14,13 +14,16 @@ import { attemptRequest, finishAttempt, rebuildRequest, reserveAttempt } from ".
 import { advance, noteBroadcast, reconcile, recordLoss, tick, unserved, type Reason } from "./monitor.ts";
 import { assess } from "./assessments.ts";
 import { auditRecipients, recipientBlock } from "./entry.ts";
-import { IssuanceRegistry } from "./registry.ts";
+import { IssuanceRegistry, type RegistryContext } from "./registry.ts";
+import { CertificateCache } from "./certificate-cache.ts";
+import { certificateBytes, checkCertificates, type CertificateChain } from "./certificates.ts";
 
 export interface Adapters {
   readonly clock: () => number;
   readonly snapshot: (destinations: readonly Destination[]) => Effect.Effect<Snapshot, ApplicationError>;
   readonly newDestination: Effect.Effect<Destination, ApplicationError>;
   readonly refunds?: RefundAdapters;
+  readonly certificateChain?: CertificateChain;
 }
 export interface Config extends StorageConfig { readonly riskBudgetSats: number;
   readonly refundPolicy: RefundPolicy; readonly merchantDestinations?: readonly Destination[] }
@@ -34,17 +37,20 @@ export class SalesStore {
   private readonly adapters: Adapters;
   private readonly budget: number;
   private readonly refunds: RefundSettings;
-  private constructor(storage: DurableStore, adapters: Adapters, config: Config) {
+  private readonly registryContext: RegistryContext;
+  private constructor(storage: DurableStore, adapters: Adapters, config: Config, certificateCache: CertificateCache) {
     this.storage = storage; this.adapters = adapters; this.budget = config.riskBudgetSats;
     this.refunds = configuration({ version: 1, policy: structuredClone(config.refundPolicy), merchantDestinations: structuredClone([...(config.merchantDestinations ?? [])]) });
-    this.registry = new IssuanceRegistry({ storage, queue: this.queue, load: () => this.load(),
-      refresh: () => this.refresh(), save: (before, state) => this.save(before, state) });
+    this.registryContext = { storage, certificateCache, ...(adapters.certificateChain ? { certificateChain: adapters.certificateChain } : {}),
+      queue: this.queue, load: () => this.load(), refresh: () => this.refresh(), save: (before, state) => this.save(before, state) };
+    this.registry = new IssuanceRegistry(this.registryContext);
   }
   static open(config: Config, adapters: Adapters) {
     return Effect.gen(function* () {
       yield* checked(() => { sats(config.riskBudgetSats); policy(config.refundPolicy); });
       const storage = yield* DurableStore.open(config);
-      const result = new SalesStore(storage, adapters, config);
+      const cache = yield* verified(() => new CertificateCache(config.database + ".certificates"));
+      const result = new SalesStore(storage, adapters, config, cache);
       if ((yield* storage.status()).restoreRequired)
         return yield* checked(() => fail("restored application requires controller and chain reconciliation", "unavailable"));
       const { records, state } = yield* result.load();
@@ -52,7 +58,7 @@ export class SalesStore {
         return yield* checked(() => fail("refund reconciliation adapter is required", "unavailable"));
       yield* verified(() => auditRecipients(state));
       yield* result.save(records, state);
-      if (adapters.refunds?.sender && state.groups.some(g => g.transaction)) yield* result.refresh();
+      if (state.certificates.length || (adapters.refunds?.sender && state.groups.some(g => g.transaction))) yield* result.refresh();
       return result;
     });
   }
@@ -89,6 +95,7 @@ export class SalesStore {
           yield* verified(() => applyObservations(current.state, observations));
         }
         yield* verified(() => refresh(current.state, self.adapters.clock(), snapshot));
+        yield* checkCertificates(current.state, snapshot, self.adapters.certificateChain);
         const observedAt = current.state.settings.lastTime;
         for (const fact of current.state.refundObservations) if (fact.seen !== "absent") noteBroadcast(current.state, fact.group, fact.txid, observedAt);
         const eligibleExcess = yield* assess(current.state, self.adapters.refunds, snapshot.tipHash, self.adapters.clock);
@@ -117,13 +124,15 @@ export class SalesStore {
       const cancelled = order.status === "cancelled";
       const final = cancelled && acknowledged?.status === "cancelled";
       const hold = active(state, order) ? order.grants.at(-1)! : null;
-      const rejected = order.status === "issuing" ? recipientBlock(state, order) !== null : state.orders.some(o => o.destination?.script === order.recipient ||
+      const rejected = postIssuance(order) ? recipientBlock(state, order) !== null : state.orders.some(o => o.destination?.script === order.recipient ||
         (o.handle !== order.handle && claims(o) && o.recipient === order.recipient));
       const account = yield* self.storage.acknowledged("refund_account", order.id);
       const refund = account?.value as unknown as State["accounts"][number] | undefined;
       const funds = balance(state, order), monitoring = state.monitors.find(m => m.order === order.id);
+      const certificate = yield* certificateBytes(self.registryContext, state, order.id);
       return { handle: order.handle, recipient_script_pubkey: order.recipient,
-        status: cancelled && !final ? (acknowledged?.status ?? "requested") : order.status,
+        status: order.status === "ready" && !certificate ? "issuing" : cancelled && !final ? (acknowledged?.status ?? "requested") : order.status,
+        certificate_available: certificate !== null,
         cancellation: cancelled ? (final ? "final" : "unconfirmed") : null,
         price_sats: order.price,
         address: rejected ? null : acknowledged?.destination?.address ?? null,
@@ -239,7 +248,7 @@ export class SalesStore {
       const { records, state } = yield* self.refresh();
       const order = yield* checked(() => self.find(state, token));
       yield* checked(() => {
-        if (order.status === "issuing") fail("not cancellable once issuing");
+        if (postIssuance(order)) fail("not cancellable once issuing");
         order.status = "cancelled"; release(order);
         advance(state, self.adapters.clock());
         reconcile(state);
@@ -250,6 +259,16 @@ export class SalesStore {
     }));
   }
   observe() { return this.queue.withPermit(this.refresh().pipe(Effect.asVoid)); }
+  certificate(token: string) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const initial = yield* self.load();
+      yield* checked(() => self.find(initial.state, token));
+      const { state } = yield* self.refresh();
+      const order = yield* checked(() => self.find(state, token));
+      return (yield* certificateBytes(self.registryContext, state, order.id)) ?? (yield* checked(() => fail("certificate unavailable", "not_found")));
+    }));
+  }
   /** Operator inspection advances existing clocks even when Core is unavailable.
    * It discovers no new obligations and never signs or sends. */
   operatorStatus() {

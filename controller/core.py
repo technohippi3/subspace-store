@@ -21,7 +21,6 @@ import hashlib
 import json
 import shutil
 import sqlite3
-import subprocess
 import time
 import urllib.error
 from pathlib import Path
@@ -33,6 +32,7 @@ from .errors import Refused
 from .issuance import ANSWER_LIMIT, Issuance
 from .rebuild import PREPARING, Rebuild
 from .commitments import ANCHOR_FINALITY, FINAL_D, WATCHED, CommitmentTracking
+from .certificates import CertificateVerification
 
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
@@ -109,7 +109,7 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller(Issuance, Rebuild, CommitmentTracking):
+class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
@@ -743,95 +743,6 @@ class Controller(Issuance, Rebuild, CommitmentTracking):
         return txid
 
     # 11. Certificates
-
-    def verify_certificates(self, bid):
-        """Fetch each member's certificate message from subs, read the root
-        anchors from spaced directly, verify with libveritas, and compare
-        handle, script_pubkey and root with the batch record. The root is
-        the batch's own, or a later commitment of the same space that is on
-        the active chain, final and covered (A19)."""
-        self.require_restored()
-        if getattr(self.registry, "bound_entries", False):
-            raise Refused("TypeScript certificate callbacks are not implemented; no certificate delivered")
-        b = self.batch(bid)
-        if b["state"] != "final":
-            raise Refused("not final")
-        anchors = self.root_anchors()
-        newest = anchors[0]["block"]["height"] if anchors else 0
-        if newest - b["mined_height"] < ANCHOR_FINALITY:
-            # d >= 150 by the tip, but no root anchor covers the commitment
-            # yet, so libveritas would answer "pending" (finding R11).
-            raise Refused(f"no anchor covers the commitment yet (newest {newest}, "
-                          f"mined {b['mined_height']})")
-        # Numbered from what is on disk, so a controller reopened after a
-        # restore never reuses a verification's directory.
-        n = len([d for d in self.workdir.iterdir() if d.is_dir()]) + 1
-        out_dir = self.workdir / f"{n:03d}-{bid}"
-        out_dir.mkdir(parents=True)
-        anchors_path = out_dir / "anchors.json"
-        anchors_path.write_text(json.dumps(anchors))
-        results = {}
-        for m in b["members"]:
-            o = self.registry.order(m)
-            handle = o["name"]
-            msg = self.subs_read.get(f"/certs/{handle}/message", raw=True)
-            msg_path = out_dir / f"{handle}.message.bin"
-            msg_path.write_bytes(msg)
-            proc = subprocess.run([str(self.verifier_bin), str(msg_path), str(anchors_path)],
-                                  capture_output=True, text=True)
-            (out_dir / f"{handle}.libveritas.json").write_text(proc.stdout + proc.stderr)
-            out = json.loads(proc.stdout or "{}") if proc.stdout.strip().startswith("{") else \
-                {"verified": False, "error": proc.stderr[-500:]}
-            zones = out.get("zones", [])
-            zone = next((z for z in zones if z["handle"] == handle), None)
-            # The handle's zone proves inclusion; the committed root and its
-            # height are on the space's zone in the same verified message.
-            space_zone = next((z for z in zones if z["handle"] == b["space"]), None)
-            root = space_zone and space_zone.get("commitment_root")
-            height = space_zone and space_zone.get("commitment_height")
-            own = root == b["root"] and height == b["mined_height"]
-            gate = None
-            if space_zone and not own and root != b["root"] and height is not None \
-                    and height > b["mined_height"]:
-                # subs builds a certificate on the space's latest commitment
-                # when it is fetched, so after a later batch it proves
-                # inclusion in that later root (R23, R24). It counts once
-                # that root is a commitment of the space on the active chain
-                # at the height the certificate states, final and covered,
-                # with the batch's own root still on chain.
-                gate = self.root_gate(b["space"], root, height)
-                gate["own_root_on_chain"] = self._on_chain_at(b["space"], b["root"],
-                                                              b["mined_height"])
-            later_ok = bool(gate and gate["ok"] and gate["own_root_on_chain"])
-            checks = {
-                "verified": out.get("verified", False),
-                "handle": zone is not None,
-                "script_pubkey": bool(zone and zone["script_pubkey"] == o["recipient_spk"]),
-                "root": own or later_ok,
-                "root_height": own or later_ok,
-                "sovereign": bool(zone and zone["sovereignty"] == "sovereign"),
-            }
-            ok = all(checks.values())
-            # A later root on chain that isn't final or covered yet is
-            # waiting, not a failure: nothing is alerted, and the
-            # certificate is checked again later (L9). Only a sovereign or
-            # pending zone waits; libveritas's dependent state is a failure
-            # whatever the root's depth, and is alerted.
-            waiting = bool(not ok and gate and gate["on_chain"] and gate["own_root_on_chain"]
-                           and not gate["ok"] and checks["verified"] and checks["handle"]
-                           and checks["script_pubkey"]
-                           and zone["sovereignty"] in ("sovereign", "pending"))
-            results[m] = {"handle": handle, "ok": ok, "checks": checks, "zone": zone,
-                          "artifacts": str(out_dir),
-                          "space_zone": space_zone,
-                          "root_basis": "batch" if own else ("later" if gate else None),
-                          "root_gate": gate, "waiting": waiting,
-                          "error": out.get("error"), "message_bytes": len(msg)}
-            if ok and o["status"] == "issuing":
-                self.registry.mark_ready(m)
-            if not ok and not waiting:
-                self.alert("certificate_failed", bid, handle)
-        return results
 
     def _on_chain_at(self, space, root, height):
         try:

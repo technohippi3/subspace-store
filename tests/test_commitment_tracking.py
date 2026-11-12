@@ -24,6 +24,8 @@ class CommitmentTracking(unittest.TestCase):
         w.c._commitment_observation = lambda b: copy.deepcopy(self.facts)
         self.calls = []
         self.revision = 0
+        order = w.order
+        w.order = lambda oid: dict(order(oid), status="issuing")
         w.commitment_status = lambda b: dict(acknowledged=True, revision=self.revision,
                                              observation=dict(phase="final", covered=True))
         def report(b, previous, facts):
@@ -54,7 +56,7 @@ class CommitmentTracking(unittest.TestCase):
         self.assertEqual(w.c.watch("b1"), "mined")
         self.assertEqual(sum(a["kind"] == "finality_lost" for a in w.c.alerts()), 1)
         self.assertEqual(len(self.calls), 4)
-        with self.assertRaisesRegex(Refused, "certificate callbacks"):
+        with self.assertRaisesRegex(Refused, "not final"):
             w.c.verify_certificates("b1")
 
     def test_A34_observation_retries_changed_tips_and_requires_matching_root_height(self):

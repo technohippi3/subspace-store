@@ -1,5 +1,5 @@
 import { canonicalHandle, validP2tr } from "../recipient.ts";
-import { claims, fail, type Order, type State } from "./records.ts";
+import { claims, fail, postIssuance, type Order, type State } from "./records.ts";
 import { alert, monitor } from "./monitor.ts";
 import { total } from "./sales.ts";
 
@@ -7,7 +7,7 @@ export function recipientBlock(state: State, order: Order): string | null {
   if (!canonicalHandle(order.handle) || !validP2tr(order.recipient)) return "recipient not accepted";
   if (state.orders.some(o => o.destination?.script === order.recipient)) return "store destination script";
   if (claims(order) && state.orders.some(o => o.handle !== order.handle && o.recipient === order.recipient &&
-      (order.status === "issuing" ? o.status === "issuing" : claims(o)))) return "script conflict";
+      (postIssuance(order) ? postIssuance(o) : claims(o)))) return "script conflict";
   return null;
 }
 export function auditRecipients(state: State): void {

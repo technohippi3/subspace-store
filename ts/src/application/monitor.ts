@@ -1,4 +1,4 @@
-import { claims, fail, MAX_MONEY, sats, whole, type Order, type State } from "./records.ts";
+import { claims, fail, MAX_MONEY, postIssuance, sats, whole, type Order, type State } from "./records.ts";
 import { total } from "./sales.ts";
 import { members, reservation } from "../refunds/families.ts";
 import { balance, settled } from "../refunds/observations.ts";
@@ -28,7 +28,7 @@ export function monitor(state: State, order: string): OrderMonitor {
 export function deficits(state: State, order: Order): { [K in Reason]: number } {
   const shortage = claims(order) ? Math.max(0, order.price! - total(state, order, 3)) : 0;
   return { issuance: order.status === "converted" ? shortage : 0,
-    post_issuance_deficit: order.status === "issuing" ? shortage : 0, refunds: balance(state, order).exposure };
+    post_issuance_deficit: postIssuance(order) ? shortage : 0, refunds: balance(state, order).exposure };
 }
 export function alert(state: State, order: string, kind: OperatorAlert["kind"], amount: number, deadline: number | null = null) {
   state.alerts.push({ id: (state.alerts.at(-1)?.id ?? 0) + 1, order, kind, amount, at: state.settings.lastTime, deadline });

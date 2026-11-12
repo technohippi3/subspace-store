@@ -3,6 +3,7 @@ import { ApplicationError, destination, verified, type Destination, type Output,
 import { validP2tr } from "../recipient.ts";
 import { BitcoinRpc, type RpcConfig } from "./rpc.ts";
 import { amount, hex, integer, invalid, object } from "./validation.ts";
+import type { ChainCheckpoint } from "../application/certificate-records.ts";
 
 export interface CoreConfig extends Omit<RpcConfig, "wallet"> {
   readonly wallet: string;
@@ -65,6 +66,21 @@ export class CoreAdapter {
   }
   /** Readiness guard shared with the explicit refund builder. */
   checkReady() { return this.ready(); }
+  /** Check ancestry against the same coherent tip used by the application.
+   * No signing, wallet mutation or inferred timestamp is involved. */
+  containsBlock(checkpoint: ChainCheckpoint) {
+    const self = this;
+    return Effect.gen(function* () {
+      yield* verified(() => { hex(checkpoint.tipHash); hex(checkpoint.hash); integer(checkpoint.height); });
+      const start = yield* self.tip();
+      if (start.hash !== checkpoint.tipHash) return yield* Effect.fail(unavailable("Core changed before certificate check"));
+      const block = checkpoint.height <= start.height ? yield* self.rpc(self.node, "getblockhash", checkpoint.height) : null;
+      const end = yield* self.tip();
+      if (end.hash !== start.hash || end.height !== start.height) return yield* Effect.fail(unavailable("Core changed during certificate check"));
+      if (block !== null) yield* verified(() => hex(block));
+      return block === checkpoint.hash;
+    });
+  }
   private owned(address: string, script?: string) {
     const self = this;
     return Effect.gen(function* () {

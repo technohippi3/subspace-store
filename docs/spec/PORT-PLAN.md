@@ -69,8 +69,9 @@ qualification (`REGISTRY-ENTRY.md`). Interrupted entry responses and
 normal-process restart are qualified separately (`ENTRY-RECOVERY.md`).
 Known-unsent release/rebuild and one-use broadcast permission now have
 separate qualification (`ENTRY-RELEASE.md`). Commitment observations now track
-finality and reorgs (`COMMITMENT-TRACKING.md`). Certificate callbacks and
-application recovery remain. The release gate stays blocked; neither component
+finality and reorgs (`COMMITMENT-TRACKING.md`). Bound certificate readiness
+and buyer download follow in `CERTIFICATES.md`. Verified relay fulfillment,
+complete Spaces-stack sale and application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.
 
 ## Work order and gates

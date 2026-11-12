@@ -17,6 +17,7 @@ from pathlib import Path
 from controller.journal import Journal
 from controller.rpc import Http, HttpError
 from .commitments import receipt as commitment_receipt
+from .certificates import accept as accept_certificate
 
 
 class Refused(Exception):
@@ -164,6 +165,9 @@ class TypeScriptStore(Store):
     """Explicit TypeScript pilot protocol; never probes or falls back to the
     Python store's anonymous issuing marks."""
     bound_entries = True
+
+    def accept_certificate(self, batch, revision, oid, root, height, message):
+        return accept_certificate(self, batch, revision, oid, root, height, message, Refused)
 
     @staticmethod
     def _entry_payload(batch):

@@ -61,8 +61,10 @@ now recover interrupted HTTP replies and preserve uncertain sends across
 restart (`docs/spec/ENTRY-RECOVERY.md`). Known-unsent release/rebuild now
 closes entries permanently and requires one-use permission before sending
 (`docs/spec/ENTRY-RELEASE.md`). Bound commitment observations now track
-finality and reorgs (`docs/spec/COMMITMENT-TRACKING.md`). Certificate
-callbacks, delivery and full application recovery remain. The Python
+finality and reorgs (`docs/spec/COMMITMENT-TRACKING.md`). Bound certificate
+readiness and binary buyer download now have separate qualification
+(`docs/spec/CERTIFICATES.md`). Verified relay fulfillment, the complete
+Spaces sale and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

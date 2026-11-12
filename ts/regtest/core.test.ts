@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { Effect, Exit, Scope } from "effect";
 import { BitcoinRpc } from "../src/bitcoin/rpc.ts";
 import { CoreAdapter } from "../src/bitcoin/core.ts";
@@ -20,6 +20,8 @@ import { servePending } from "../src/application/pending-http.ts";
 import { object, hex, integer } from "../src/bitcoin/validation.ts";
 import { entryLifecycle, entryLifecycleRestart } from "./entry-lifecycle.ts";
 import { commitmentLifecycle, commitmentRestart } from "./commitments.ts";
+import { certificateLifecycle, certificateRestart } from "./certificates.ts";
+import { qualification } from "./qualification.ts";
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 const repository = fileURLToPath(new URL("../../", import.meta.url));
@@ -87,6 +89,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     let loseRefundReply = true, refundSends = 0, feeEstimateOverride: number | null = null;
     const open = () => SalesStore.open({ database: join(root, "store.db"), journalDirectory, riskBudgetSats: 100_000, refundPolicy, merchantDestinations: [feePool] },
       { clock: () => now, snapshot: destinations => core.snapshot(destinations), newDestination: core.newDestination(),
+        certificateChain: checkpoint => core.containsBlock(checkpoint),
         refunds: { resolveAddress: address => refunds.resolveAddress(address), estimateRate: target => feeEstimateOverride === null ? refunds.estimateRate(target) : Effect.succeed(feeEstimateOverride),
           build: request => refunds.build(request), rebuildFunding: request => refunds.rebuildFunding(request), assessExcess: request => refunds.assessExcess(request),
           sender: { observe: transactions => sender.observe(transactions), broadcast: (tx, permission, expectedTip, replacement) => Effect.gen(function* () {
@@ -329,6 +332,9 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     yield* commitmentLifecycle(store, node, minerAddress as string);
     yield* Scope.close(lifetime, Exit.void); lifetime = yield* Scope.fork(parentScope); store = yield* Scope.provide(lifetime)(open());
     yield* commitmentRestart(store);
+    yield* certificateLifecycle(store, node, minerAddress as string, order.token);
+    yield* Scope.close(lifetime, Exit.void); lifetime = yield* Scope.fork(parentScope); store = yield* Scope.provide(lifetime)(open());
+    yield* certificateRestart(store, order.token);
     yield* store.listName("two@space", 1_000);
     const second = yield* store.request({ handle: "two@space", script_pubkey: "5120" + "2".padStart(64, "0") });
     const invoice = yield* store.quote(second.token); assert(invoice.address);
@@ -364,33 +370,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     yield* node.call("generatetoaddress", 7, minerAddress);
     view = yield* store.order(second.token); assert.equal(view.status, "unpaid"); assert.equal(view.confirmed_sats, 0);
     // This records Core's actual evidence; it does not adopt a hold-recovery rule.
-    const files = ["ts/src/bitcoin/rpc.ts", "ts/src/bitcoin/core.ts", "ts/src/bitcoin/validation.ts", "ts/src/bitcoin/refunds.ts",
-      "ts/src/refunds/policy.ts", "ts/src/refunds/records.ts", "ts/src/refunds/types.ts", "ts/src/refunds/book.ts",
-      "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts",
-      "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
-      "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts", "ts/src/application/monitor.ts",
-      "ts/src/bitcoin/refund-estimate.ts", "ts/src/bitcoin/excess-fee.ts", "ts/src/application/assessments.ts",
-      "ts/src/application/http.ts", "ts/src/application/operator-http.ts", "ts/src/application/authenticated-http.ts",
-      "ts/src/application/pending-http.ts", "ts/src/application/entry.ts", "ts/src/application/registry.ts",
-      "ts/src/application/bound-entries.ts", "ts/src/application/bound-records.ts", "ts/regtest/entry-lifecycle.ts",
-      "ts/src/application/commitments.ts", "ts/src/application/commitment-records.ts", "ts/regtest/commitments.ts"];
-    writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
-      files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
-      checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
-        "replacement", "mempool-entry-time-preserved", "mempool-entry-height-reconstructed", "missing-mempool-without-rebroadcast",
-        "refund-preparation-with-capped-buyer-fee", "refund-from-proven-order-change", "application-refund-send",
-        "lost-refund-reply-and-store-restart", "refund-settlement-6-5-6", "deep-refund-reorg-and-remining",
-        "refund-fee-bump-retains-inputs-and-buyer-output", "older-family-member-can-win-after-reorg", "rebuild-depends-on-settled-conflict",
-        "conflict-ancestor-loss-invalidates-rebuild", "cancellation-deadline-after-earlier-excess-refund",
-        "unsigned-fee-assessment-preserves-wallet-state", "unsigned-size-bounds-real-keypath-spend", "unsigned-fee-assessment-of-spent-receipt",
-        "excess-deadline-before-preparation-and-distinct-cancellation", "excess-deadline-with-fee-coins-locked",
-        "authenticated-operator-inspection-with-core", "cancelled-partial-invoice-stays-refund-only",
-        "fresh-checkout-separates-late-old-payments", "registry-entry-acknowledgment-with-core",
-        "registry-frozen-pending-acknowledgment", "registry-issuing-recheck-after-reorg", "bound-entry-idempotent-retry",
-        "bound-entry-root-mismatch-refused", "bound-entry-restart-retains-binding", "bound-entry-closure-releases-once",
-        "bound-entry-late-create-stays-closed", "bound-entry-arm-granted-once", "bound-entry-armed-close-refused",
-        "bound-entry-lifecycle-restart", "commitment-depth-150-149-150", "commitment-anchor-gate-separate",
-        "commitment-stale-tip-and-revision-refused", "commitment-report-restart"] }, null, 2), { mode: 0o600 });
+    qualification(repository, root, name);
     t.diagnostic(`Core 31.2 passed; retained artifacts: regtest/.run/${name}`);
   })));
   await stop();

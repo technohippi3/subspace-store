@@ -16,12 +16,12 @@ SPEC_FILES = ('PAYMENT-SPEC.md', 'PRIVATE-PURCHASE.md', 'PILOT-SPEC.md', 'STORAG
               'CHECKOUT-SPEC.md', 'CORE-SPEC.md', 'REFUND-PREPARATION.md', 'REFUND-SENDING.md',
               'REFUND-FAMILIES.md', 'REFUND-OBLIGATIONS.md', 'REFUND-ESTIMATES.md',
               'EXCESS-DEADLINES.md', 'OPERATOR-INSPECTION.md', 'REGISTRY-ENTRY.md', 'ENTRY-RECOVERY.md',
-              'ENTRY-RELEASE.md', 'COMMITMENT-TRACKING.md')
+              'ENTRY-RELEASE.md', 'COMMITMENT-TRACKING.md', 'CERTIFICATES.md')
 KINDS = ('python-model', 'python-store', 'python-controller', 'ts-model', 'ts-store')
 CONTROLLER_FILES = {'test_controller_host.py', 'test_controller_lock.py',
                     'test_runner.py', 'test_runner_recovery.py',
                     'test_interrupted_broadcast.py', 'test_entry_recovery.py', 'test_entry_release.py',
-                    'test_commitment_tracking.py'}
+                    'test_commitment_tracking.py', 'test_bound_certificates.py'}
 SERVICE_PREFIXES = 'VHCASTY'
 TS_LEXEMES = re.compile(r'//[^\n]*|/\*[\s\S]*?\*/|`(?:\\.|[^`\\])*`|'
                         r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')

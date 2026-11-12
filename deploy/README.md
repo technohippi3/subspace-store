@@ -37,6 +37,13 @@ the exact armed entry and a matching Core tip. Receipt acknowledgment
 means durable history, not current chain or certificate verification.
 The TypeScript watch path must run with the updated store and driver.
 
+Certificate bytes use `<database>.certificates/` as a private reconstructible
+cache; metadata and invalidation are journaled. Configure the Core ancestry
+adapter before accepting certificates. An existing cache is rechecked against
+Core before readiness after restart. `docs/spec/CERTIFICATES.md` defines
+redelivery after cache loss and the strict binary download gate. These are
+component tests, not a deployed-stack recovery qualification.
+
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,
   with the commands in `subs.stop_command` and `subs.start_command`. The

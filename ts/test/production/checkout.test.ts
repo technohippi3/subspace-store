@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Effect } from "effect";
@@ -31,10 +31,10 @@ test("V1: HTTP recipient requests create private links without claiming scripts"
       assert.equal(response.headers.get("cache-control"), "no-store");
       assert.equal(response.headers.get("referrer-policy"), "no-referrer");
       assert.equal((await fetch(`${listener.url}/orders/${"x".repeat(32)}`)).status, 404);
-      for (const name of readdirSync(f.root).filter(name => name.startsWith("store.db")))
-        assert.equal(readFileSync(join(f.root, name)).includes(first.value.token), false);
-      for (const name of readdirSync(f.config.journalDirectory))
-        assert.equal(readFileSync(join(f.config.journalDirectory, name)).includes(first.value.token), false);
+      for (const name of readdirSync(f.root, { recursive: true })) {
+        const file = join(f.root, String(name));
+        if (statSync(file).isFile()) assert.equal(readFileSync(file).includes(first.value.token), false);
+      }
     });
   }));
 });
