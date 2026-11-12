@@ -101,8 +101,10 @@ qualification, Nacho acceptance, remaining sale/refund scenarios, remaining
 supersession and application recovery remain. `NETWORK-READINESS.md` adds
 explicit production network and durable payment wallet identity, authenticated
 paused bootstrap and a separate TypeScript public pilot runner path. Its component tests do not establish mainnet transactions.
-The release gate stays blocked; neither component
-nor model tests open sales.
+The source production-coverage gate now passes. Native export, scoped QR
+capabilities and cold-start/maintenance lifecycle rules have model and production
+coverage in `NATIVE-EXPORT.md` and `RUNTIME.md`. That source gate does not
+establish the signed package, buyer-client or operator acceptance gates.
 
 The seller CLI and repeatable policy operations now follow
 `SELLER-OPERATIONS.md`, including explicit request limits and funded owner

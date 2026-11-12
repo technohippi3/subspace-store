@@ -7,8 +7,8 @@ const controller = new AbortController();
 const stop = () => controller.abort();
 process.once("SIGINT", stop); process.once("SIGTERM", stop);
 try {
-  const mode = process.argv[2], recovery = mode === "restore" || mode === "recover" || mode === "reconcile";
-  if (process.argv.length !== (mode==="reconcile"?5:recovery ? 4 : 3)) throw Error("configuration required");
+  const mode = process.argv[2], recovery = mode === "restore" || mode === "recover" || mode === "reconcile" || mode === "maintain";
+  if (process.argv.length !== (mode==="reconcile" || mode==='maintain'?5:recovery ? 4 : 3)) throw Error("configuration required");
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
     const config = yield* loadConfiguration(process.argv[recovery ? 3 : 2]!);
     if (recovery) {

@@ -2616,3 +2616,27 @@ These checks used fresh isolated fixture wallets or recording peers. No
 production service, managed secret or mainnet wallet changed. Native Spaces
 sale/whole-host acceptance, packaged maintenance and buyer-client acceptance
 remain separately qualified work.
+
+## Native export and service startup source qualification, 2026-11-12
+
+The TypeScript source now adds owned pinned libveritas native exports,
+certificate-only QR capabilities in the primary journal, scriptless browser
+views, durable observed expiry and revocation, verified systemd credential
+permissions, paused version 2 startup and same-database maintenance proof.
+The scoped native formats are not a legacy Nacho JSON conversion or an
+installed-client compatibility claim.
+
+Mandatory source checks passed 532 TypeScript tests and 314 Python tests
+without skips, pinned npm installation, strict type checking and the production
+coverage gate for 423 required cases. The owned remapped exporter build uses
+Rust 1.94.1, libveritas 0.4.4 and spaces_nums 0.4.2; its binary digest is
+f4307e4f48473a5972ec3857ac68a32fdc7ff95540c843529e43c3031b295d5e.
+Initial and later kept proofs round-trip through the native formats, with
+independent verifier facts preserved and negative bindings refused.
+
+Core run `core-adapter-2026-11-12T15-05-16-886Z-fc4aa1a0` passes 82 checks
+with 71 listed source hashes matching this implementation. It qualifies the
+Core/runtime behavior listed in its report, rather than every export or
+package path. The separate native proof, HTTP, journal and browser tests cover
+those export boundaries. Package composition, outages with the complete kit,
+final artifact recovery and the owner's phone acceptance remain separate.

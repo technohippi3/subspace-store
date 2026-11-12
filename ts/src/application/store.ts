@@ -1,3 +1,4 @@
+import {type CapabilityLedger,validateCapabilityLedger} from "./export-records.ts";
 import { bindIdentity, checkStoredIdentity, type InstallationIdentity } from "../bitcoin/identity.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { Effect, Semaphore } from "effect";
@@ -24,6 +25,8 @@ import { createRequested, invoiceRestricted, namePolicy, unavailable } from "./s
 import { SellerOperations } from "./seller-service.ts";
 import { persist } from "./persistence.ts";
 import { inspectRecovered } from "./recovery.ts";
+import { prepareStartupPause } from "./startup-pause.ts";
+import { reconcileMaintenance } from "./maintenance.ts";
 import { reconcileRecovered, type RecoveryController } from "./reconciliation.ts";
 
 export interface Adapters {
@@ -36,7 +39,7 @@ export interface Adapters {
   readonly supersessionChain?: SupersessionChain;
   readonly chainStatus?: Effect.Effect<{ network: string; best_block_hash: string; blocks: number }, ApplicationError>;
 }
-export interface Config extends StorageConfig { readonly network?: "main" | "regtest"; readonly installationExpectation?: InstallationIdentity | undefined; readonly riskBudgetSats: number;
+export interface Config extends StorageConfig { readonly network?: "main" | "regtest"; readonly installationExpectation?: InstallationIdentity | undefined; readonly startupPause?: boolean; readonly riskBudgetSats: number;
   readonly refundPolicy: RefundPolicy; readonly merchantDestinations?: readonly Destination[] }
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 /** One serialized application queue, including asynchronous wallet/chain work.
@@ -77,7 +80,14 @@ export class SalesStore {
       if ((state.refundSends.length || state.refundObservations.length) && !adapters.refunds?.sender)
         return yield* checked(() => fail("refund reconciliation adapter is required", "unavailable"));
       yield* verified(() => auditRecipients(state));
+      if (config.startupPause) yield* checked(() => prepareStartupPause(state));
       yield* result.save(records, state);
+      if (config.startupPause) {
+        yield* storage.flush();
+        const position = yield* storage.status();
+        if (!(yield* storage.confirm(position.seq)))
+          return yield* checked(() => fail("startup pause journal acknowledgment required", "unavailable"));
+      }
       if (adapters.installationIdentity) { yield* storage.flush(); const position = yield* storage.status(); if (!(yield* storage.confirm(position.seq))) return yield* checked(() => fail("installation identity journal acknowledgment required", "unavailable")); }
       if (state.supersessions.length || state.certificates.length || (adapters.refunds?.sender && state.groups.some(g => g.transaction))) yield* result.refresh();
       return result;
@@ -93,6 +103,12 @@ export class SalesStore {
     return reconcileRecovered(config,adapters,controller,(storage,readOnly)=>Effect.gen(function*(){
       const cache=yield* verified(()=>new CertificateCache(config.database+".certificates"));
       return yield* new SalesStore(storage,readOnly,config,cache).refresh(true);
+    }));
+  }
+  static reconcileMaintenance(config: Config, adapters: Adapters, controller: RecoveryController) {
+    return reconcileMaintenance(config, adapters, controller, (storage, readOnly) => Effect.gen(function* () {
+      const cache = yield* verified(() => new CertificateCache(config.database + ".certificates"));
+      return yield* new SalesStore(storage, readOnly, config, cache).refresh(true);
     }));
   }
   private load(recovery = false) {
@@ -334,6 +350,61 @@ export class SalesStore {
       return (yield* certificateBytes(self.registryContext, state, order.id)) ?? (yield* checked(() => fail("certificate unavailable", "not_found")));
     }));
   }
+  /** Internal adapter for certificate-only export. The HTTP transport must
+   * authenticate either the full order token or an independently scoped cap. */
+  private exportContext(state: State, order: Order) {
+    const self = this;
+    return Effect.gen(function* () {
+      const bytes = yield* certificateBytes(self.registryContext, state, order.id);
+      const cert = state.certificates.find(c => c.oid === order.id);
+      if (!bytes || !cert) return yield* checked(() => fail("certificate unavailable", "not_found"));
+      return { oid: order.id, handle: order.handle, recipient: order.recipient, entry: cert.entry,
+        revision: cert.revision, hash: cert.hash, root: cert.root, height: cert.height,
+        tipHeight: cert.tipHeight, tipHash: cert.tipHash, message: bytes };
+    });
+  }
+  certificateExportContext(token: string) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const initial = yield* self.load(); yield* checked(() => self.find(initial.state, token));
+      const { state } = yield* self.refresh();
+      return yield* self.exportContext(state, yield* checked(() => self.find(state, token)));
+    }));
+  }
+  /** Trusted internal call only: never expose this order-ID method as a route. */
+  currentCertificateExport(oid: string) {
+    const self = this;
+    return self.queue.withPermit(Effect.gen(function* () {
+      const { state } = yield* self.refresh();
+      const order = yield* checked(() => state.orders.find(o => o.id === oid) ?? fail("certificate unavailable", "not_found"));
+      return yield* self.exportContext(state, order);
+    }));
+  }
+  readCertificateCapabilities() {
+    const self=this;
+    return self.queue.withPermit(Effect.gen(function*(){
+      const {state}=yield* self.load();
+      const saved=yield* self.storage.get("certificate_capabilities","global");
+      if(saved && (!saved.acknowledged || !(yield* self.storage.confirm(saved.seq)))) return yield* checked(()=>fail("capability acknowledgement unavailable","unavailable"));
+      return structuredClone(state.certificateCapabilities);
+    }));
+  }
+  saveCertificateCapabilities(before:CapabilityLedger,after:CapabilityLedger,current?:{oid:string;entry:string;revision:number;hash:string;root:string;height:number;recipient:string;handle:string}) {
+    const self=this;
+    return self.queue.withPermit(Effect.gen(function*(){
+      const {records,state}=yield* (current?self.refresh():self.load());
+      yield* checked(()=>{validateCapabilityLedger(after);if(JSON.stringify(state.certificateCapabilities)!==JSON.stringify(before))fail("capability state changed","unavailable");});
+      if(current){
+        const order=yield* checked(()=>state.orders.find(o=>o.id===current.oid)??fail("certificate unavailable","not_found"));
+        const fresh=yield* self.exportContext(state,order);
+        const key=(v:typeof current)=>JSON.stringify([v.oid,v.entry,v.revision,v.hash,v.root,v.height,v.recipient,v.handle]);
+        if(key(fresh)!==key(current))return yield* checked(()=>fail("certificate changed","not_found"));
+      }
+      state.certificateCapabilities=structuredClone(after); yield* self.save(records,state); yield* self.storage.flush();
+      const saved=yield* self.storage.get("certificate_capabilities","global");
+      if(!saved||!saved.acknowledged||JSON.stringify(saved.value)!==JSON.stringify(after)||!(yield* self.storage.confirm(saved.seq)))return yield* checked(()=>fail("capability mutation pending acknowledgement","unavailable"));
+    }));
+  }
   /** Operator inspection advances existing clocks even when Core is unavailable.
    * It discovers no new obligations and never signs or sends. */
   operatorStatus() {
@@ -347,6 +418,7 @@ export class SalesStore {
         onSuccess: value => value, onFailure: () => null,
       })) : null;
       return { orders: structuredClone(state.monitors), alerts: structuredClone(state.alerts), assessments: structuredClone(state.assessments),
+        unknown_payment_history: state.orders.filter(order => order.destination && order.paymentHistory === "unknown").length,
         recovery_incidents: structuredClone(state.incidents), acknowledged: position.acknowledged === position.seq,
         chain, installation_identity: state.installation, production_ready: !!chain && position.acknowledged === position.seq && !!state.installation && (state.installation.network !== "main" || state.seller.configured), paused: state.settings.paused, application_recovery: state.recovery,
         seller: self.seller.inspect(state), pending_refund_rebroadcast: state.refundSends.filter(s=>state.refundObservations.some(o=>o.txid===s.txid&&o.seen==="absent")).map(s=>({group:s.group,txid:s.txid})) };

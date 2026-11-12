@@ -1,3 +1,5 @@
+import {NativeArtifacts,CertificateExports} from "../application/certificate-export.ts";
+import {trustedRootAnchors} from "./export-anchors.ts";
 import { ownConfiguredInstallation } from "./installation-fence.ts";
 import { Effect } from "effect";
 import { SalesStore } from "../application/store.ts";
@@ -26,7 +28,7 @@ export function startRuntime(value: unknown) {
     const installationIdentity = observeIdentity(coreConfig).pipe(Effect.flatMap(observed => checked(() => { bound = bindIdentity(bound ?? null, observed, false); return bound; })));
     const core = yield* CoreAdapter.make(coreConfig), refunds = yield* CoreRefundWallet.make(coreConfig), sender = yield* CoreRefundSender.make(coreConfig);
     const supersessionChain = yield* conflictVerifier(coreConfig);
-    const store = yield* SalesStore.open({...config, installationExpectation: expectedIdentity(config)}, {
+    const store = yield* SalesStore.open({...config, installationExpectation: expectedIdentity(config), startupPause: config.version === 2}, {
       installationIdentity, clock: () => Math.floor(Date.now() / 1000), snapshot: destinations => core.snapshot(destinations),
       newDestination: core.newDestination(), certificateChain: checkpoint => core.containsBlock(checkpoint),
       supersessionChain,
@@ -37,7 +39,9 @@ export function startRuntime(value: unknown) {
     });
     // No listener or ready signal before initial observation/reconciliation.
     yield* store.observe();
-    const buyer = yield* serve(store, config.listen.buyer);
+    const exports=config.certificateExport;
+    const certificateExports=exports?new CertificateExports({store,artifacts:new NativeArtifacts({binary:exports.binary,artifactManifest:exports.artifactManifest,directory:exports.directory,anchorsFor:trustedRootAnchors(exports.spaced,core)}),origin:exports.trustedOrigin,clock:()=>Math.floor(Date.now()/1000),ttlSeconds:exports.ttlSeconds,allowLoopbackHttp:config.network==="regtest"}):undefined;
+    const buyer = yield* serve(store, config.listen.buyer,certificateExports);
     const operator = yield* serveOperator(store, tokens.operator, config.listen.operator);
     const subs = yield* servePending(store, tokens.subs, config.listen.subs);
     const poll = Effect.gen(function* () {

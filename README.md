@@ -94,8 +94,15 @@ journal-gated invoices, payment uncertainty, cancellation/refunds and
 certificate download with production C1–C12 tests. These use simulated
 adapters; real-stack browser qualification and Nacho acceptance remain,
 alongside remaining sale/refund scenarios, other supersession paths and
-full application recovery. The Python
-store has the H12 process-ownership safety amendment.
+full application recovery. Configured native certificate exports now follow `docs/spec/NATIVE-EXPORT.md`.
+They provide verified native files and certificate-only QR links with durable
+revocation; the original binary route remains. These formats have real-proof
+and browser qualification, without an installed Nacho compatibility claim.
+Version 2 starts paused and closes never-detected historical payment prompts;
+`maintain` proves a normal same-database update without clearing real restore
+quarantine (`docs/spec/RUNTIME.md`). The production coverage gate now passes;
+package composition and buyer/operator acceptance remain separate release work.
+The Python store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price
 rules, and a regtest harness that drives the pinned `subs`, `spaced` and

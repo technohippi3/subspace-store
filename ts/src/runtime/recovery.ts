@@ -14,7 +14,7 @@ import { controllerRecovery } from "./reconciliation.ts";
 import { checked } from "../application/records.ts";
 
 /** No listeners, credential fetch, address allocation, signing or sending. */
-export function recoveryCommand(mode: "restore" | "recover" | "reconcile", config: RuntimeConfig, controllerConfig?:string) {
+export function recoveryCommand(mode: "restore" | "recover" | "reconcile" | "maintain", config: RuntimeConfig, controllerConfig?:string) {
   return Effect.gen(function* () {
     config = yield* checked(() => configuration(config));
     yield* ownConfiguredInstallation(config.maintenanceLock);
@@ -30,9 +30,10 @@ export function recoveryCommand(mode: "restore" | "recover" | "reconcile", confi
       certificateChain: checkpoint => core.containsBlock(checkpoint), supersessionChain,
       refunds: { resolveAddress: () => denied, estimateRate: () => Effect.succeed(null), build: () => denied,
         sender: { observe: transactions => sender.observe(transactions), broadcast: () => denied } } } satisfies import("../application/store.ts").Adapters;
-    if(mode==="reconcile"){
+    if(mode==="reconcile" || mode==="maintain"){
       const controller=yield* checked(()=>controllerRecovery(config,controllerConfig!));
-      return yield* SalesStore.reconcileRecovery(applicationConfig,adapters,controller);
+      return yield* (mode === 'maintain' ? SalesStore.reconcileMaintenance(applicationConfig,adapters,controller) :
+        SalesStore.reconcileRecovery(applicationConfig,adapters,controller));
     }
     return yield* SalesStore.inspectRecovery(applicationConfig,adapters);
   });

@@ -19,6 +19,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: ts/.node-version
+      - name: Install pinned native compiler
+        run: rustup toolchain install 1.94.1 --profile minimal
+      - name: Fetch exact native crates and build the owned exporter offline
+        run: python3 tools/build_native_export.py --fetch
       - name: Python baseline and shipped controller tests
         run: python3 -m unittest discover -s tests -t .
       - name: Install pinned TypeScript dependencies

@@ -1,3 +1,5 @@
+import {exportBrowserRoute} from "./certificate-export-http.ts";
+import type {CertificateExports} from "./certificate-export.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Effect } from "effect";
 import { ApplicationError } from "./records.ts";
@@ -52,7 +54,7 @@ export function send(response: ServerResponse, code: number, value: unknown): vo
 }
 /** Buyer forms and JSON API, bound to loopback for the future HTTPS proxy.
  * No operator, registry, wallet or public-listening interface. */
-export function serve(store: SalesStore, port = 0) {
+export function serve(store: SalesStore, port = 0, certificateExports?:CertificateExports) {
   return Effect.acquireRelease(Effect.tryPromise({ try: async () => {
     const controllers = new Set<AbortController>(), pending = new Set<Promise<void>>();
     const server = createServer((request, response) => {
@@ -61,7 +63,8 @@ export function serve(store: SalesStore, port = 0) {
       const work = (async () => {
         try {
           const path = request.url ?? "", method = request.method;
-          const checkout = checkoutRoute(store, request);
+          if(certificateExports&&await exportBrowserRoute(certificateExports,request,response))return;
+          const checkout = checkoutRoute(store, request,certificateExports!==undefined);
           if (checkout) {
             sendCheckout(response, await Effect.runPromise(checkout, { signal: controller.signal }));
             return;

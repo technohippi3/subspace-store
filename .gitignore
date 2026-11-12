@@ -6,3 +6,4 @@ regtest/.run/
 regtest/verifier/target/
 regtest/.keep-run.*/
 ts/node_modules/
+native/export/target/

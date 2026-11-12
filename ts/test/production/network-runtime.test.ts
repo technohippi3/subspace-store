@@ -116,3 +116,28 @@ test("O125: an existing unbound application cannot be adopted as a fresh main in
   assert.equal(f.calls.length,0);assert.equal(journalText(f.config.journalDirectory),before);
   await assert.rejects(fetch(`http://127.0.0.1:${f.config.listen.operator}/operator/status`));
 });
+test("O152: version 2 enables the cold-start barrier internally before its buyer and operator listeners", async (t) => {
+  const f = await runtimeFixture(t); f.state.chain = "main"; f.state.txids = [];
+  const config = publicConfig(f.config); let token = "";
+  await scoped(Effect.gen(function* () {
+    const runtime = yield* startRuntime(config);
+    yield* runtime.store.listName("n0@space", 1000);
+    const command = { action: "admission" as const, window_seconds: 600, maximum_requests: 12, maximum_orders: 100 };
+    const preview = yield* runtime.store.seller.preview(command);
+    yield* runtime.store.seller.apply(command, preview.review);
+    yield* runtime.store.pause(false);
+    token = (yield* runtime.store.request({ handle: "n0@space", script_pubkey: script })).token;
+    assert.equal((yield* runtime.store.quote(token)).payment_request_open, true);
+  }));
+  await scoped(Effect.gen(function* () {
+    const runtime = yield* startRuntime(config);
+    yield* Effect.promise(async () => {
+      const status = await f.api(runtime.operator, "/operator/status", f.operator);
+      assert.equal(status.status, 200); assert.equal(status.value.paused, true);
+      assert.equal(status.value.unknown_payment_history, 1);
+      const view = await f.api(runtime.buyer, "/orders/" + token);
+      assert.equal(view.status, 200); assert.equal(view.value.address, null);
+      assert.equal(view.value.payment_history, "unknown"); assert.equal(view.value.payment_request_open, false);
+    });
+  }));
+});

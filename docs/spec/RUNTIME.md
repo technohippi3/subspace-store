@@ -132,3 +132,55 @@ Neither a pause nor fifteen minutes or six blocks proves a bounded drain.
 | Case | Given | When | Then |
 | --- | --- | --- | --- |
 | O97 | holds, armed entries, fulfilled final history, absent attempted refunds or chain/journal failure | authenticated maintenance inspection | report exact blockers and monotonic review count; exclude only resolved historical entries; no sends or pause mutation; ready only while paused with live acknowledged facts |
+
+## Cold start and systemd credentials
+
+Version 2 startup journals a global sales pause before observing invoices
+or starting a listener. A disclosed invoice without persisted payment
+detection becomes unknown; already detected history remains detected.
+Grant times, conversion history, entries, certificates and recovery markers
+are preserved. Startup requires live journal acknowledgment of the barrier.
+It creates no full-host restore marker and infers no mempool timing or
+extension. Explicit operator resume never turns unknown history back into a
+payment request. Version 1 and direct application fixtures retain their
+existing default; the internal startupPause option is always enabled by the
+version 2 runtime and cannot be disabled in its JSON configuration.
+
+Operator status reports unknown_payment_history as a nonnegative invoice
+count. The updater leaves the new release paused for attended review when
+this count is nonzero, even if admission was previously open. Closed unknown
+history does not become a permanent maintenance blocker.
+
+Ordinary injected credentials require a private, regular, singly linked
+file, opened without following a symlink. Ubuntu 24/systemd 255 also supplies
+root-owned 0440 files through per-service ACLs. Those permissions are accepted
+only inside the exact canonical CREDENTIALS_DIRECTORY under /run/credentials,
+with a root-owned 0550 directory and the exact read-only mount. An environment
+variable or group-readable ordinary file alone cannot grant that exception.
+The actual platform probe and application tests remain separate evidence.
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| O151 | private ordinary credentials or root-owned systemd 255 credential files | read the configured role pair | ordinary group-readable, symlink and forged-directory inputs refuse; the exact protected read-only credential mount is accepted |
+| O152 | previously disclosed invoices and a cold version 2 start | start with or without journal acknowledgment, then inspect or explicitly resume | durable pause and unknown-history prompt closure precede observation/listeners; original grants and detected/converted history remain; an unavailable acknowledgment prevents startup |
+
+## Same-database maintenance reconciliation
+
+The shipped maintain command takes a runtime configuration and controller
+configuration after the updater releases exclusive installation ownership.
+It acquires normal shared lifecycle ownership and exclusive database
+ownership. It requires an initialized ordinary store and refuses actual
+restore quarantine. It durably applies the same startup pause and unknown
+history barrier before observations, then uses read-only wallet adapters.
+
+A transient inventory binds the current checkpoint to the controller's
+journaled proof. Independent chain, wallet, root and journal verification
+runs before another coherent inventory and exact live prefix checks.
+Completion returns an acknowledged paused receipt. It creates no persistent
+host-loss marker, clears no real quarantine and does not invalidate a
+certificate merely because maintenance happened. Real host loss continues
+to use restore and reconcile. No maintenance path signs or sends.
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| O153 | an initialized ordinary store or real restore quarantine | shipped maintain CLI and same-database reconciliation with valid, changed or unavailable proofs | pause/unknown barrier precedes observation; only coherent independently verified journal-bound completion is ready; actual restore stays quarantined and missing or uninitialized stores are not bootstrapped |

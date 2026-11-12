@@ -37,6 +37,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install pinned native compiler
+        run: rustup toolchain install 1.94.1 --profile minimal
+      - name: Fetch exact native crates and build the owned exporter offline
+        run: python3 tools/build_native_export.py --fetch
+        working-directory: .
       - name: Install the compiler pinned in package-lock.json
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Type check the port, tests included
