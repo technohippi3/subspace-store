@@ -9,7 +9,7 @@ import { allMembers, attempt, evidenceKey, members } from "../refunds/families.t
 import { decodeAlert, decodeMonitor, decodeReceipt, validateMonitoring,
   type BroadcastReceipt, type OperatorAlert, type OrderMonitor } from "./monitor.ts";
 import { assessment, type ExcessAssessment } from "./assessments.ts";
-import { boundRecord, validateEntries, type BoundEntry } from "./bound-records.ts";
+import { armRecord, boundRecord, closureRecord, validateEntries, type BoundEntry, type EntryArm, type EntryClosure } from "./bound-records.ts";
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly code: "invalid" | "refused" | "unavailable" | "not_found";
@@ -50,6 +50,7 @@ export interface Settings { version: 1; riskBudget: number; paused: boolean; con
   lastTime: number; tip: number; nextOrder: number }
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
 export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[]; pending: string[]; entries: BoundEntry[];
+  closures: EntryClosure[]; arms: EntryArm[];
   refunds: RefundSettings; accounts: RefundAccount[]; groups: RefundGroup[];
   monitors: OrderMonitor[]; broadcastReceipts: BroadcastReceipt[]; alerts: OperatorAlert[];
   assessments: ExcessAssessment[];
@@ -113,6 +114,8 @@ export function encode(state: State): Record[] {
   return [ { kind: "sales_settings", key: "global", value: state.settings as unknown as Json },
     { kind: "registry_pending", key: "global", value: { version: 1, orders: [...state.pending] } },
     ...state.entries.map(value => ({ kind: "issuance_entry", key: value.id, value: value as unknown as Json })),
+    ...state.closures.map(value => ({ kind: "entry_closure", key: value.id, value: value as unknown as Json })),
+    ...state.arms.map(value => ({ kind: "entry_arm", key: value.id, value: value as unknown as Json })),
     { kind: "refund_settings", key: "global", value: state.refunds as unknown as Json },
     ...state.assessments.map(value => ({ kind: "excess_assessment", key: value.order, value: value as unknown as Json })),
     ...state.monitors.map(value => ({ kind: "order_monitor", key: value.order, value: value as unknown as Json })),
@@ -132,7 +135,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   policy(refunds.policy);
   for (const d of refunds.merchantDestinations) destination(d);
   const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
-    lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [], entries: [],
+    lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [], entries: [], closures: [], arms: [],
     refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [], assessments: [],
     refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
   for (const record of records) {
@@ -140,6 +143,8 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
+      case "entry_closure": closureRecord(v); if (v.id !== record.key) fail("entry closure identity differs"); state.closures.push(v); break;
+      case "entry_arm": armRecord(v); if (v.id !== record.key) fail("entry arm identity differs"); state.arms.push(v); break;
       case "issuance_entry": boundRecord(v); if (v.id !== record.key) fail("issuance entry identity differs"); state.entries.push(v); break;
       case "registry_pending":
         object(v, "version,orders");

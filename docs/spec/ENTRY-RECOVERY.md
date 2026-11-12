@@ -65,19 +65,19 @@ The authenticated operator routes are `POST /operator/issuance-entries`
 and `POST /operator/issuance-entries/lookup`. Both accept exactly
 `{"entry":"<32 lowercase hex>","root":"<64 lowercase hex>","oids":[...]}`.
 Found replies return those fields plus boolean `found`, `acknowledged`
-and `batchable`; absence is exactly `{"found":false}`. The client rejects
+and `batchable`, a `phase` and nullable `delegate`, as extended by
+`ENTRY-RELEASE.md`; absence is exactly `{"found":false}`. The client rejects
 malformed, mismatched or ambiguous replies and never falls back to an
 anonymous mark. These supersede that pre-release route in
 `REGISTRY-ENTRY.md`; the single-member library helper remains a component
 test interface, not the shipped controller protocol.
 
-Entry records currently keep their orders issuing. Safe release/rebuild,
-commitment callbacks, finality and certificate transitions remain to be
-ported. A recovered entry whose payment recheck fails stays locked and
-waits; it is not automatically rebuilt. Local rollback once an entry ID
-has been assigned, entry rebuild and TypeScript whole-host reconciliation
-refuse before changing controller state until their durable release
-protocol exists. The pilot release
+`ENTRY-RELEASE.md` now extends this protocol with permanent closure and
+exclusive one-use broadcast permission. A recovered, unarmed entry whose
+payment recheck fails can close and rebuild after both journals confirm
+the release. Armed entries remain locked and uncertain. Commitment
+callbacks, finality, certificate transitions and TypeScript whole-host
+reconciliation remain unported. The pilot release
 gate remains blocked. Normal-process restart evidence does not qualify
 whole-host recovery or a complete sale.
 
@@ -96,7 +96,7 @@ the store does not itself verify that root on chain.
 | O14 | a locally written entry and an unavailable journal | inspect, restart and recover, then lose the journal after acknowledgment | found-but-unconfirmed during outage, locks retained, exact retry confirmed after recovery |
 | O15 | a real controller and TypeScript listener | drop the entry HTTP reply before forwarding or after store commit; restart the controller | recover the same journaled ID, one upstream entry and one stand-in commitment call |
 | O16 | entry, intent and attempted-send boundaries | stop the process at each boundary and restart | safe entry/unsent-intent recovery; attempted outcomes become uncertain and are never sent again |
-| O17 | a recovered entry whose payment loses depth | retry, request local rollback or whole-host reconciliation, then restore payment depth | no send or unlock while blocked; unsupported recovery refuses; exact recovery can proceed once batchable |
+| O17 | a recovered unarmed entry whose payment loses depth | retry through the release protocol, request whole-host reconciliation and continue the paid successor | close before rollback, exclude failed member, one successor; whole-host reconciliation still refuses |
 | O18 | an invalid stored entry version, root shape or member binding | start the application | refuse and retain the evidence while releasing process ownership |
 | O19 | an older checkpointed controller database and a newer entry/intent/sent journal | restart | recover the entry ID; a newer intent means uncertain; later sent state adopted; no duplicate call |
 | A24 | explicit Python/TypeScript protocol selection | choose an invalid mode or return malformed/mismatched entry replies | refuse without setup or anonymous fallback |

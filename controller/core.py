@@ -31,10 +31,10 @@ from .locking import LockedConnection
 from .rpc import HttpError
 from .errors import Refused
 from .issuance import ANSWER_LIMIT, Issuance
+from .rebuild import PREPARING, Rebuild
 
 FINAL_D = 150
 ANCHOR_FINALITY = 144  # libveritas: newest anchor - commitment height
-PREPARING = ("frozen", "staged", "committed_local", "proved", "checkpointed")
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
 WATCHED = ("broadcast", "broadcast_uncertain", "mined")
@@ -47,7 +47,7 @@ create table if not exists batches (
   delegate_in text, fee_rate integer, txid text, mined_height integer,
   intent integer not null default 0, attempted integer not null default 0,
   supersedes text, answer text, raw text, recovery_paused integer not null default 0,
-  ancestors text, entry_key text
+  ancestors text, entry_key text, release_failed text
 );
 create table if not exists alerts (n integer primary key, kind text, bid text, detail text);
 create table if not exists recoveries (
@@ -58,7 +58,7 @@ create table if not exists recoveries (
 
 # Columns added since the first released schema (commit 5226810), added to an
 # existing database when it is opened: table -> {column: declaration}.
-MIGRATIONS = {"batches": {"ancestors": "text", "entry_key": "text"},
+MIGRATIONS = {"batches": {"ancestors": "text", "entry_key": "text", "release_failed": "text"},
               "recoveries": {"snapshot": "text", "subs_at": "real", "replayed_at": "real",
                              "reconciled_at": "real", "ready_at": "real"}}
 
@@ -111,7 +111,7 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller(Issuance):
+class Controller(Issuance, Rebuild):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
@@ -608,62 +608,6 @@ class Controller(Issuance):
 
     def retry_broadcast(self, bid):
         raise Refused("never repeat a broadcast whose outcome is unknown")
-
-    def rollback_local(self, bid):
-        self.require_restored()
-        b = self.batch(bid)
-        if getattr(self.registry, "bound_entries", False) and b.get("entry_key"):
-            raise Refused("reconcile the issuance entry before any local rollback")
-        if b["state"] not in PREPARING or b["intent"] or b["attempted"]:
-            raise Refused("never roll back a commitment that may have escaped")
-        self.subs.post(f"/spaces/{b['space']}/rollback-local")
-        self._save(bid, state="rebuilt")
-
-    def rebuild_unsent(self, bid, failing):
-        """A batch known never to have been sent: journal it as rebuilt, then
-        return its members to paid, then roll back and continue without the
-        failing members."""
-        if getattr(self.registry, "bound_entries", False):
-            raise Refused("TypeScript entry release is not implemented; locks retained")
-        b = self.batch(bid)
-        self.db.execute("update batches set state = 'rebuilt', intent = 0 where bid = ?", (bid,))
-        if not self._journal(bid):
-            self.db.execute("update batches set state = 'issuing', intent = 1 where bid = ?", (bid,))
-            raise Refused("rebuild not acknowledged off-host; nothing sent, still issuing")
-        for m in b["members"]:
-            self.registry.unissue(m)
-        self.subs.post(f"/spaces/{b['space']}/rollback-local")
-        return self._new_without(b, failing)
-
-    def rebuild(self, bid, failing):
-        b = self.batch(bid)
-        if getattr(self.registry, "bound_entries", False) and b.get("entry_key"):
-            raise Refused("TypeScript entry release is not implemented; locks retained")
-        self.subs.post(f"/spaces/{b['space']}/rollback-local")
-        self._save(bid, state="rebuilt")
-        return self._new_without(b, failing)
-
-    def _new_without(self, b, failing):
-        space = b["space"]
-        names = [label(self.registry.order(m)["name"]) for m in failing]
-        if names:
-            self.subs.post(f"/spaces/{space}/park", {"handles": names, "parked": True})
-        keep = [m for m in b["members"] if m not in failing]
-        if not keep:
-            self.alert("every_member_failed", b["bid"])
-            return None
-        # The kept members are staged again by the rollback; the new batch
-        # skips the registry pull and is read back as staged.
-        nb = f"b{self.db.execute('select count(*) from batches').fetchone()[0] + 1}"
-        members_full = sorted((self.registry.order(m)["name"], self.registry.order(m)["recipient_spk"], m)
-                              for m in keep)
-        self.db.execute("""insert into batches(bid, space, members, digest, state, prior_root, supersedes)
-                           values (?, ?, ?, ?, 'frozen', ?, ?)""",
-                        (nb, space, json.dumps(sorted(keep)),
-                         hashlib.sha256(json.dumps(members_full).encode()).hexdigest(),
-                         b["prior_root"], b["bid"]))
-        self._journal(nb)
-        return nb
 
     # Uncertain broadcast: readback, never retried
 

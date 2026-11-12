@@ -17,7 +17,9 @@ Atomic issuing marks, live journal guards and frozen pending sets follow in
 `../docs/spec/REGISTRY-ENTRY.md`. Entry retry, normal-process restart
 and older-controller-database handling now follow `../docs/spec/ENTRY-RECOVERY.md`;
 the HTTP controller protocol requires an exact entry/root/member binding.
-Safe bound-entry release/rebuild, commitment callbacks, certificate
+Known-unsent bound-entry release/rebuild now follows `../docs/spec/ENTRY-RELEASE.md`.
+Permanent closure cannot unlock a successor, and one-use broadcast permission
+prevents a stale controller from releasing a possibly sent entry. Commitment callbacks, certificate
 delivery and full application recovery remain. The Python service,
 controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.

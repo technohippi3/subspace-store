@@ -18,6 +18,7 @@ import { SalesStore } from "../src/application/store.ts";
 import { serveOperator } from "../src/application/operator-http.ts";
 import { servePending } from "../src/application/pending-http.ts";
 import { object, hex, integer } from "../src/bitcoin/validation.ts";
+import { entryLifecycle, entryLifecycleRestart } from "./entry-lifecycle.ts";
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 const repository = fileURLToPath(new URL("../../", import.meta.url));
@@ -321,6 +322,9 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
     yield* Scope.close(lifetime, Exit.void); lifetime = yield* Scope.fork(parentScope); store = yield* Scope.provide(lifetime)(open());
     const restoredEntry = yield* store.registry.entries.find({ entry: "b".repeat(32), root: "c".repeat(64), oids: ["o1", "o5"] });
     assert.equal(restoredEntry.found, true); if (restoredEntry.found) assert.equal(restoredEntry.acknowledged, true);
+    yield* entryLifecycle(store);
+    yield* Scope.close(lifetime, Exit.void); lifetime = yield* Scope.fork(parentScope); store = yield* Scope.provide(lifetime)(open());
+    yield* entryLifecycleRestart(store);
     yield* store.listName("two@space", 1_000);
     const second = yield* store.request({ handle: "two@space", script_pubkey: "5120" + "2".padStart(64, "0") });
     const invoice = yield* store.quote(second.token); assert(invoice.address);
@@ -364,7 +368,7 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
       "ts/src/bitcoin/refund-estimate.ts", "ts/src/bitcoin/excess-fee.ts", "ts/src/application/assessments.ts",
       "ts/src/application/http.ts", "ts/src/application/operator-http.ts", "ts/src/application/authenticated-http.ts",
       "ts/src/application/pending-http.ts", "ts/src/application/entry.ts", "ts/src/application/registry.ts",
-      "ts/src/application/bound-entries.ts", "ts/src/application/bound-records.ts"];
+      "ts/src/application/bound-entries.ts", "ts/src/application/bound-records.ts", "ts/regtest/entry-lifecycle.ts"];
     writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
       files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
       checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
@@ -378,7 +382,9 @@ test("Core 31.2 regtest observes payments, reorgs, spent receipts and mempool re
         "authenticated-operator-inspection-with-core", "cancelled-partial-invoice-stays-refund-only",
         "fresh-checkout-separates-late-old-payments", "registry-entry-acknowledgment-with-core",
         "registry-frozen-pending-acknowledgment", "registry-issuing-recheck-after-reorg", "bound-entry-idempotent-retry",
-        "bound-entry-root-mismatch-refused", "bound-entry-restart-retains-binding"] }, null, 2), { mode: 0o600 });
+        "bound-entry-root-mismatch-refused", "bound-entry-restart-retains-binding", "bound-entry-closure-releases-once",
+        "bound-entry-late-create-stays-closed", "bound-entry-arm-granted-once", "bound-entry-armed-close-refused",
+        "bound-entry-lifecycle-restart"] }, null, 2), { mode: 0o600 });
     t.diagnostic(`Core 31.2 passed; retained artifacts: regtest/.run/${name}`);
   })));
   await stop();

@@ -26,7 +26,7 @@ class EntryRecovery(unittest.TestCase):
                     check(config(tmp, write=False, store__implementation=mode))
         b = dict(entry_key="1" * 32, root="a" * 64, members=["o1"])
         good = dict(found=True, entry=b["entry_key"], root=b["root"], oids=["o1"],
-                    acknowledged=True, batchable=True)
+                    acknowledged=True, batchable=True, phase="open", delegate=None)
         for reply in ({"found": 0}, {"found": True}, dict(good, root="b" * 64),
                       dict(good, oids=["o2"]), dict(good, acknowledged=1), dict(good, extra=True)):
             calls = []
@@ -63,9 +63,13 @@ class EntryRecovery(unittest.TestCase):
                         return {"found": False}
                     if create:
                         self.creates += 1
-                        self.entered = dict(found=True, acknowledged=True, batchable=True)
+                        self.entered = dict(found=True, acknowledged=True, batchable=True, phase="open", delegate=None)
                         raise ConnectionError("simulated lost entry reply")
                     return self.entered
+
+                def arm_entry(self, b):
+                    self.entered.update(phase="armed", delegate=b["delegate_in"])
+                    return dict(self.entered, granted=True)
 
             class Subs:
                 def post(self, path, body, **kwargs):

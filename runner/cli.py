@@ -424,20 +424,22 @@ class Runner:
             raise NotConfirmed(f"{bid} is {b['state']}, not checkpointed; nothing was sent")
         _confirm("batch id", bid, confirm, self.ask)
         went = self.c.issue(bid, fee_rate)
-        b = self.c.batch(went)
-        return {"bid": went, "state": b["state"], "txid": b["txid"],
+        b = self.c.batch(went) if went else self.c.batch(bid)
+        return {"bid": b["bid"], "state": b["state"], "txid": b["txid"],
                 "rebuilt_from": bid if went != bid else None}
 
     def resume(self, bid, confirm=None):
-        """A batch left `issuing` and never sent: the binding check again,
-        the intent journaled again, then one send."""
+        """Resume a known-unsent release, or recheck an issuing batch
+        before acquiring its one-use permission and sending."""
         self.require_recovered()
         b = self.c.batch(bid)
-        if self.private_purchase:
+        release = (getattr(self.store, "bound_entries", False) and b["state"] in ("releasing", "rebuilding", "rebuilt")
+                   and b.get("release_failed") is not None)
+        if self.private_purchase and not release:
             self._fee_rate(b.get("fee_rate"))
         if self.network == "mainnet":
             self.require_networks()
-        if b["state"] != "issuing" or b["attempted"]:
+        if not release and (b["state"] != "issuing" or b["attempted"]):
             raise NotConfirmed(f"{bid} is {b['state']}"
                                + (", and its broadcast was attempted" if b["attempted"] else "")
                                + "; only a batch issuing and never sent resumes; nothing was sent")

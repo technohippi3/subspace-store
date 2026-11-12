@@ -9,6 +9,7 @@ runs on the store's host.
 
 import base64
 import json
+import re
 import sqlite3
 import weakref
 from pathlib import Path
@@ -163,19 +164,49 @@ class TypeScriptStore(Store):
     Python store's anonymous issuing marks."""
     bound_entries = True
 
-    def entry_status(self, batch, create=False):
-        payload = {"entry": batch.get("entry_key"), "root": batch["root"],
-                   "oids": sorted(batch["members"])}
-        path = "/operator/issuance-entries" + ("" if create else "/lookup")
-        result = self.op("POST", path, payload)
-        if not create and isinstance(result, dict) and set(result) == {"found"} and result["found"] is False:
+    @staticmethod
+    def _entry_payload(batch):
+        return {"entry": batch.get("entry_key"), "root": batch["root"], "oids": sorted(batch["members"])}
+
+    @staticmethod
+    def _entry_response(result, payload, lookup=False, arm=False):
+        if lookup and isinstance(result, dict) and set(result) == {"found"} and result["found"] is False:
             return result
-        fields = {"found", "entry", "root", "oids", "acknowledged", "batchable"}
+        fields = {"found", "entry", "root", "oids", "phase", "delegate", "acknowledged", "batchable"}
+        if arm:
+            fields.add("granted")
         if not isinstance(result, dict) or set(result) != fields or result["found"] is not True or \
                 any(result[k] != payload[k] for k in ("entry", "root", "oids")) or \
-                not isinstance(result["acknowledged"], bool) or not isinstance(result["batchable"], bool):
+                not isinstance(result["acknowledged"], bool) or not isinstance(result["batchable"], bool) or \
+                result["phase"] not in ("open", "closed", "armed"):
+            raise Refused("invalid or mismatched issuance entry response; not sent")
+        if (result["phase"] != "armed" and result["delegate"] is not None) or \
+                (result["phase"] == "closed" and result["batchable"]) or \
+                (result["phase"] == "armed" and (not isinstance(result["delegate"], str) or
+                 re.fullmatch(r"[0-9a-f]{64}:(?:0|[1-9][0-9]{0,9})", result["delegate"]) is None)):
+            raise Refused("invalid issuance entry phase; not sent")
+        if result["phase"] == "armed" and int(result["delegate"].split(":")[1]) > 0xffffffff:
+            raise Refused("invalid issuance entry delegate; not sent")
+        if arm and (result["phase"] != "armed" or result["delegate"] != payload["delegate"] or
+                    not isinstance(result["granted"], bool) or (result["granted"] and not result["acknowledged"])):
             raise Refused("invalid or mismatched issuance entry response; not sent")
         return result
+
+    def entry_status(self, batch, create=False):
+        payload = self._entry_payload(batch)
+        result = self.op("POST", "/operator/issuance-entries" + ("" if create else "/lookup"), payload)
+        return self._entry_response(result, payload, lookup=not create)
+
+    def close_entry(self, batch):
+        payload = self._entry_payload(batch)
+        result = self._entry_response(self.op("POST", "/operator/issuance-entries/close", payload), payload)
+        if result["phase"] != "closed":
+            raise Refused("entry was not closed; locks retained")
+        return result
+
+    def arm_entry(self, batch):
+        payload = dict(self._entry_payload(batch), delegate=batch["delegate_in"])
+        return self._entry_response(self.op("POST", "/operator/issuance-entries/arm", payload), payload, arm=True)
 
 
 def configured_store(config):

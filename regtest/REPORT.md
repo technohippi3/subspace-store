@@ -1640,3 +1640,82 @@ d32fca31fa8afda1cf9a8155d9ccd99891290330b744a6e27759a7464c974709  ts/src/applica
 394c5367498567633739fe020ac320db3c9f3206502c22468696d38699062c48  ts/src/application/bound-entries.ts
 c848237a3e79f623158b00beb1daac4983f98f4fe7d0e468bfd6f6609cc6087a  ts/src/application/bound-records.ts
 ```
+
+
+## TypeScript known-unsent entry release, 2026-11-12
+
+Core run `core-adapter-2026-11-12T05-28-19-850Z-c6cb119c` passes
+39 checks bound to 33 source hashes. Real paid orders pass through closure,
+return to converted, and enter a new bound entry. Retrying the retired entry
+cannot recreate or release locks. The new entry grants broadcast permission
+once, refuses closure after arming, and retains both markers and the consumed
+grant across store restart. Roots and delegate are public mock identities;
+this is not a Spaces commitment or proof. The earlier real payment/reorg,
+refund-family, fee assessment and pending-set scenarios remain in this run.
+Only fresh isolated regtest wallets were used.
+
+Separate HTTP/controller tests run the shipped controller and client against
+the TypeScript listener, SQLite and journals with a recording subs stand-in.
+Closure and arming are exclusive. A stale controller database and journal
+cannot release an armed entry or obtain another grant. Lost close replies,
+lost rollback replies and actual process exits after rollback, parking and
+atomic successor creation resume with one rollback and one successor.
+Cancellation during an unconfirmed close survives recovery. A crash after
+arming is uncertain even when no network call happened. The independent
+entry model checks closure, foreign ownership, cancellation, one-use grants
+and snapshot continuity without production imports.
+
+The controller checks exact scripts and roots before local rollback, retains
+monotonically growing failed membership, and verifies the successor digest.
+Retirement and successor creation share one local transaction. All-failed
+batches retire without a successor or repeated alert. Legacy rollback remains
+covered. The Python store's frozen payment rules are unchanged. The
+TypeScript receipt shape has changed; pre-release server and driver updates
+must be coordinated and older replies fail closed.
+
+The named additions are O20–O27 and A27–A32. Development coverage reports
+291 fixed-price cases with no gaps, plus 40 deferred cases. TypeScript
+model/store and Python controller coverage is 41/136/32. The pilot production
+gate still refuses for 112 cases. Commitment/finality/certificate callbacks,
+supersession of armed entries and whole-application recovery remain. These
+component results do not open sales or qualify a complete sale, host recovery
+or the installer. No existing wallet, managed credential, deployed service
+or mainnet state changed.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+f64968a714d684b3c119d7287589b224fa107fc8218364aa088a7ef54f10c0f1  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+9fb2512bba7c820ebcab8c11ab7745fe63979bde2cbeed1c8f07e381574e0646  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a  ts/src/refunds/types.ts
+9023af566c4978d910bd776cb3a9038dc2002f4eeb17a82a751c6f8ff8556d2a  ts/src/refunds/book.ts
+67e320f37429030a3d33d2c319cafd656e6d96d8354234fe032ea5c7947a18f3  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+a3fa7976137b5a91e4c5b6cfde6bd92ade819394e3f1938eed3573d9d6527682  ts/src/application/records.ts
+6ecbe6e66987ab2a402be91a5da898264cd15cf258a32790f08505291013bac4  ts/regtest/core.test.ts
+7d10c5be62c77a6915c9b5212364c93203cbc90eb01e69b02ecb2939c5a8a5c1  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+a232f7d62cf57390b4b5b617c85d4427240a887e13cad987aca3dac3095b6f52  ts/src/application/monitor.ts
+0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
+d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin/excess-fee.ts
+09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0  ts/src/application/assessments.ts
+767476ffe8c7461970b19404f1fde150001d3396c6c7e2f5e649dff79ca18052  ts/src/application/http.ts
+0800a9ae085f7e5e6877c30a0541fc0f53e9b6ce391662a13627e90225c623eb  ts/src/application/operator-http.ts
+205663367370e64521a8aad08d442ee1b9a5c3afa50837bf32660dd05b5996e1  ts/src/application/authenticated-http.ts
+8cd0b89fbf629272935bfff87fbfdb91701dd2cfe8caa63b02338387e475378c  ts/src/application/pending-http.ts
+227fc72491795cb4cd3b193860048635706f09f36d54b5d632c2f29e8d855310  ts/src/application/entry.ts
+4b5a13349eb2b125e6b94d2d544f7df2ca8e06bc991d8bbd00306f97f7367617  ts/src/application/registry.ts
+f1e0ba998513d08d745b215c1343b3805e464ce28b15139c5e8bbe52273c4e73  ts/src/application/bound-entries.ts
+74f161f1914f0a3cf68d493a6572468bad5981026723595a78d711d115cc55ae  ts/src/application/bound-records.ts
+8d77f6124e99851cb63fd59f0d18605fe01cd2df7ceee47464cdc46613d8b55a  ts/regtest/entry-lifecycle.ts
+```

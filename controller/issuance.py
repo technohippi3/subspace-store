@@ -56,7 +56,11 @@ class Issuance:
             if not b.get("entry_key") or acked.get("entry_key") != b["entry_key"]:
                 return False
             entry = self.registry.entry_status(b)
-            return entry["found"] and entry["acknowledged"] and (bool(b["attempted"]) or entry["batchable"])
+            if not entry["found"] or not entry["acknowledged"]:
+                return False
+            if b["attempted"]:
+                return entry["phase"] == "armed" and entry["delegate"] == b["delegate_in"]
+            return entry["phase"] == "open" and entry["batchable"]
         return all(self.registry.acknowledged_status(m) == "issuing" for m in b["members"])
 
     def _send(self, bid):
@@ -68,6 +72,15 @@ class Issuance:
         if not self._issuance_acknowledged(b):
             raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
         self._save(bid, journal=False, attempted=1)
+        if getattr(self.registry, "bound_entries", False):
+            try:
+                permission = self.registry.arm_entry(self.batch(bid))
+            except Exception:
+                self._uncertain(bid, "broadcast permission has no confirmed answer", "entry arm outcome uncertain")
+                raise
+            if not permission["granted"] or not permission["acknowledged"] or not self._issuance_acknowledged(self.batch(bid)):
+                self._uncertain(bid, "broadcast permission not exclusively confirmed", "entry arm outcome uncertain")
+                raise Refused("broadcast permission unavailable or already consumed; not sent")
         try:
             # The body as it came, so that whatever subs answered is kept.
             body = self.subs.post(f"/spaces/{b['space']}/broadcast",
@@ -108,7 +121,7 @@ class Issuance:
         if not getattr(self.registry, "bound_entries", False):
             return
         for b in self.batches():
-            if b["state"] != "checkpointed":
+            if b["state"] not in ("checkpointed", "issuing", "releasing", "rebuilding"):
                 continue
             acked = self.acknowledged(b["bid"])
             if not acked or not acked.get("entry_key"):
@@ -116,9 +129,20 @@ class Issuance:
             if any(acked[k] != b[k] for k in ("root", "prior_root", "members", "digest", "space")) or \
                     (b.get("entry_key") and b["entry_key"] != acked["entry_key"]):
                 raise Refused("controller entry binding differs from its journal; reconcile before continuing")
-            if acked["state"] == "checkpointed" and b.get("entry_key") == acked["entry_key"]:
+            # Failed membership grows monotonically. Either local storage or
+            # the journal can be the newer copy after a partial recovery.
+            if b.get("release_failed") is not None and acked.get("release_failed") is not None:
+                failed = sorted(set(json.loads(b["release_failed"])) | set(json.loads(acked["release_failed"])))
+                self._save(b["bid"], journal=False, release_failed=json.dumps(failed))
+                b = self.batch(b["bid"])
+                acked = dict(acked, release_failed=json.dumps(failed))
+            if acked["state"] == b["state"] and b.get("entry_key") == acked["entry_key"]:
                 continue
-            if acked["state"] not in ("checkpointed", "issuing", *self.SENT):
+            if b["state"] == "rebuilding" and acked["state"] == "releasing":
+                continue
+            if b["state"] != "checkpointed" and acked["state"] in ("checkpointed", "issuing"):
+                continue
+            if acked["state"] not in ("checkpointed", "issuing", "releasing", "rebuilding", "rebuilt", *self.SENT):
                 raise Refused("unsupported journal state for checkpointed entry recovery")
             self._adopt_journal_copy(acked)
             if acked["state"] == "issuing":
@@ -128,11 +152,22 @@ class Issuance:
     def resume(self, bid):
         self.require_restored()
         b = self.batch(bid)
+        if getattr(self.registry, "bound_entries", False) and b["state"] in ("releasing", "rebuilding", "rebuilt") and b.get("release_failed") is not None:
+            return self.resume_release(bid)
         if b["state"] != "issuing":
             raise Refused("nothing to resume")
         if b["attempted"]:
             raise Refused("the broadcast was attempted: the outcome is uncertain")
         if getattr(self.registry, "bound_entries", False):
+            entry = self.registry.entry_status(b)
+            if entry["found"] and entry["phase"] == "armed":
+                self._save(bid, journal=False, attempted=1, delegate_in=entry["delegate"])
+                self._uncertain(bid, "entry was already armed", "local attempted-send evidence is stale")
+                raise Refused("entry already armed; outcome uncertain, not sent")
+            if entry["found"] and entry["phase"] == "closed":
+                return self.release_unsent(bid, [m for m in b["members"] if not self.registry.batch_entry_ok(m)])
+            if entry["found"] and entry["acknowledged"] and not entry["batchable"]:
+                return self.release_unsent(bid, self.failing(bid, recheck_issuing=True))
             self._require_bound(b)
             delegate = self.live_delegate(b["space"])
             self._save(bid, journal=False, intent=1, delegate_in=delegate["outpoint"])
@@ -153,7 +188,7 @@ class Issuance:
 
     def _require_bound(self, b):
         entry = self.registry.entry_status(b)
-        if not entry["found"] or not entry["acknowledged"] or not entry["batchable"]:
+        if not entry["found"] or entry["phase"] != "open" or not entry["acknowledged"] or not entry["batchable"]:
             raise Refused("issuance entry is not currently confirmed and batchable; locks retained, not sent")
         return entry
 
@@ -175,9 +210,18 @@ class Issuance:
             raise Refused("entry identity not acknowledged off-host; entry not requested")
         entry = self.registry.entry_status(b)
         if not entry["found"]:
-            if self.failing(bid):
-                raise Refused("entry candidates changed; reconcile before releasing or rebuilding")
+            failing = self.failing(bid)
+            if failing:
+                return self.release_unsent(bid, failing)
             entry = self.registry.entry_status(b, create=True)
+        if entry["found"] and entry["phase"] == "armed":
+            self._save(bid, journal=False, state="issuing", intent=1, attempted=1, delegate_in=entry["delegate"])
+            self._uncertain(bid, "entry was already armed", "local attempted-send evidence is stale")
+            raise Refused("entry already armed; outcome uncertain, not sent")
+        if entry["found"] and entry["phase"] == "closed":
+            return self.release_unsent(bid, [m for m in b["members"] if not self.registry.batch_entry_ok(m)])
+        if entry["found"] and entry["acknowledged"] and not entry["batchable"]:
+            return self.release_unsent(bid, self.failing(bid, recheck_issuing=True))
         if not entry["found"] or not entry["acknowledged"] or not entry["batchable"]:
             raise Refused("issuance entry is not currently confirmed and batchable; locks retained, not sent")
         delegate = self.live_delegate(b["space"])

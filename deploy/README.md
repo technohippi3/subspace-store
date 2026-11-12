@@ -26,8 +26,11 @@ to `store.implementation: "python"`; the TypeScript pilot uses
 `"typescript"`. Unknown values refuse before setup. There is no server
 probe or failure fallback, and the TypeScript server rejects anonymous
 issuing marks. `docs/spec/ENTRY-RECOVERY.md` defines its bound-entry
-protocol. That partial interface still lacks safe release, delivery and
-whole-host recovery; these examples do not make it deployable for sales.
+protocol, extended by `docs/spec/ENTRY-RELEASE.md` with permanent closure
+and one-use broadcast permission. Server and controller must update together;
+older pre-release receipt shapes fail closed. Known-unsent release is
+resumable, but delivery and whole-host recovery remain incomplete. These
+examples do not make it deployable for sales.
 
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,

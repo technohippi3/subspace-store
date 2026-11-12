@@ -42,7 +42,8 @@ test("O9: operator entry and subs pending have separate authenticated routes and
       const issuing = await call(op.url, "/operator/issuance-entries", operator,
         JSON.stringify({ entry: "1".repeat(32), root: "a".repeat(64), oids: ["o1"] }));
       assert.equal(issuing.status, 200);
-      assert.deepEqual(issuing.value, { found: true, entry: "1".repeat(32), root: "a".repeat(64), oids: ["o1"], acknowledged: true, batchable: true });
+      assert.deepEqual(issuing.value, { found: true, entry: "1".repeat(32), root: "a".repeat(64), oids: ["o1"],
+        phase: "open", delegate: null, acknowledged: true, batchable: true });
       for (const path of ["/ack", "/committed", "/operator/issuing"])
         assert.equal((await call(registry.url, path, subs, "{}")).status, 404);
     });

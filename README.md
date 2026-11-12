@@ -58,7 +58,9 @@ operator inspection listener now runs in tests (`docs/spec/OPERATOR-INSPECTION.m
 Atomic issuing marks, live journal guards and frozen pending sets now have
 separate qualification (`docs/spec/REGISTRY-ENTRY.md`). Bound entry identities
 now recover interrupted HTTP replies and preserve uncertain sends across
-restart (`docs/spec/ENTRY-RECOVERY.md`). Commitment callbacks,
+restart (`docs/spec/ENTRY-RECOVERY.md`). Known-unsent release/rebuild now
+closes entries permanently and requires one-use permission before sending
+(`docs/spec/ENTRY-RELEASE.md`). Commitment callbacks,
 certificate delivery and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.
 

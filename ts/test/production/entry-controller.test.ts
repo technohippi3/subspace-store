@@ -26,7 +26,7 @@ test("O15: dropped entry replies before or after store commit recover one bindin
   }
 });
 test("O16: process death at entry, intent or attempted-send boundaries preserves the correct uncertainty", async (t) => {
-  for (const mode of ["stop-after-entry", "stop-after-intent", "stop-after-attempt", "stop-after-send"]) {
+  for (const mode of ["stop-after-entry", "stop-after-intent", "stop-after-attempt", "stop-after-arm", "stop-after-send"]) {
     const f = fixture(t);
     await use(f, store => Effect.gen(function* () {
       yield* paidPair(store, f); const listener = yield* serveOperator(store, Effect.succeed(credential));
@@ -42,22 +42,37 @@ test("O16: process death at entry, intent or attempted-send boundaries preserves
     }));
   }
 });
-test("O17: a recovered entry waits through payment loss and refuses unsupported rollback or host restore", async (t) => {
+test("O23: a dropped arm reply never permits a controller send or another permission grant", async (t) => {
+  for (const forwarded of [false, true]) {
+    const f = fixture(t);
+    await use(f, store => Effect.gen(function* () {
+      yield* paidPair(store, f); const listener = yield* serveOperator(store, Effect.succeed(credential));
+      const proxy = yield* Effect.promise(() => faultProxy(t, listener.url)), command = controller(f, proxy.url);
+      proxy.control[forwarded ? "afterPath" : "beforePath"] = "/operator/issuance-entries/arm";
+      const first = yield* Effect.promise(() => command("issue"));
+      assert.equal(first.state, "broadcast_uncertain"); assert.equal(first.attempted, 1); assert.equal(first.sends, 0);
+      const input = { entry: first.key, root: "a".repeat(64), oids: ["o1", "o2"] };
+      const entry = yield* store.registry.entries.find(input); assert(entry.found);
+      assert.equal(entry.phase, forwarded ? "armed" : "open");
+      assert.equal((yield* Effect.promise(() => command("continue"))).sends, 0);
+      if (forwarded) assert.equal((yield* store.registry.entries.arm({ ...input, delegate: "d".repeat(64) + ":0" })).granted, false);
+    }));
+  }
+});
+test("O17: payment loss before arming safely rebuilds the entry while whole-host recovery remains gated", async (t) => {
   const f = fixture(t);
   await use(f, store => Effect.gen(function* () {
-    const tokens = yield* paidPair(store, f); const listener = yield* serveOperator(store, Effect.succeed(credential));
+    yield* paidPair(store, f); const listener = yield* serveOperator(store, Effect.succeed(credential));
     const proxy = yield* Effect.promise(() => faultProxy(t, listener.url)); proxy.control.after = true;
     const command = controller(f, proxy.url); yield* Effect.promise(() => command("issue"));
     f.node.outputs[1]!.confirmations = 2;
-    const blocked = yield* Effect.promise(() => command("continue")); assert.equal(blocked.sends, 0);
-    assert.match(blocked.error!, /not currently confirmed and batchable/);
-    assert.match((yield* Effect.promise(() => command("rollback"))).error!, /reconcile the issuance entry/);
-    const rebuild = yield* Effect.promise(() => command("rebuild"));
-    assert.match(rebuild.error!, /entry release is not implemented/); assert.equal(rebuild.state, "checkpointed");
+    const rebuilt = yield* Effect.promise(() => command("continue")); assert.equal(rebuilt.sends, 0); assert.equal(rebuilt.error, null);
+    assert.equal(rebuilt.state, "rebuilt"); assert.deepEqual(rebuilt.children, ["b2"]); assert.equal(rebuilt.rollbacks, 1);
+    assert.equal((yield* store.inspectionOrder("o2")).status, "converted");
+    assert.equal((yield* store.registry.entry("o2")).batch_entry, false);
+    assert.equal((yield* store.inspectionOrder("o2")).price_reserve, 1000);
     assert.match((yield* Effect.promise(() => command("host-restore"))).error!, /whole-host reconciliation is not implemented/);
-    yield* Effect.promise(() => assert.rejects(Effect.runPromise(store.cancel(tokens[0]!)), /once issuing/));
-    f.node.outputs[1]!.confirmations = 3;
-    const recovered = yield* Effect.promise(() => command("continue")); assert.equal(recovered.sends, 1); assert.equal(recovered.state, "broadcast");
+    const child = yield* Effect.promise(() => command("finish-child")); assert.equal(child.sends, 1); assert.equal(child.child_states.b2, "broadcast");
   }));
 });
 test("O19: an older controller database adopts its journaled entry identity and never assumes an intent was unsent", async (t) => {

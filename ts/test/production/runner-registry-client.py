@@ -22,7 +22,7 @@ class SendGate:
         self.journal = SimpleNamespace(down=lambda: not controller_ack)
         self.sent = 0
         self.row = dict(bid="b1", space="@space", root="a" * 64, entry_key="1" * 32,
-                        delegate_in="mock-delegate", members=["o1"], intent=1,
+                        delegate_in="d" * 64 + ":0", members=["o1"], intent=1,
                         fee_rate=1, attempted=0, state="issuing")
         self.subs = self
 
