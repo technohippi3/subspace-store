@@ -19,6 +19,15 @@ a VPS, creates wallet keys or chooses commercial settings.
 | O148 | Loss of the seller cannot be repaired from a local mirror. Restore requires fresh remote materialization and exact acknowledged prefixes. | client/test-ssh.mjs executes remote restore after deleting its fixture seller files; installed service recovery is a separate gate |
 | O149 | Representative 10,000-order actual application restore completes under one minute. Live guard latency is recorded separately without cache. | replay/replay.py generates and restores fresh production records from the source under test; it measures restore and live guard separately |
 | O150 | Failed startup remains paused; rollback requires matching compatibility epochs and an explicit signed whitelist. Ordinary update never restores a newly crossed review threshold. | native/test_release.py; native/test_profile.py; systemd-fixture/test_package.py |
+| O184 | After an actual host reboot with an active hold and Infisical unavailable, restoring the ordinary source recreates private runtime storage without installer preparation or attended fallback; the address, review count and hold remain. | systemd-fixture/test_package.py actual guest reboot and per-start fetch units; complete signed application rehearsal additionally required |
+
+Every secret-fetch unit lets systemd create its validated relative runtime
+directory under /run with mode 0700 and the secrets service identity. The
+shared parent survives role oneshot completion so dependent services can load
+their credentials; it disappears on reboot. Each new service start still
+retrieves fresh values, and failure does not use an old role directory. No
+ordinary restart or source restoration requires the installer to create /run
+paths again.
 
 O151 verifies protected systemd255 credential files with the actual Node helper.
 O152 closes unknown old payment prompts and journals pause before observation.

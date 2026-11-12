@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import pwd
 import shlex
-from common import command, json_file, paths, require, sync_directory
+from common import ID, command, json_file, paths, require, sync_directory
 
 UNIT_DIRECTORY = Path("/usr/lib/systemd/system")
 
@@ -44,7 +44,10 @@ def prepare(config, release):
     Path(config["currentPath"]).parent.mkdir(parents=True, exist_ok=True)
     secrets = json_file(config["secretsConfig"])
     secret_root = Path(secrets["outputRoot"])
-    require(str(secret_root).startswith("/run/"))
+    require(secret_root.is_absolute() and secret_root.parts[:2] == ('/', 'run') and
+            len(secret_root.parts) > 2 and all(ID.fullmatch(part) for part in secret_root.parts[2:]),
+            "runtime-storage-required")
+    runtime_directory = '/'.join(secret_root.parts[2:])
     secret_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     secret_identity = pwd.getpwnam("subspace-secrets")
     os.chown(secret_root, secret_identity.pw_uid, secret_identity.pw_gid)
@@ -55,6 +58,7 @@ def prepare(config, release):
         fetch_name = "subspace-secrets-" + config["installation"] + "-" + role + ".service"
         fetch_lines = ["[Unit]", "Description=Fetch installation runtime credentials", "After=network-online.target", "Wants=network-online.target",
             "[Service]", "Type=oneshot", "User=subspace-secrets", "Group=subspace-secrets", "UMask=0077", "TimeoutStartSec=30",
+            "RuntimeDirectory=" + runtime_directory, "RuntimeDirectoryMode=0700", "RuntimeDirectoryPreserve=yes",
             "PrivateTmp=yes", "ProtectSystem=strict", "ProtectHome=yes", "NoNewPrivileges=yes", "ReadWritePaths=" + str(secret_root),
             "ExecStart=/usr/bin/python3 " + str(release / "native/fetch-secrets.py") + " --config " + config["secretsConfig"] + " --role " + role]
         if secrets["source"] == "infisical":

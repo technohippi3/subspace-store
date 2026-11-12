@@ -138,6 +138,46 @@ class PackageTests(unittest.TestCase):
             self.assertNotIn(value, persisted + result.stdout + result.stderr)
         return result
 
+    def reboot_with_secret_outage(self):
+        host = self.host
+        boot = host.exec('cat', '/proc/sys/kernel/random/boot_id').stdout.strip()
+        host.put('/run/fixture-reboot-canary', 'volatile fixture marker', 0o600)
+        self.api_requests_before_reboot = len(host.requests)
+        host.api_available = False
+        host.exec('systemctl', 'reboot', success=False, timeout=15)
+        deadline = time.monotonic() + 180
+        while True:
+            try:
+                result = host.exec('cat', '/proc/sys/kernel/random/boot_id', success=False, timeout=3)
+                if result.returncode == 0 and result.stdout.strip() != boot:
+                    break
+            except subprocess.TimeoutExpired:
+                pass
+            self.assertLess(time.monotonic(), deadline, 'actual guest reboot was not observed')
+            time.sleep(.25)
+        host.exec('systemctl', 'is-system-running', '--wait', success=False, timeout=90)
+        host.exec('test', '!', '-e', '/run/fixture-reboot-canary')
+        self.assertEqual(host.exec('systemctl', 'show', 'subspace-fixture-store.service',
+                                   '--property=MainPID', '--value').stdout.strip(), b'0')
+        self.assertEqual(self.sql('select address from preserved_history'), [['fixture-historical-payment-address']])
+        self.assertEqual(self.sql('select review_count,blocker from fixture_settings'), [[7, 'active_hold']])
+        # Ordinary restoration must work without installer preparation or an
+        # attended source recreating the volatile parent directory.
+        host.api_available = True
+        host.exec('systemctl', 'reset-failed', 'subspace-secrets-fixture-store.service', 'subspace-fixture-store.service')
+        host.exec('systemctl', 'start', 'subspace-fixture-store.service', timeout=60)
+        self.assertNotEqual(host.exec('systemctl', 'show', 'subspace-fixture-store.service',
+                                      '--property=MainPID', '--value').stdout.strip(), b'0')
+        self.assertGreater(len(host.requests), self.api_requests_before_reboot)
+        root = self.secrets['outputRoot']
+        code = "import json,pwd,stat;from pathlib import Path;p=Path(" + repr(root) + ");s=p.stat();print(json.dumps({'mode':stat.S_IMODE(s.st_mode),'owner':s.st_uid==pwd.getpwnam('subspace-secrets').pw_uid,'regular':p.is_dir() and not p.is_symlink()}))"
+        properties = json.loads(host.exec('python3', '-c', code).stdout)
+        self.assertEqual(properties, {'mode': 0o700, 'owner': True, 'regular': True})
+        self.assertEqual(self.sql('select review_count,blocker from fixture_settings'), [[7, 'active_hold']])
+        return {'bootIdChanged': True, 'volatileCanaryLost': True, 'ordinaryRestoration': True,
+                'runtimeRootMode': properties['mode'], 'runtimeRootOwnerVerified': True,
+                'addressAndReviewAndHoldPreserved': True, 'manualDirectoryRepair': False}
+
     def test_actual_package_install_update_restarts_fences_and_failures(self):
         host = self.host
         first, _ = self.installer("fixture-v1")
@@ -184,6 +224,7 @@ class PackageTests(unittest.TestCase):
         (DRAFT / "evidence/O151-systemd255-credential-positive.json").write_text(json.dumps(positive, sort_keys=True) + "\n")
         self.assertEqual(self.installer("fixture-v1")[0]["unchanged"], True)
         self.sql("update fixture_settings set blocker='active_hold'")
+        reboot = self.reboot_with_secret_outage()
         blocked, code = self.installer("fixture-v2", success=False)
         self.assertEqual(code, 2)
         self.assertEqual(blocked["blockers"], [{"kind": "active_hold", "id": "fixture-order"}])
@@ -223,6 +264,7 @@ class PackageTests(unittest.TestCase):
             "productionDomainQualification": False, "fresh": first, "updated": updated, "failed": failed, "rolledBack": rolled,
             "historyPreserved": True, "reviewCountPreserved": True, "infisicalUnavailableStartRefused": True,
             "alchemyVersion": "2.0.0-beta.86", "alchemySameArtifact": True, "alchemyRemovalAndDestroyPreserveData": True,
+            "actualRebootSecretRestoration": reboot,
             "ordinaryActualControllerSnapshotRemoteAck": True, "competingSubsRestartRefusedDuringCopy": True,
             "installerSha256": hashlib.sha256((DRAFT / "native/installer.py").read_bytes()).hexdigest()}, sort_keys=True) + "\n")
 

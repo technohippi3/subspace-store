@@ -81,3 +81,6 @@ test('O150: signed rollback and explicit reviewed admission state survive native
     'type=bind,source='+join(deployment,'native')+',target=/code,readonly','--workdir','/code','subspace-recovery-ssh-fixture:20261112',
     'python3','-m','unittest','test_profile','test_recover','-v']);await qualifyPlatform();
 });
+test('O184: actual reboot recreates private secret runtime storage and ordinary source restoration preserves the hold',async()=>{
+  await qualifyPlatform();
+});
