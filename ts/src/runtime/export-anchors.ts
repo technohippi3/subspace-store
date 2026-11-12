@@ -3,7 +3,7 @@ import type { CoreAdapter } from "../bitcoin/core.ts";
 import { BitcoinRpc, type RpcConfig } from "../bitcoin/rpc.ts";
 import type { ExportContext } from "../application/certificate-export.ts";
 import { ExportError } from "../application/certificate-export.ts";
-interface RootAnchor { spaces_root:string; nums_root:string; block:{height:number;hash:string} }
+interface RootAnchor { spaces_root:string; nums_root:string|null; block:{height:number;hash:string} }
 function exact(value:unknown,keys:string):asserts value is {[key:string]:unknown}{
   if(!value||typeof value!=="object"||Array.isArray(value)||Object.keys(value).sort().join()!==keys.split(',').sort().join())throw Error("invalid anchors");
 }
@@ -11,7 +11,8 @@ function anchors(value:unknown):RootAnchor[]{
   if(!Array.isArray(value)||!value.length||value.length>512)throw Error("bounded anchors required");
   const seen=new Set<number>();let previous=Number.MAX_SAFE_INTEGER;
   for(const row of value){exact(row,"spaces_root,nums_root,block");exact(row.block,"height,hash");
-    if(![row.spaces_root,row.nums_root,row.block.hash].every(h=>typeof h==="string"&&/^[0-9a-f]{64}$/.test(h))||
+    if(![row.spaces_root,row.block.hash].every(h=>typeof h==="string"&&/^[0-9a-f]{64}$/.test(h))||
+      row.nums_root!==null&&(typeof row.nums_root!=="string"||!/^[0-9a-f]{64}$/.test(row.nums_root))||
       !Number.isSafeInteger(row.block.height)||(row.block.height as number)<0||(row.block.height as number)>=previous||seen.has(row.block.height as number))throw Error("invalid anchors");
     previous=row.block.height as number;seen.add(previous);
   }

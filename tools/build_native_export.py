@@ -39,5 +39,7 @@ manifest = dict(version=1, tool='subspace-certificate-tools', library='libverita
     target=next(line.split(': ', 1)[1] for line in rustc.splitlines() if line.startswith('host: ')),
     rustc=rustc.splitlines()[0], cargoTomlSha256=sha(crate/'Cargo.toml'), lockSha256=sha(crate/'Cargo.lock'),
     sourceSha256=sha(crate/'src/main.rs'), binarySha256=sha(binary), remappedBuildPaths=True, profiles=['spacecert-v1','spacemsg-0.4.4'])
-owned(target/'native-artifact.json').write_text(json.dumps(manifest, indent=2)+'\n')
+metadata = owned(target/'native-artifact.json')
+metadata.write_text(json.dumps(manifest, indent=2)+'\n')
+metadata.chmod(0o644)
 print(json.dumps(dict(binary=str(binary.relative_to(root)), sha256=manifest['binarySha256'], manifest=str((target/'native-artifact.json').relative_to(root)))))

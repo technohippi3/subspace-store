@@ -26,6 +26,7 @@ jobs:
 
   typescript:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: ts
@@ -37,6 +38,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install native package integration prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils genisoimage openssh-client gpgv ubuntu-cloudimage-keyring
+          docker info > /dev/null
       - name: Install pinned native compiler
         run: rustup toolchain install 1.94.1 --profile minimal
       - name: Fetch exact native crates and build the owned exporter offline
@@ -46,7 +52,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Type check the port, tests included
         run: npm run check
-      - name: TypeScript models, domain tests and baseline vector replay
+      - name: TypeScript models, application and native package integration
         run: npm test
 
   core-regtest:

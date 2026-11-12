@@ -11,6 +11,7 @@ permissions:
 jobs:
   readiness:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,6 +20,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: ts/.node-version
+      - name: Install native package integration prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils genisoimage openssh-client gpgv ubuntu-cloudimage-keyring
+          docker info > /dev/null
       - name: Install pinned native compiler
         run: rustup toolchain install 1.94.1 --profile minimal
       - name: Fetch exact native crates and build the owned exporter offline

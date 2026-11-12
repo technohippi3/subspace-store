@@ -7,3 +7,8 @@ regtest/verifier/target/
 regtest/.keep-run.*/
 ts/node_modules/
 native/export/target/
+deploy/alchemy/node_modules/
+deploy/alchemy/.alchemy/
+deploy/vm-cache/
+deploy/evidence/
+/.release-candidate/

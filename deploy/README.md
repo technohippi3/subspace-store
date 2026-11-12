@@ -1,4 +1,11 @@
-# Host examples
+# Native package and host examples
+
+`NATIVE-PACKAGE.md` documents the implemented standalone native installer,
+updater, Alchemy existing-host driver, scoped Infisical retrieval and encrypted
+SSH recovery backend. Its first profile uses existing ready Core and spaced
+wallets. Complete installed-application acceptance is recorded separately from
+source and platform tests. The older example files below are not generated
+installation profiles. `OPERATIONS.md` gives the native operator commands.
 
 These files are examples of how the store and its operator tools would be
 configured on a host. Nothing in this repository installs them, and
@@ -125,12 +132,13 @@ are deployment preparation; these examples do none of them. See
 `docs/PRIVATE-PURCHASE.md`. The binding patch adds no authentication for
 other processes on the same host.
 
-## Planned installation and updates
+## Installation and updates contract
 
-The contract below is part of `../docs/spec/PORT-PLAN.md`. The installer,
-updater, Alchemy driver and Infisical runtime retrieval described here are
-not built. Existing examples above describe the Python baseline, including
-its locally generated tokens; they are not an Infisical integration.
+The contract below is part of `../docs/spec/PORT-PLAN.md`. Its native
+implementation is under `native/`, `client/`, `recovery/` and `alchemy/`.
+`../docs/spec/NATIVE-PACKAGE.md` maps the executable checks and their limits.
+Existing examples above describe the Python baseline, including its locally
+generated tokens; they are not an Infisical integration.
 
 The first supported package uses native Linux/systemd services and stable
 data paths separate from versioned release directories. It runs directly

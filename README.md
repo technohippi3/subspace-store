@@ -40,7 +40,7 @@ These source checks do not establish deployed acceptance or opening sales.
 `docs/spec/PORT-PLAN.md` is the port and release handoff. It separates the
 Python owner-only test baseline from the TypeScript pilot, places essential
 seller commands before the pilot gate, and records the deployment and
-recovery work still required. `deploy/README.md` describes the planned
+recovery work still required. `deploy/README.md` describes the
 native systemd installer, safe updates and Infisical contract. Stage 1 now
 has an independent TypeScript pilot model and production release-coverage
 gate (`docs/spec/PILOT-SPEC.md`). The Effect-based storage component now has
