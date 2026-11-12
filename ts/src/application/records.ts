@@ -10,6 +10,7 @@ import { decodeAlert, decodeMonitor, decodeReceipt, validateMonitoring,
   type BroadcastReceipt, type OperatorAlert, type OrderMonitor } from "./monitor.ts";
 import { assessment, type ExcessAssessment } from "./assessments.ts";
 import { armRecord, boundRecord, closureRecord, validateEntries, type BoundEntry, type EntryArm, type EntryClosure } from "./bound-records.ts";
+import { commitmentRecord, validateCommitments, type CommitmentRecord } from "./commitment-records.ts";
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly code: "invalid" | "refused" | "unavailable" | "not_found";
@@ -51,6 +52,7 @@ export interface Settings { version: 1; riskBudget: number; paused: boolean; con
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
 export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[]; pending: string[]; entries: BoundEntry[];
   closures: EntryClosure[]; arms: EntryArm[];
+  commitments: CommitmentRecord[];
   refunds: RefundSettings; accounts: RefundAccount[]; groups: RefundGroup[];
   monitors: OrderMonitor[]; broadcastReceipts: BroadcastReceipt[]; alerts: OperatorAlert[];
   assessments: ExcessAssessment[];
@@ -116,6 +118,7 @@ export function encode(state: State): Record[] {
     ...state.entries.map(value => ({ kind: "issuance_entry", key: value.id, value: value as unknown as Json })),
     ...state.closures.map(value => ({ kind: "entry_closure", key: value.id, value: value as unknown as Json })),
     ...state.arms.map(value => ({ kind: "entry_arm", key: value.id, value: value as unknown as Json })),
+    ...state.commitments.map(value => ({ kind: "commitment", key: value.entry, value: value as unknown as Json })),
     { kind: "refund_settings", key: "global", value: state.refunds as unknown as Json },
     ...state.assessments.map(value => ({ kind: "excess_assessment", key: value.order, value: value as unknown as Json })),
     ...state.monitors.map(value => ({ kind: "order_monitor", key: value.order, value: value as unknown as Json })),
@@ -135,7 +138,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   policy(refunds.policy);
   for (const d of refunds.merchantDestinations) destination(d);
   const state: State = { settings: { version: 1, riskBudget, paused: true, conversions: [],
-    lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [], entries: [], closures: [], arms: [],
+    lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [], entries: [], closures: [], arms: [], commitments: [],
     refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [], assessments: [],
     refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
   for (const record of records) {
@@ -143,6 +146,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
+      case "commitment": commitmentRecord(v); if (v.entry !== record.key) fail("commitment identity differs"); state.commitments.push(v); break;
       case "entry_closure": closureRecord(v); if (v.id !== record.key) fail("entry closure identity differs"); state.closures.push(v); break;
       case "entry_arm": armRecord(v); if (v.id !== record.key) fail("entry arm identity differs"); state.arms.push(v); break;
       case "issuance_entry": boundRecord(v); if (v.id !== record.key) fail("issuance entry identity differs"); state.entries.push(v); break;
@@ -207,6 +211,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   }
   if (state.settings.conversions.some(id => !state.orders.some(o => o.id === id))) fail("missing converted order");
   validateEntries(state);
+  validateCommitments(state);
   if (state.pending.some(id => !state.orders.some(o => o.id === id)) ||
       new Set(state.orders.filter(o => state.pending.includes(o.id)).map(o => o.space)).size > 1) fail("invalid pending relationship");
   if (state.payments.some(p => !destinations.has(p.script))) fail("payment has no invoice");

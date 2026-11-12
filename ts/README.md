@@ -19,7 +19,8 @@ and older-controller-database handling now follow `../docs/spec/ENTRY-RECOVERY.m
 the HTTP controller protocol requires an exact entry/root/member binding.
 Known-unsent bound-entry release/rebuild now follows `../docs/spec/ENTRY-RELEASE.md`.
 Permanent closure cannot unlock a successor, and one-use broadcast permission
-prevents a stale controller from releasing a possibly sent entry. Commitment callbacks, certificate
+prevents a stale controller from releasing a possibly sent entry. Bound
+commitment observations now track finality and reorgs (`../docs/spec/COMMITMENT-TRACKING.md`). Certificate callbacks,
 delivery and full application recovery remain. The Python service,
 controller and runner remain the
 complete implementation, and `docs/spec/` stays authoritative.

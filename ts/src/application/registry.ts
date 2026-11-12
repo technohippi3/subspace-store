@@ -5,9 +5,10 @@ import { checked, fail, type ApplicationError, type Record, type State } from ".
 import { entryOk, members, orderById, orderIds } from "./entry.ts";
 import { reconcile } from "./monitor.ts";
 import { BoundEntries } from "./bound-entries.ts";
+import { Commitments } from "./commitments.ts";
 
 type Result<A> = Effect.Effect<A, ApplicationError | StorageError>;
-interface Loaded { records: readonly Record[]; state: State }
+interface Loaded { records: readonly Record[]; state: State; tipHash?: string | undefined }
 export interface RegistryContext {
   readonly storage: DurableStore;
   readonly queue: ReturnType<typeof Semaphore.makeUnsafe>;
@@ -19,8 +20,9 @@ export interface RegistryContext {
  * establishes root/delegate/finality evidence; those belong to the controller. */
 export class IssuanceRegistry {
   readonly entries: BoundEntries;
+  readonly commitments: Commitments;
   private readonly context: RegistryContext;
-  constructor(context: RegistryContext) { this.context = context; this.entries = new BoundEntries(context); }
+  constructor(context: RegistryContext) { this.context = context; this.entries = new BoundEntries(context); this.commitments = new Commitments(context); }
   entry(id: string) {
     const c = this.context;
     return c.queue.withPermit(Effect.gen(function* () {

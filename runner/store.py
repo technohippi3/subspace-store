@@ -16,6 +16,7 @@ from pathlib import Path
 
 from controller.journal import Journal
 from controller.rpc import Http, HttpError
+from .commitments import receipt as commitment_receipt
 
 
 class Refused(Exception):
@@ -207,6 +208,17 @@ class TypeScriptStore(Store):
     def arm_entry(self, batch):
         payload = dict(self._entry_payload(batch), delegate=batch["delegate_in"])
         return self._entry_response(self.op("POST", "/operator/issuance-entries/arm", payload), payload, arm=True)
+
+    def commitment_status(self, batch):
+        payload = dict(self._entry_payload(batch), delegate=batch["delegate_in"])
+        result = commitment_receipt(self.op("POST", "/operator/commitments/lookup", payload), payload, Refused)
+        if result["observation"] and result["observation"]["txid"] != batch["txid"]:
+            raise Refused("commitment transaction differs from controller")
+        return result
+
+    def report_commitment(self, batch, revision, observation):
+        payload = dict(self._entry_payload(batch), delegate=batch["delegate_in"], expectedRevision=revision, observation=observation)
+        return commitment_receipt(self.op("POST", "/operator/commitments", payload), payload, Refused)
 
 
 def configured_store(config):

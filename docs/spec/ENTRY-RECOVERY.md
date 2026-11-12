@@ -75,8 +75,8 @@ test interface, not the shipped controller protocol.
 `ENTRY-RELEASE.md` now extends this protocol with permanent closure and
 exclusive one-use broadcast permission. A recovered, unarmed entry whose
 payment recheck fails can close and rebuild after both journals confirm
-the release. Armed entries remain locked and uncertain. Commitment
-callbacks, finality, certificate transitions and TypeScript whole-host
+the release. Armed entries remain locked. `COMMITMENT-TRACKING.md` now
+adds bound commitment observations and finality tracking. Certificate transitions and TypeScript whole-host
 reconciliation remain unported. The pilot release
 gate remains blocked. Normal-process restart evidence does not qualify
 whole-host recovery or a complete sale.

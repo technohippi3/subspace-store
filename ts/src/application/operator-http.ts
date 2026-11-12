@@ -28,6 +28,20 @@ function bound(request: import("node:http").IncomingMessage, arm = false) {
     return JSON.parse(raw) as unknown;
   }, catch: () => new ApplicationError({ code: "invalid", message: "invalid issuance entry request" }) });
 }
+function commitment(request: import("node:http").IncomingMessage) {
+  return Effect.tryPromise({ try: async () => {
+    const raw = await body(request), keys = new Set<string>();
+    const number = '(?:0|[1-9][0-9]{0,15})', hash = '"[0-9a-f]{64}"', id = '"o[1-9][0-9]{0,15}"';
+    const fact = `(?:"(?:txid|tipHash)"\\s*:\\s*${hash}|"(?:tipHeight|minedHeight|rootHeight|anchorHeight)"\\s*:\\s*(?:${number}|null))`;
+    const observed = `\\{\\s*${Array(6).fill(fact).join("\\s*,\\s*")}\\s*\\}`;
+    const field = `(?:"(?:entry|root|delegate)"\\s*:\\s*"[0-9a-f:]{1,80}"|"oids"\\s*:\\s*\\[\\s*(?:${id}(?:\\s*,\\s*${id})*)?\\s*\\]|"expectedRevision"\\s*:\\s*${number}|"observation"\\s*:\\s*${observed})`;
+    if (!new RegExp(`^\\s*\\{\\s*${Array(6).fill(field).join("\\s*,\\s*")}\\s*\\}\\s*$`).test(raw)) throw Error("invalid body");
+    // The grammar excludes escapes; JSON.parse cannot hide duplicate keys.
+    const key = /"([^"\\]*)"\s*:/g;
+    for (const match of raw.matchAll(key)) { if (keys.has(match[1]!)) throw Error("duplicate field"); keys.add(match[1]!); }
+    return JSON.parse(raw) as unknown;
+  }, catch: () => new ApplicationError({ code: "invalid", message: "invalid commitment request" }) });
+}
 /** Operator role only. The controller still owns roots, binding evidence,
  * broadcast intents, sends and recovery. No financial send is exposed. */
 export function serveOperator(store: SalesStore, token: OperatorToken, port = 0) {
@@ -47,6 +61,8 @@ export function serveOperator(store: SalesStore, token: OperatorToken, port = 0)
     if (request.method === "GET" && path === "/operator/status") return { code: 200, value: yield* store.operatorStatus() };
     if (request.method === "GET" && path === "/operator/alerts") return { code: 200, value: { alerts: (yield* store.operatorStatus()).alerts } };
     if (request.method === "POST") {
+      if (path === "/operator/commitments/lookup") return { code: 200, value: yield* store.registry.commitments.current(yield* bound(request, true)) };
+      if (path === "/operator/commitments") return { code: 200, value: yield* store.registry.commitments.observe(yield* commitment(request)) };
       if (path === "/operator/issuance-entries") return { code: 200, value: yield* store.registry.entries.enter(yield* bound(request)) };
       if (path === "/operator/issuance-entries/lookup") return { code: 200, value: yield* store.registry.entries.find(yield* bound(request)) };
       if (path === "/operator/issuance-entries/close") return { code: 200, value: yield* store.registry.entries.close(yield* bound(request)) };

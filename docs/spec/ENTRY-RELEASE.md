@@ -111,7 +111,8 @@ one-use grants and snapshot continuity without production imports. Tests of
 real process exits, journals and HTTP use the shipped controller against a
 recording subs stand-in. Core regtest separately qualifies the store records
 with real paid orders, using mock roots and a mock delegate. Neither is
-evidence of a Spaces commitment. Commitment/finality/certificate callbacks,
+evidence of a Spaces commitment. `COMMITMENT-TRACKING.md` now adds bound
+commitment observations and finality tracking. Certificate callbacks,
 supersession of armed entries and whole-application recovery remain unported.
 Sales remain closed and the public-pilot release gate remains blocked.
 

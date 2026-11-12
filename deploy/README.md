@@ -32,6 +32,11 @@ older pre-release receipt shapes fail closed. Known-unsent release is
 resumable, but delivery and whole-host recovery remain incomplete. These
 examples do not make it deployable for sales.
 
+`docs/spec/COMMITMENT-TRACKING.md` adds revisioned observations tied to
+the exact armed entry and a matching Core tip. Receipt acknowledgment
+means durable history, not current chain or certificate verification.
+The TypeScript watch path must run with the updated store and driver.
+
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,
   with the commands in `subs.stop_command` and `subs.start_command`. The

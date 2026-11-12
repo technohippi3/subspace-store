@@ -32,12 +32,10 @@ from .rpc import HttpError
 from .errors import Refused
 from .issuance import ANSWER_LIMIT, Issuance
 from .rebuild import PREPARING, Rebuild
+from .commitments import ANCHOR_FINALITY, FINAL_D, WATCHED, CommitmentTracking
 
-FINAL_D = 150
-ANCHOR_FINALITY = 144  # libveritas: newest anchor - commitment height
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
-WATCHED = ("broadcast", "broadcast_uncertain", "mined")
 LIVE = ("issuing", "broadcast", "broadcast_uncertain", "mined", "final")
 
 SCHEMA = """
@@ -111,7 +109,7 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller(Issuance, Rebuild):
+class Controller(Issuance, Rebuild, CommitmentTracking):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
@@ -744,46 +742,6 @@ class Controller(Issuance, Rebuild):
         self._save(bid, recovery_paused=0)
         return txid
 
-    def certificate_status(self, bid):
-        """"verified" needs d >= 150 and a root anchor 144 past the commitment;
-        "awaiting_anchor" in between; "not_final" otherwise."""
-        b = self.batch(bid)
-        if b["state"] != "final":
-            return "not_final"
-        newest = self.root_anchors()[0]["block"]["height"]
-        return "verified" if newest - b["mined_height"] >= ANCHOR_FINALITY else "awaiting_anchor"
-
-    def watch(self, bid):
-        self.require_restored()
-        """Move a batch along with the chain, including loss of finality."""
-        self.wait_synced()
-        self.capture_bytes(bid)
-        b = self.batch(bid)
-        state = b["state"]
-        if state not in WATCHED + ("final",) or not b["txid"]:
-            return state
-        pos = self.tx_position(b["txid"])
-        onchain = self.onchain_commitment(b["space"], b["root"])
-        if state == "final" and (pos is None or pos[1] < FINAL_D):
-            new = "mined" if pos else "broadcast"
-            self._save(bid, state=new, mined_height=pos[0] if pos else None)
-            self.alert("finality_lost", bid, f"position {pos}")
-            for m in b["members"]:
-                if self.registry.order(m)["status"] == "ready":
-                    self.registry.unready(m)
-            return new
-        if pos and pos[1] >= FINAL_D and onchain:
-            self._save(bid, state="final", mined_height=pos[0])
-            return "final"
-        if pos:
-            if state != "mined":
-                self._save(bid, state="mined", mined_height=pos[0])
-            return "mined"
-        if state == "mined":
-            self._save(bid, state="broadcast", mined_height=None)
-            return "broadcast"
-        return state
-
     # 11. Certificates
 
     def verify_certificates(self, bid):
@@ -793,6 +751,8 @@ class Controller(Issuance, Rebuild):
         the batch's own, or a later commitment of the same space that is on
         the active chain, final and covered (A19)."""
         self.require_restored()
+        if getattr(self.registry, "bound_entries", False):
+            raise Refused("TypeScript certificate callbacks are not implemented; no certificate delivered")
         b = self.batch(bid)
         if b["state"] != "final":
             raise Refused("not final")

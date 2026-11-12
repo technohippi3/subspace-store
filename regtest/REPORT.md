@@ -1719,3 +1719,84 @@ f1e0ba998513d08d745b215c1343b3805e464ce28b15139c5e8bbe52273c4e73  ts/src/applica
 74f161f1914f0a3cf68d493a6572468bad5981026723595a78d711d115cc55ae  ts/src/application/bound-records.ts
 8d77f6124e99851cb63fd59f0d18605fe01cd2df7ceee47464cdc46613d8b55a  ts/regtest/entry-lifecycle.ts
 ```
+
+
+## TypeScript bound commitment observations, 2026-11-12
+
+Core run `core-adapter-2026-11-12T05-49-30-475Z-cf931e11` passes
+43 checks bound to 36 source hashes. A newly mined regtest coinbase supplies
+an actual transaction and active-chain mining height. Mining and invalidating
+an empty tip block exercise depth 150 to 149 and back to 150. Root and
+anchor facts are explicit controller mocks; this is not a Spaces commitment,
+root proof, certificate verification or complete sale.
+
+The store derives finality only with depth at least 150 and the matching
+root height. Anchor coverage is a separate 144-block condition. A report's
+tip must match the store's coherent payment snapshot. The scenario verifies
+idempotent retry, stale-tip refusal, stale-revision refusal after reorg and
+a return to the same earlier tip, and revision/facts surviving store restart.
+Orders keep issuing locks and their price reservations. The earlier real
+payment/reorg, refund-family, fee assessment and entry lifecycle scenarios
+remain in this run. Only fresh isolated regtest wallets were used.
+
+Separate HTTP/controller tests use the shipped controller and client with
+recording Core/spaced/subs RPCs and the actual TypeScript listener, SQLite
+and journals. The controller reports fresh observations after mining,
+finality, root loss and reorgs without another send. Dropped replies before
+and after forwarding, and a process exit after the store commit, resume by
+reading the revision and collecting fresh facts. Controller progress waits
+for live store acknowledgment; controller-journal outage withholds a report.
+The legacy watch path is extracted unchanged into a focused module. The
+Python store's frozen payment rules are unchanged.
+
+Named cases O28–O35 and A33–A35 accompany the component. The independent
+TypeScript model checks revision ordering, finality, anchor coverage and
+snapshot continuity without production imports. Development coverage reports
+302 fixed-price cases with no gaps, plus 40 deferred cases; TypeScript
+model/store and Python controller coverage is 43/144/35. The pilot production
+gate still refuses for 112 cases. Certificate readiness/delivery callbacks,
+supersession and whole-application recovery remain unported. TypeScript
+certificate work refuses before fetching messages, and covered finality
+reports `awaiting_certificate_verification`. No deployment, existing wallet,
+managed credential or mainnet state changed.
+
+Qualified SHA-256 source digests:
+
+```text
+b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d  ts/src/bitcoin/rpc.ts
+f64968a714d684b3c119d7287589b224fa107fc8218364aa088a7ef54f10c0f1  ts/src/bitcoin/core.ts
+542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0  ts/src/bitcoin/validation.ts
+9fb2512bba7c820ebcab8c11ab7745fe63979bde2cbeed1c8f07e381574e0646  ts/src/bitcoin/refunds.ts
+06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf  ts/src/refunds/policy.ts
+1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd  ts/src/refunds/records.ts
+ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a  ts/src/refunds/types.ts
+9023af566c4978d910bd776cb3a9038dc2002f4eeb17a82a751c6f8ff8556d2a  ts/src/refunds/book.ts
+67e320f37429030a3d33d2c319cafd656e6d96d8354234fe032ea5c7947a18f3  ts/src/application/store.ts
+10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5  ts/src/application/sales.ts
+30bc2181fbae8a3193179a4b2f8a7bafa57d34a3c016313799a32e0d937006e4  ts/src/application/records.ts
+7b86440f175178f88e35adb7ba9cbb7243c4d6ddcab5ad218d29b060e94458ce  ts/regtest/core.test.ts
+7d10c5be62c77a6915c9b5212364c93203cbc90eb01e69b02ecb2939c5a8a5c1  ts/test/production/application-fixture.ts
+c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60  ts/src/bitcoin/refund-sender.ts
+995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394  ts/src/refunds/observations.ts
+5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056  ts/src/storage/journal.ts
+93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c  ts/src/refunds/families.ts
+d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44  ts/src/refunds/attempts.ts
+e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89  ts/src/bitcoin/exclusivity.ts
+3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715  ts/src/bitcoin/rebuild-funding.ts
+a232f7d62cf57390b4b5b617c85d4427240a887e13cad987aca3dac3095b6f52  ts/src/application/monitor.ts
+0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac  ts/src/bitcoin/refund-estimate.ts
+d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e  ts/src/bitcoin/excess-fee.ts
+09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0  ts/src/application/assessments.ts
+767476ffe8c7461970b19404f1fde150001d3396c6c7e2f5e649dff79ca18052  ts/src/application/http.ts
+eb038772382083a86c7a7bee03c31de0b3626735f8cedcaaa21d64fe87fcb9c4  ts/src/application/operator-http.ts
+205663367370e64521a8aad08d442ee1b9a5c3afa50837bf32660dd05b5996e1  ts/src/application/authenticated-http.ts
+8cd0b89fbf629272935bfff87fbfdb91701dd2cfe8caa63b02338387e475378c  ts/src/application/pending-http.ts
+227fc72491795cb4cd3b193860048635706f09f36d54b5d632c2f29e8d855310  ts/src/application/entry.ts
+9191714dcc2cec8a65f6f391b8026708991e58c08d011d49272446b38dcb93c0  ts/src/application/registry.ts
+f1e0ba998513d08d745b215c1343b3805e464ce28b15139c5e8bbe52273c4e73  ts/src/application/bound-entries.ts
+74f161f1914f0a3cf68d493a6572468bad5981026723595a78d711d115cc55ae  ts/src/application/bound-records.ts
+8d77f6124e99851cb63fd59f0d18605fe01cd2df7ceee47464cdc46613d8b55a  ts/regtest/entry-lifecycle.ts
+c7aca7cdd3b88784bea311b56643bf85d46d4bf4ee5e3d5e8f07d7d70043b84c  ts/src/application/commitments.ts
+1650655adfafb57a05c1014e68a636d76ccae77a2aad4e44b0fef5c9cec2f00e  ts/src/application/commitment-records.ts
+4f202525da1cb5acd90b60531d898db51928be25deba8e36eb697e73d1517e22  ts/regtest/commitments.ts
+```
