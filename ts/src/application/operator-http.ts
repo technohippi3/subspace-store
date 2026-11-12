@@ -8,6 +8,7 @@ import { deliveryBody } from "./delivery-http.ts";
 import { catalogBody, pauseBody } from "./catalog-http.ts";
 import { groupId, refundBody, refundSendBody } from "./refund-http.ts";
 import { refundReceipt } from "./refund-receipt.ts";
+import { sellerBody, sellerApplyBody } from "./seller-http.ts";
 import { supersessionBody } from "./supersession-http.ts";
 export type { OperatorToken } from "./authenticated-http.ts";
 
@@ -77,8 +78,14 @@ export function serveOperator(store: SalesStore, token: OperatorToken, port = 0)
     const order = /^\/operator\/orders\/(o[1-9][0-9]{0,15})(\/(?:batch-entry|journal))?$/.exec(path);
     if (request.method === "GET" && order && !order[2]) return { code: 200, value: yield* store.inspectionOrder(order[1]!) };
     if (request.method === "GET" && path === "/operator/status") return { code: 200, value: yield* store.operatorStatus() };
+    if (request.method === "GET" && path === "/operator/maintenance") return { code: 200, value: yield* store.seller.maintenance() };
     if (request.method === "GET" && path === "/operator/alerts") return { code: 200, value: { alerts: (yield* store.operatorStatus()).alerts } };
     if (request.method === "POST") {
+      if (path === "/operator/seller/preview") return {code:200,value:yield* store.seller.preview(yield* sellerBody(request))};
+      if (path === "/operator/seller/apply") {const input=yield* sellerApplyBody(request);const result=yield* store.seller.apply(input.command,input.review);return {code:result.acknowledged?200:503,value:result};}
+      if (path === "/operator/owner-orders/preview") return {code:200,value:yield* store.seller.ownerPreview(yield* sellerBody(request))};
+      if (path === "/operator/owner-orders") {const result=yield* store.seller.ownerInvoice(yield* sellerBody(request));return {code:result.created&& !result.invoice?.acknowledged?503:200,value:result};}
+
       if (path === "/operator/supersessions/lookup") return { code: 200, value: yield* store.registry.supersessions.current(yield* bound(request, true)) };
       if (path === "/operator/supersessions") return { code: 200, value: yield* store.registry.supersessions.accept(yield* supersessionBody(request)) };
       if (path === "/operator/listings") {

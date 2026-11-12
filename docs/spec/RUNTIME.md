@@ -98,3 +98,36 @@ is implied.
 | O58 | configured runner inspects the store | Core is ready, changes network, loses wallet readiness or recovers | status uses live validated block/network facts; failures return chain null |
 | O59 | listing and pause commands with malformed input or journal outage | send authenticated operator requests and retry | exact grammar; HTTP 200 only with acknowledgment, retry safe and no address allocation |
 | O60 | one standalone CLI already owns the store, or later listener acquisition fails | start another process, terminate or fail startup | second owner refuses before RPC/journal mutation; errors scrubbed; scope closes listeners, polling and ownership |
+
+
+## Maintenance inspection
+
+Authenticated `GET /operator/maintenance` returns exactly paused, reviewCount,
+blockers, ready, acknowledged and chain. Each blocker has kind and id. Chain is
+null when current coherent observation is unavailable; otherwise it has height
+and hash. The method serializes observation and journal checks under the store
+queue. It performs no pause/drain mutation, signing, broadcast or refund retry.
+
+Blocker kinds are admission_open, active_hold, issuing_order, armed_entry,
+issuance_entry, uncertain_refund_send, restore_quarantine, chain_unavailable and
+journal_unavailable. IDs are the relevant order, entry or transaction ID;
+installation-level blockers use global. A recorded send lacking positive
+mempool/mined observation blocks maintenance regardless of an older accepted
+reply. A historical entry ceases to block when its commitment is final
+and covered and every bound member has durable fulfillment with no open
+recovery incident, or when the current observation positively revalidates its
+active settled-conflict supersession proof. An immutable historical arm does
+not permanently block that supported disposition; failed, unknown or reversed
+proofs retain the blocker. Existing certificates and refund obligations remain stored.
+A quarantined instance normally has no serving listener; an unavailable or
+missing endpoint cannot authorize maintenance either.
+
+Ready requires admission paused, fresh coherent chain observation, current
+journal acknowledgment and no blockers. It is an inspection result, not a
+lifetime maintenance lock. The updater must still fence every writer, controller,
+refund send and subs restart mechanism before checkpointing or replacement.
+Neither a pause nor fifteen minutes or six blocks proves a bounded drain.
+
+| Case | Given | When | Then |
+| --- | --- | --- | --- |
+| O97 | holds, armed entries, fulfilled final history, absent attempted refunds or chain/journal failure | authenticated maintenance inspection | report exact blockers and monotonic review count; exclude only resolved historical entries; no sends or pause mutation; ready only while paused with live acknowledged facts |

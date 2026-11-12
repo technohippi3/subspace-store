@@ -111,6 +111,6 @@ export function serve(store: SalesStore, port = 0) {
 export function responseFor(operation: Effect.Effect<{ code: number; value: unknown }, unknown>) {
   return operation.pipe(Effect.match({ onSuccess: value => value,
     onFailure: error => ({ code: error instanceof ApplicationError ?
-      ({ invalid: 400, refused: 409, unavailable: 503, not_found: 404 } as const)[error.code] : 503,
+      ({ invalid: 400, refused: 409, unavailable: 503, not_found: 404, throttled: 429 } as const)[error.code] : 503,
     value: { error: error instanceof ApplicationError ? error.message : "service unavailable" } }) }));
 }

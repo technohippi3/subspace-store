@@ -19,6 +19,8 @@ import { CertificateCache } from "./certificate-cache.ts";
 import { certificateBytes, checkCertificates, type CertificateChain } from "./certificates.ts";
 import { recoveryView } from "./deliveries.ts";
 import { checkSupersessions, type SupersessionChain } from "./supersessions.ts";
+import { createRequested, invoiceRestricted, namePolicy, unavailable } from "./seller-records.ts";
+import { SellerOperations } from "./seller-service.ts";
 import { persist } from "./persistence.ts";
 import { inspectRecovered } from "./recovery.ts";
 import { reconcileRecovered, type RecoveryController } from "./reconciliation.ts";
@@ -39,6 +41,7 @@ const hash = (token: string) => createHash("sha256").update(token).digest("hex")
  * SQLite transactions cover only local writes; no RPC runs inside one. */
 export class SalesStore {
   readonly registry: IssuanceRegistry;
+  readonly seller: SellerOperations;
   private readonly queue = Semaphore.makeUnsafe(1);
   private readonly storage: DurableStore;
   private readonly adapters: Adapters;
@@ -52,6 +55,8 @@ export class SalesStore {
       ...(adapters.supersessionChain ? { supersessionChain: adapters.supersessionChain } : {}),
       queue: this.queue, load: () => this.load(), refresh: () => this.refresh(), save: (before, state) => this.save(before, state) };
     this.registry = new IssuanceRegistry(this.registryContext);
+    this.seller = new SellerOperations({ storage, queue: this.queue, load:()=>this.load(), refresh:()=>this.refresh(),
+      save:(before,state)=>this.save(before,state), clock:adapters.clock, quote:id=>this.quoteId(id), loadRecovery:()=>this.load(true) });
   }
   static open(config: Config, adapters: Adapters) {
     return Effect.gen(function* () {
@@ -159,7 +164,8 @@ export class SalesStore {
         acknowledged: !!acknowledged?.destination,
         pay_first: order.payFirst,
         payment_request_open: order.status === "quoted" && order.paymentHistory === "none" && total(state, order, 0) === 0 &&
-          order.quotedAt !== null && state.settings.lastTime < order.quotedAt + 900 && (order.payFirst || hold !== null),
+          order.quotedAt !== null && state.settings.lastTime < order.quotedAt + 900 && (order.payFirst || hold !== null) &&
+          !invoiceRestricted(state,order,hold!==null) && (hold!==null || !unavailable(state,order,true)),
         payment_warning: order.payFirst ? "This invoice does not reserve the name. Another buyer may pay first; if that happens, your payment is refunded less the refund fee." : null,
         quote_expires_at: order.quotedAt === null ? null : order.quotedAt + 900,
         hold_expires_at: hold?.until ?? null,
@@ -187,30 +193,26 @@ export class SalesStore {
       const input = yield* checked(() => request(body));
       return yield* self.queue.withPermit(Effect.gen(function* () {
         const { records, state } = yield* self.load();
-        yield* checked(() => {
-          if (!state.listings.some(n => n.handle === input.handle)) fail("not for sale");
-          if (state.orders.some(o => o.destination?.script === input.script ||
-              (o.handle !== input.handle && claims(o) && o.recipient === input.script))) fail("script already used");
-        });
-        const token = randomBytes(24).toString("base64url"), sequence = state.settings.nextOrder++;
-        state.orders.push({ id: `o${sequence}`, sequence, handle: input.handle, space: input.handle.split("@")[1]!,
-          recipient: input.script, tokenHash: hash(token), status: "requested", quotedAt: null,
-          quotedPrice: null, price: null, destination: null, payFirst: false, grants: [],
-          everConverted: false, paymentHistory: "none", lateEvaluated: false });
-        state.accounts.push({ order: `o${sequence}`, destination: null, ceiling: null });
+        const token = randomBytes(24).toString("base64url");
+        yield* checked(() => createRequested(state,input,hash(token),self.adapters.clock()));
         yield* self.save(records, state);
         return { order_link: `/orders/${token}`, token };
       }));
     });
   }
   quote(token: string) {
-    const self = this;
-    return self.queue.withPermit(Effect.gen(function* () {
-      // Authenticate before touching the chain or wallet.
-      const initial = yield* self.load();
-      yield* checked(() => self.find(initial.state, token));
+    const self=this;
+    return self.queue.withPermit(Effect.gen(function*(){
+      const initial=yield* self.load();
+      const order=yield* checked(()=>self.find(initial.state,token));
+      return yield* self.quoteId(order.id);
+    }));
+  }
+  private quoteId(id: string) {
+    const self=this;
+    return Effect.gen(function*(){
       const { records, state } = yield* self.refresh();
-      const order = yield* checked(() => self.find(state, token));
+      const order = yield* checked(() => state.orders.find(o=>o.id===id) ?? fail("no such order","not_found"));
       yield* checked(() => self.recipient(state, order));
       if (order.status === "quoted" && order.destination) {
         yield* self.storage.flush();
@@ -247,7 +249,7 @@ export class SalesStore {
       });
       yield* self.save(records, state);
       return yield* self.view(state, order);
-    }));
+    });
   }
   order(token: string) {
     const self = this;
@@ -286,7 +288,7 @@ export class SalesStore {
       const { state } = yield* self.refresh();
       return { paused: state.settings.paused,
         listings: [...state.listings].sort((a, b) => a.handle.localeCompare(b.handle)).map(n => ({
-          handle: n.handle, price_sats: n.price, available: !owner(state, n.handle),
+          handle: n.handle, price_sats: n.price, available: !owner(state, n.handle) && !namePolicy(state,n.handle)?.reserved && !namePolicy(state,n.handle)?.withdrawn && !state.spaces.some(s=>s.space===n.space&&s.paused),
         })) };
     }));
   }
@@ -323,7 +325,8 @@ export class SalesStore {
       })) : null;
       return { orders: structuredClone(state.monitors), alerts: structuredClone(state.alerts), assessments: structuredClone(state.assessments),
         recovery_incidents: structuredClone(state.incidents), acknowledged: position.acknowledged === position.seq,
-        chain, paused: state.settings.paused, application_recovery: state.recovery };
+        chain, paused: state.settings.paused, application_recovery: state.recovery,
+        seller: self.seller.inspect(state), pending_refund_rebroadcast: state.refundSends.filter(s=>state.refundObservations.some(o=>o.txid===s.txid&&o.seen==="absent")).map(s=>({group:s.group,txid:s.txid})) };
     }));
   }
   private inspectedOrder(state: State, order: Order) {
@@ -615,8 +618,8 @@ export class SalesStore {
       yield* checked(() => { if (!canonicalHandle(handle)) fail("invalid handle", "invalid"); sats(price); });
       const { records, state } = yield* self.load();
       const listing = state.listings.find(n => n.handle === handle);
-      if (listing) listing.price = price;
-      else state.listings.push({ handle, space: handle.split("@")[1]!, price });
+      if (listing) { if(listing.price!==price) state.seller.revision++; listing.price = price; }
+      else { state.listings.push({ handle, space: handle.split("@")[1]!, price }); state.seller.revision++; }
       yield* self.save(records, state);
       yield* self.storage.flush();
       const saved = yield* self.storage.acknowledged("listing", handle);
@@ -627,6 +630,7 @@ export class SalesStore {
     const self = this;
     return self.queue.withPermit(Effect.gen(function* () {
       const { records, state } = yield* self.load();
+      if (state.settings.paused!==paused) state.seller.revision++;
       state.settings.paused = paused;
       yield* self.save(records, state);
       yield* self.storage.flush();

@@ -15,8 +15,10 @@ import { certificateRecord, validateCertificates, type CertificateRecord } from 
 import { fulfillmentRecord, incidentRecord, validateDeliveries, type Fulfillment, type RecoveryIncident } from "./delivery-records.ts";
 import { supersessionRecord, validateSupersessions, type Supersession } from "./supersession-records.ts";
 
+import { defaultSeller, sellerRecord, validateSeller, type SellerSettings, type SpacePolicy, type NamePolicy, type InvoiceWithdrawal, type OwnerAuthorization } from "./seller-records.ts";
+
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
-  readonly code: "invalid" | "refused" | "unavailable" | "not_found";
+  readonly code: "invalid" | "refused" | "unavailable" | "not_found" | "throttled";
   readonly message: string;
 }> {}
 export function fail(message: string, code: ApplicationError["code"] = "refused"): never {
@@ -55,7 +57,7 @@ export interface Settings { version: 1; riskBudget: number; paused: boolean; con
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
 export type ApplicationRecovery = { version: 1; required: true; sourceSequence: number } |
   { version: 2; required: false; sourceSequence: number; proofHash: string; controllerSequence: number; tipHeight: number; tipHash: string };
-export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[]; pending: string[]; entries: BoundEntry[];
+export interface State { seller: SellerSettings; spaces: SpacePolicy[]; namePolicies: NamePolicy[]; withdrawals: InvoiceWithdrawal[]; ownerAuthorizations: OwnerAuthorization[]; settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[]; pending: string[]; entries: BoundEntry[];
   recovery: ApplicationRecovery | null;
   closures: EntryClosure[]; arms: EntryArm[];
   commitments: CommitmentRecord[];
@@ -124,7 +126,12 @@ function payment(value: unknown): asserts value is Payment {
   if (!value.outpoint || value.outpoint.length > 256) fail("invalid outpoint");
 }
 export function encode(state: State): Record[] {
-  return [ { kind: "sales_settings", key: "global", value: state.settings as unknown as Json },
+  return [ { kind: "seller_settings", key: "global", value: state.seller as unknown as Json },
+    ...state.spaces.map(value => ({kind:"space_policy",key:value.space,value:value as unknown as Json})),
+    ...state.namePolicies.map(value => ({kind:"name_policy",key:value.handle,value:value as unknown as Json})),
+    ...state.withdrawals.map(value => ({kind:"invoice_withdrawal",key:value.order,value:value as unknown as Json})),
+    ...state.ownerAuthorizations.map(value => ({kind:"owner_authorization",key:value.order,value:value as unknown as Json})),
+    { kind: "sales_settings", key: "global", value: state.settings as unknown as Json },
     ...(state.recovery ? [{ kind: "application_recovery", key: "global", value: state.recovery as unknown as Json }] : []),
     { kind: "registry_pending", key: "global", value: { version: 1, orders: [...state.pending] } },
     ...state.entries.map(value => ({ kind: "issuance_entry", key: value.id, value: value as unknown as Json })),
@@ -153,15 +160,22 @@ export function encode(state: State): Record[] {
 export function decode(records: readonly Record[], riskBudget: number, refunds: RefundSettings): State {
   policy(refunds.policy);
   for (const d of refunds.merchantDestinations) destination(d);
-  const state: State = { recovery: null, settings: { version: 1, riskBudget, paused: true, conversions: [],
+  const state: State = { seller: defaultSeller(), spaces: [], namePolicies: [], withdrawals: [], ownerAuthorizations: [], recovery: null, settings: { version: 1, riskBudget, paused: true, conversions: [],
     lastTime: 0, tip: 0, nextOrder: 1 }, listings: [], orders: [], payments: [], pending: [], entries: [], closures: [], arms: [], commitments: [], supersessions: [], certificates: [], fulfillments: [], incidents: [],
     refunds: structuredClone(refunds), accounts: [], groups: [], monitors: [], broadcastReceipts: [], alerts: [], assessments: [],
     refundObservations: [], refundSends: [], refundAttempts: [], refundPauses: [] };
+  const identities=new Set<string>();
   for (const record of records) {
+    const identity=JSON.stringify([record.kind,record.key]); if(identities.has(identity))fail("duplicate application record"); identities.add(identity);
     // Commands mutate a working copy. The original records remain the
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
+      case "seller_settings": sellerRecord(record.kind,v); if(record.key!=="global") fail("invalid seller settings identity"); state.seller=v as unknown as SellerSettings; break;
+      case "space_policy": sellerRecord(record.kind,v); if(record.key!==(v as SpacePolicy).space) fail("space identity differs"); state.spaces.push(v as SpacePolicy); break;
+      case "name_policy": sellerRecord(record.kind,v); if(record.key!==(v as NamePolicy).handle) fail("name policy identity differs"); state.namePolicies.push(v as NamePolicy); break;
+      case "invoice_withdrawal": sellerRecord(record.kind,v); if(record.key!==(v as InvoiceWithdrawal).order) fail("withdrawal identity differs"); state.withdrawals.push(v as InvoiceWithdrawal); break;
+      case "owner_authorization": sellerRecord(record.kind,v); if(record.key!==(v as OwnerAuthorization).order) fail("owner identity differs"); state.ownerAuthorizations.push(v as OwnerAuthorization); break;
       case "application_recovery": {
         const r=v as {[key:string]:unknown};
         if(r?.version===2){
@@ -217,6 +231,8 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
   }
   if (records.length && !records.some(r => r.kind === "sales_settings")) fail("missing application settings");
   if (records.length && !records.some(r => r.kind === "refund_settings")) fail("missing refund settings; explicit import required");
+  if (records.some(r => ["space_policy", "name_policy", "invoice_withdrawal", "owner_authorization"].includes(r.kind)) &&
+      !records.some(r => r.kind === "seller_settings")) fail("missing seller settings");
   state.alerts.sort((a, b) => a.id - b.id);
   state.incidents.sort((a, b) => a.id - b.id);
   state.supersessions.sort((a,b) => a.entry.localeCompare(b.entry) || a.revision - b.revision);
@@ -242,6 +258,7 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     }
   }
   if (state.settings.conversions.some(id => !state.orders.some(o => o.id === id))) fail("missing converted order");
+  validateSeller(state);
   validateEntries(state);
   validateCommitments(state);
   validateCertificates(state);

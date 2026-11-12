@@ -1,5 +1,6 @@
 // Production payment/hold rules. No reference-model imports or shared reducers.
 import { claims, fail, MAX_MONEY, sats, whole, type Grant, type Order, type Snapshot, type State } from "./records.ts";
+import { invoiceRestricted, unavailable } from "./seller-records.ts";
 import { refunded } from "../refunds/observations.ts";
 
 export function total(state: State, order: Order, depth: number): number {
@@ -85,6 +86,10 @@ export function refresh(state: State, now: number, snapshot: Snapshot): void {
     a.quotedAt! - b.quotedAt! || a.sequence - b.sequence);
   for (const o of candidates) {
     const required = needed(state, o), confirmed = total(state, o, 1);
+    if (invoiceRestricted(state, o, active(state,o)) || unavailable(state,o,true)) {
+      if (confirmed > 0) { o.status="refund_due"; o.lateEvaluated=true; }
+      continue;
+    }
     if (confirmed < Math.min(required, o.quotedPrice!)) {
       if (!o.payFirst && confirmed > 0) { o.status = "refund_due"; o.lateEvaluated = true; }
       continue;
@@ -102,7 +107,8 @@ export function refresh(state: State, now: number, snapshot: Snapshot): void {
   }
 }
 export function admission(state: State, order: Order): boolean {
-  if (state.settings.paused) fail("sales are paused");
+  if (state.settings.paused || state.spaces.some(s=>s.space===order.space && s.paused)) fail("sales are paused");
+  if (unavailable(state,order)) fail("name is unavailable");
   if (owner(state, order.handle)) fail("taken for now");
   const price = state.listings.find(n => n.handle === order.handle)!.price;
   const highest = state.listings.reduce((price, n) => Math.max(price, n.price), 0);

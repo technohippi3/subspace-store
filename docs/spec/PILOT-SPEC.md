@@ -78,13 +78,35 @@ rolling 86,400 seconds, and the global admission cap is ten active holds.
 | K15 | missing or excessive fee estimate | plan refund, with and without explicit fallback | absent fallback and above-limit rate refuse; configured bounded fallback works with upward fee rounding |
 | K16 | fee 300 and excess 845 or 846 | test excess minimum | 845 not refundable; 846 meets the inclusive 546-over-fee minimum |
 | K17 | original payment outputs already spent, with an available change output | fund a later refund | may use available change against remaining order credit; never another order's reserved coins or spent inputs; missing credit/funding refuses |
-
 | K18 | a pay-first invoice with partial confirmed funds | reach expiry, then confirm the full price | partial money waits without a hold; only the full price takes the name, with conversion at three confirmations |
-
 | K19 | a hold released after payment loss, then a new buyer holds the name | the original payment returns after a reorg | old hold never revives automatically; new owner preserved, old order refund due |
-
 | K20 | an order's original hold expires, a later hold converts, then the order is cancelled | quote again, cancel that unpaid hold, and restore | only the converted hold is exempt; the original unpaid hold and the new unpaid hold exhaust the ration across restore |
 | K21 | an ongoing checkout with a settled partial payment | request a refund, cancel and refund, restart, then pay the old and a new checkout | refuse a refund before cancellation/refund due; old invoice stays refund-only and retains its address/history; only the new invoice can qualify the purchase |
+| K22 | first or later space setup with existing invoices | repeat setup and make individual edits | same validated operations, no wallet setup repeated, identifiers and invoice attribution preserved |
+| K23 | existing and expired invoices at one listed price | change the seller price | initial quote stays fixed; P12/K7 lower/higher late outcomes and the existing global exposure formula remain |
+| K24 | active holds, fulfillment reservations and seller reservation | reserve, unreserve and pay | new invoices/unheld acquisition refuse while reserved; protected commitments remain; refund-only orders never revive |
+| K25 | a withdrawn invoiced name with a valid hold extension | extension ends and later money arrives | current grant honored; no new grant after expiry; original invoice and money retained for refund |
+| K26 | withdrawal followed by reopening before or after invoice expiry | old invoice is paid with the name free or held by another buyer | old invoice never reacquires; new checkout may acquire without duplicate ownership |
+| K27 | an existing pay-first invoice on a withdrawn/reopened name | full money qualifies before or exactly at 900 seconds, or partial money reaches expiry | initial window honored; exact expiry/partial money cannot create a hold; an acquired valid grant remains protected |
+| K28 | multiple listed spaces and existing invoices | pause one or all spaces, then pay existing invoices | only new admission pauses; ration per full handle and global hold/exposure/review limits remain |
+| K29 | acknowledged seller policies, restrictions and request counters | journal-only restore | force global pause; preserve per-space flags, restrictions, admission settings and monotonic history |
+| K30 | repeated anonymous unsigned nominations and configured aggregate limits | create requests across scripts/handles until exhausted | fresh links for admitted retries, no script claim, aggregate refusal allocates no order or destination |
+| K31 | exhausted quota or retained-order capacity | restart and cross the exact window boundary | allowance never resets on restart; capacity retains history; refused requests consume no identifier or address |
+| K32 | two acknowledged signed refunds, one settled and one attempted but absent | startup, journal-only recovery, inspection and exact attended retry | observe before readiness; preserve settlement, reservations, bytes and uncertainty; no startup/read send; guarded exact retry only |
+| K33 | invoices, issuing/issued ownership, certificates and refund history | seller edits, restart or malformed metadata replay | preserve obligations and lineage; duplicate/orphan/mismatched metadata refuses |
+| K34 | exact operator nomination for a reserved listed name | authenticated reviewed owner invoice, funding, reply loss and retry | only reservation bypassed; normal price/payment/issuance/refund guards remain; one operation/order/destination; existing bearer never redisclosed |
+
+The seller rule details, protocol, private CLI receipts and explicit installation
+limits are defined in `SELLER-OPERATIONS.md`. The independent seller model is
+`ts/model/seller.ts`; production tests exercise the separately written store.
+
+The TypeScript pilot replaces baseline H6's automatic startup refund
+rebroadcast with K32's attended contract. Both groups are still reconciled
+before readiness, and exact signed bytes, original attempts, reservations and
+settled accounting survive. An attempted absent transaction is reported for
+explicit group/transaction-confirmed retry. Startup, polling, status and offline
+recovery neither sign nor send. This changes no other refund recovery guard.
+The Python baseline H6 test and implementation remain historical checks.
 
 The exemption belongs to each hold, not to all holds of an order that later
 converts. K7 also checks a late pay-first payment equal to its original
@@ -114,6 +136,7 @@ This table describes applicability, not a temporary case-status exemption.
 | baseline S2 | K5 |
 | baseline S3 | K5 |
 | baseline S4 | K5 |
+| baseline H6 | K32 |
 
 K6 adds the full-payment constraint to P9; it does not remove the normal
 full-payment P9 scenario from pilot coverage. K7 preserves the P12 result.

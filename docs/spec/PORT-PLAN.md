@@ -157,7 +157,7 @@ the spec. Disagreements must be attributed to a specific rule change, not
 hidden by disabling comparisons wholesale. Model agreement is supplemental
 to cases, invariants, fault injection and regtest evidence.
 
-## Pilot behavior and remaining seller operations
+## Pilot behavior and seller operations
 
 `PILOT-SPEC.md` supplies K1–K20 with independent model tests for full-price late
 reacquisition, pay-first admission and deterministic ties, the per-name
@@ -173,6 +173,11 @@ TypeScript design. Avoid changing the running Python schema just to prepare
 for multiple spaces. Backfill any new columns from validated handles at the
 one-time cutover. Keep one issuance writer across the installation.
 
+`SELLER-OPERATIONS.md` now defines the implemented essential seller HTTP/CLI
+operations and K22–K34, with an independent model and production tests. The
+installer and deployed acceptance gates remain separate. First/later setup
+uses the installed configuration without wallet reinitialization.
+
 Seller reservations, buyer holds and fulfillment reservations are separate
 concepts. Reserving or withdrawing a name blocks new invoices and reports
 existing commitments; it does not silently revoke a valid hold or an issued
@@ -186,7 +191,8 @@ The proposed multi-space scope is per-full-handle hold ration, global hold
 and ten-conversion review limits, and one global exposure limit. Global
 pause and per-space pause both block new admission; they do not cancel
 existing commitments. Restore turns global pause on and preserves the
-recorded per-space flags. These extensions need cases before they ship.
+recorded per-space flags. K22–K34 govern these implemented extensions; production release still needs the
+remaining acceptance and packaging gates.
 
 The CLI's setup wizard uses the same validated operations as noninteractive
 commands. Set up the first space without making configuration immutable:

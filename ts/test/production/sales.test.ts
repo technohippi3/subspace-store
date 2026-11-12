@@ -62,7 +62,7 @@ test("K4: qualifying block wins pay-first races, then quote time and sequence", 
     }));
   }
 });
-test("pending money does not close admission; confirmed funds can", async (t) => {
+test("K5: pending money does not close admission; confirmed funds can", async (t) => {
   const f = fixture(t, 1_000);
   await use(f, store => Effect.gen(function* () {
     yield* setup(store); const first = yield* invoice(store);

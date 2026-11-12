@@ -31,6 +31,11 @@ Some pilot rules now have runtime coverage, but complete sales, refunds
 and recovery remain unfinished. These decisions authorize no deployment, no wallet
 transaction and no opening of sales.
 
+`docs/spec/SELLER-OPERATIONS.md` defines the repeatable seller CLI, explicit
+request limits, funded owner invoices and additive policies. Independent
+TypeScript model and production tests cover the essential individual edits.
+These source checks do not establish deployed acceptance or opening sales.
+
 `docs/spec/PORT-PLAN.md` is the port and release handoff. It separates the
 Python owner-only test baseline from the TypeScript pilot, places essential
 seller commands before the pilot gate, and records the deployment and

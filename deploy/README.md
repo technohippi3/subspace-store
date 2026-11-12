@@ -307,3 +307,20 @@ cannot supply its entry metadata. No automatic hold extension based on
 inferred downtime is approved by this plan; ambiguous cases stay paused for
 attended reconciliation, with store-caused refunds following the merchant
 fee rule in the payment specification.
+
+
+## Seller setup after host preparation
+
+The host package first prepares the pinned node services, existing wallet
+references, stable data paths and runtime credential injection. It supplies the
+installed runtime configuration path to the seller command. Then use
+`node ts/src/seller.ts <config> space add <space> --apply` for the first or any
+later space and `admission set` for explicit installation request limits. The
+command uses the authenticated running operator listener and never repeats
+wallet initialization. Development fixture limits are durably marked as such
+and cannot substitute for explicit funded-installation settings.
+
+`docs/spec/SELLER-OPERATIONS.md` describes individual edits, review receipts,
+funded owner invoices and private link files. Maintenance inspection is
+`GET /operator/maintenance` as defined in `docs/spec/RUNTIME.md`; it does not
+replace the updater's lifetime writer fence or coordinated checkpoint.
