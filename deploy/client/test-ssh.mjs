@@ -127,9 +127,13 @@ test('actual OpenSSH pins the host, preserves encrypted recovery after seller lo
     assert.equal(status, 0);
   }
   const seller = join(fixture, 'seller'); mkdirSync(seller, { mode: 0o700 });
-  const files = { 'registry.db': Buffer.from('fixture application history'), 'controller.db': Buffer.from('fixture controller history') };
+  const files = { 'registry.db': Buffer.from('fixture application history'), 'controller.db': Buffer.from('fixture controller history'),
+    'subs/@test10000/@test10000.sdb': Buffer.from('fixture native tree bytes'),
+    'subs/@test10000/@test10000.8192.hidx.sqlite': Buffer.from('fixture native index bytes'),
+    'subs/@test10000/subs.db': Buffer.from('fixture native database bytes') };
   const manifest = { label: 'fixture', store_journal: 1, controller_journal: 1, files: {} };
   for (const [path, bytes] of Object.entries(files)) {
+    mkdirSync(dirname(join(seller, path)), { recursive: true, mode: 0o700 });
     writeFileSync(join(seller, path), bytes, { mode: 0o600 }); manifest.files[path] = sha(bytes);
   }
   writeFileSync(join(seller, 'manifest.json'), JSON.stringify(manifest), { mode: 0o600 });

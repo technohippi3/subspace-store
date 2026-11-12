@@ -70,6 +70,9 @@ test('O181: concurrent store and controller SSH requests wait within the helper 
 test('O182: live checkpoint copies retry only pending local acknowledgments and preserve the exact remote prefix',async()=>{
   await run('python3',['-m','unittest','tests.test_recovery_backend','-v'],repository);
 });
+test('O183: native subs paths preserve literal space names while snapshot traversal and identifier guards remain strict',async()=>{
+  await qualifyBackend();await qualifySsh();
+});
 test('O149: actual current application restores ten thousand validated orders over encrypted SSH within one minute',async()=>{
   await prepare();await run('python3',[join(deployment,'replay/replay.py'),'--source-root',repository],deployment,600000);
 });

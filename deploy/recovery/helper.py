@@ -10,6 +10,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import stat
 import sys
 import time
@@ -17,6 +18,8 @@ import time
 from storage import (MAX_OBJECT, MAX_REQUEST, MAX_PAGE, SAFE_ID, Refused, decode,
                      digest, directory, entries, exact, filename, integer,
                      open_root, publish, read, require)
+
+SNAPSHOT_PART = re.compile(r"@?[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}\Z")
 
 
 def acquire_protocol_lock(lock):
@@ -107,7 +110,7 @@ def blob(root, request):
 def safe_path(path):
     require(isinstance(path, str) and len(path) <= 4096)
     parts = path.split("/")
-    require(len(parts) <= 128 and all(SAFE_ID.fullmatch(p) and p not in (".", "..")
+    require(len(parts) <= 128 and all(len(p) <= 100 and SNAPSHOT_PART.fullmatch(p) and p not in (".", "..")
                                     for p in parts), "unsafe-path")
     require(path in ("registry.db", "controller.db", "manifest.json",
                      "core-wallet.backup", "spaced-wallet.export") or

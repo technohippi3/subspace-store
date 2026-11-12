@@ -47,6 +47,9 @@ function append(client, sequence, data = Buffer.from('sensitive fixture data'), 
 function source(f, kind = 'checkpoint') {
   const directory = join(f.directory, kind); mkdirSync(directory, { mode: 0o700 });
   const files = kind === 'checkpoint' ? { 'registry.db': Buffer.from('store database'), 'controller.db': Buffer.from('controller database'),
+    'subs/@test10000/@test10000.sdb': Buffer.from('fixture native tree bytes'),
+    'subs/@test10000/@test10000.8192.hidx.sqlite': Buffer.from('fixture native index bytes'),
+    'subs/@test10000/subs.db': Buffer.from('fixture native database bytes'),
     'subs/state': Buffer.concat([Buffer.alloc(MAX_PLAIN, 120), Buffer.from('sensitive fixture state')]) } :
     { 'core-wallet.backup': Buffer.from('fixture backup bytes'), 'spaced-wallet.export': Buffer.from('fixture export bytes') };
   const manifest = { label: 'fixture', store_journal: 1, controller_journal: 1, files: {} };
@@ -136,6 +139,20 @@ test('checkpoint and wallet backups are encrypted, chunked, idempotent and resto
     assert.deepEqual(readFileSync(join(target, 'manifest.json')), readFileSync(join(local.directory, 'manifest.json')));
     assert.throws(() => snapshotGet(f.client, { op: 'snapshot-get', snapshot, directory: target }));
   }
+});
+test('native path allowance rejects unsafe components and keeps identifiers unchanged before transport', t => {
+  for (const part of ['@..', '@@space', 'space@other', '%2e%2e', 'space\\escape', '@é',
+    'space\n', '@space\r', 'space\u2028', '@space\u2029', 'a'.repeat(101), '@'+'a'.repeat(100)]) {
+    const f = fixture(t), local = source(f);
+    const path = join(local.directory, 'subs', part); mkdirSync(path, { mode: 0o700 });
+    writeFileSync(join(path, 'state'), 'must not upload', { mode: 0o600 });
+    assert.throws(() => snapshotPut(f.client, { op: 'snapshot-put', snapshot: 'safe', kind: 'checkpoint', directory: local.directory }), { code: 'unsafe-path' });
+    assert.equal(f.calls(), 0); assert.deepEqual(readdirSync(f.root), []);
+  }
+  const f = fixture(t), local = source(f);
+  assert.throws(() => snapshotPut(f.client, { op: 'snapshot-put', snapshot: '@snapshot', kind: 'checkpoint', directory: local.directory }));
+  assert.throws(() => new RecoveryClient({ ...f.config, installation: '@installation' }, f.execute));
+  assert.equal(f.calls(), 0);
 });
 test('changed source, symlink source, foreign manifest and tampered remote bytes fail', t => {
   const f = fixture(t); append(f.client, 1); append(f.client, 1, Buffer.from('controller'), 'controller');

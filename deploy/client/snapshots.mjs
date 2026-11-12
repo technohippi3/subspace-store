@@ -6,10 +6,11 @@ import { MAX_OBJECT, MAX_PLAIN, base64, digest, exact, integer, require, sha } f
 import { journalPosition } from './journals.mjs';
 
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/;
+const SNAPSHOT_PART = /^@?[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/;
 function safePath(path) {
   require(typeof path === 'string' && path.length <= 4096);
   const parts = path.split('/');
-  require(parts.length <= 128 && parts.every(part => ID.test(part) && !['.', '..'].includes(part)), 'unsafe-path');
+  require(parts.length <= 128 && parts.every(part => part.length <= 100 && SNAPSHOT_PART.exec(part)?.[0] === part && !['.', '..'].includes(part)), 'unsafe-path');
   require(['registry.db', 'controller.db', 'manifest.json', 'core-wallet.backup', 'spaced-wallet.export'].includes(path) ||
     parts.length > 1 && parts[0] === 'subs', 'unsafe-path');
 }

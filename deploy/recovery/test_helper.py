@@ -57,7 +57,10 @@ class HelperTests(unittest.TestCase):
         self.append(1, stream="controller")
         files = {}
         for path, data in {"registry.db": b"store database", "controller.db": b"controller database",
-                           "manifest.json": b"{}", "subs/state": b"native state"}.items():
+                           "manifest.json": b"{}", "subs/state": b"native state",
+                           "subs/@test10000/@test10000.sdb": b"native tree fixture",
+                           "subs/@test10000/@test10000.8192.hidx.sqlite": b"native index fixture",
+                           "subs/@test10000/subs.db": b"native database fixture"}.items():
             self.upload(data)
             files[path] = {"size": len(data), "sha256": sha(data), "chunks": [sha(data)]}
         return {"format": 1, "kind": "checkpoint", "authentication": "fixture-authentication", "installation": "fixture-installation", "snapshot": "001-checkpoint",
@@ -214,6 +217,27 @@ class HelperTests(unittest.TestCase):
                 manifest["installation"] = "foreign"
             self.request("snapshot-commit", snapshot="001-checkpoint", manifest=manifest, accepted=False)
             self.assertEqual(self.request("snapshot-list")["snapshots"], [])
+
+    def test_native_path_allowance_keeps_traversal_lengths_and_identifiers_strict(self):
+        manifest = self.manifest()
+        item = manifest["files"]["subs/state"]
+        for path in ("subs/@space/../escape", "subs/@space/./state", "/subs/@space/state",
+                     "subs//state", "subs/@@space/state", "subs/space@other/state", "subs/@../state",
+                     "subs/%2e%2e/state", "subs/space\\escape/state", "subs/@é/state",
+                     "subs/space\n", "subs/@space\r", "subs/space\u2028", "subs/@space\u2029",
+                     "subs/" + "a" * 101, "subs/@" + "a" * 100, "@registry.db", "@subs/state"):
+            with self.subTest(path=path):
+                changed = {**manifest, "files": {**manifest["files"], path: item}}
+                result = self.request("snapshot-commit", snapshot="001-checkpoint", manifest=changed, accepted=False)
+                self.assertEqual(result["code"], "unsafe-path")
+                self.assertEqual(self.request("snapshot-list")["snapshots"], [])
+        changed = {**manifest, "snapshot": "@snapshot"}
+        self.request("snapshot-commit", snapshot="@snapshot", manifest=changed, accepted=False)
+        original = self.command[-1]
+        self.command[-1] = "@installation"
+        self.request("probe", accepted=False)
+        self.command[-1] = original
+        self.request("snapshot-commit", snapshot="001-checkpoint", manifest=manifest)
 
     def test_snapshot_bytes_are_immutable_and_multichunk_files_verify(self):
         manifest = self.manifest()

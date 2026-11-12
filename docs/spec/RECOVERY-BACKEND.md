@@ -100,6 +100,20 @@ read-only store inventory, binding checks and unknown-transaction quarantine
 remain mandatory. Materializing a snapshot grants no send permission and
 opens no ordinary listener.
 
+Snapshot file paths preserve native subs names verbatim, including
+`subs/@space/@space.sdb`, `subs/@space/@space.8192.hidx.sqlite` and
+`subs/@space/subs.db`. Only snapshot path components may have one leading `@`,
+immediately followed by an ASCII alphanumeric character; their remaining
+characters are ASCII alphanumeric, underscore, period or hyphen. Every
+component remains at most100 characters, every path at most4096 characters
+and128 components. Empty, absolute, dot, parent, embedded-`@`, encoded or
+non-ASCII components refuse. Only the existing root file whitelist or the
+`subs/` subtree is allowed. Installation and snapshot identifiers retain their
+original alphanumeric-first grammar. Both client and restricted helper enforce
+the same path rule; file digests, manifest authentication, path-bound encryption
+and no-symlink/no-hardlink checks remain mandatory. An older pair refuses
+unsupported paths without renaming files or selecting a fallback.
+
 The TypeScript parent confirms a reconciliation receipt against the entire
 live decrypted controller prefix, then rereads its head. The claimed final
 row must be the exact `store_reconciliation` statement with the expected
@@ -122,3 +136,4 @@ client/helper and OpenSSH qualifications remain separately identified.
 | O159 | Version 1 retains its original FileJournal history and rejects an implicit backend protocol change. |
 | O181 | Actual concurrent helper processes and OpenSSH store/controller clients serialize transient lock contention; a two-second held-lock timeout returns storage-busy before publication and leaves original history unchanged. |
 | O182 | A real live SQLite acknowledgment advances after an initial pending snapshot copy; only a fresh complete copy with exact remote proof uploads. Persistent pending suffix, malformed markers, remote failure and mismatched bytes retain stopped subs and proved state without upload or local repair. |
+| O183 | Native @space tree/index/database paths round trip byte-for-byte through the encrypted client and actual OpenSSH helper; hostile paths, oversized components and @ installation/snapshot identifiers remain refused. |
