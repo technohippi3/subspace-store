@@ -53,7 +53,8 @@ export interface Payment extends Output { active: boolean }
 export interface Settings { version: 1; riskBudget: number; paused: boolean; conversions: string[];
   lastTime: number; tip: number; nextOrder: number }
 export interface RefundSettings { version: 1; policy: RefundPolicy; merchantDestinations: Destination[] }
-export interface ApplicationRecovery { version: 1; required: true; sourceSequence: number }
+export type ApplicationRecovery = { version: 1; required: true; sourceSequence: number } |
+  { version: 2; required: false; sourceSequence: number; proofHash: string; controllerSequence: number; tipHeight: number; tipHash: string };
 export interface State { settings: Settings; listings: Listing[]; orders: Order[]; payments: Payment[]; pending: string[]; entries: BoundEntry[];
   recovery: ApplicationRecovery | null;
   closures: EntryClosure[]; arms: EntryArm[];
@@ -161,10 +162,16 @@ export function decode(records: readonly Record[], riskBudget: number, refunds: 
     // immutable comparison point for the atomic changed-record commit.
     const v: unknown = structuredClone(record.value);
     switch (record.kind) {
-      case "application_recovery":
-        object(v, "version,required,sourceSequence"); whole(v.sourceSequence, 1);
-        if (record.key !== "global" || v.version !== 1 || v.required !== true) fail("invalid application recovery marker");
-        state.recovery = v as unknown as ApplicationRecovery; break;
+      case "application_recovery": {
+        const r=v as {[key:string]:unknown};
+        if(r?.version===2){
+          object(r,"version,required,sourceSequence,proofHash,controllerSequence,tipHeight,tipHash");
+          if(r.required!==false||typeof r.proofHash!=="string"||!/^[0-9a-f]{64}$/.test(r.proofHash)||typeof r.tipHash!=="string"||!/^[0-9a-f]{64}$/.test(r.tipHash))fail("invalid recovery completion");
+          whole(r.controllerSequence,1);whole(r.tipHeight);
+        }else{object(r,"version,required,sourceSequence");if(r.version!==1||r.required!==true)fail("invalid recovery quarantine");}
+        whole(r.sourceSequence,1);if(record.key!=="global")fail("invalid recovery marker identity");
+        state.recovery=r as unknown as ApplicationRecovery;break;
+      }
       case "supersession": supersessionRecord(v); if (`${v.entry}:${v.revision}` !== record.key) fail("supersession identity differs"); state.supersessions.push(v); break;
       case "fulfillment": fulfillmentRecord(v); if (v.oid !== record.key) fail("fulfillment identity differs"); state.fulfillments.push(v); break;
       case "recovery_incident": incidentRecord(v); if (String(v.id) !== record.key) fail("incident identity differs"); state.incidents.push(v); break;

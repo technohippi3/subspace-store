@@ -34,6 +34,7 @@ from .rebuild import PREPARING, Rebuild
 from .commitments import ANCHOR_FINALITY, FINAL_D, WATCHED, CommitmentTracking
 from .certificates import CertificateVerification
 from .supersessions import SupersessionTracking
+from .bound_recovery import BoundRecovery
 
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
@@ -110,7 +111,7 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking):
+class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking, BoundRecovery):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
@@ -813,7 +814,7 @@ class Controller(Issuance, Rebuild, CommitmentTracking, CertificateVerification,
 
     def _reconcile(self):
         if getattr(self.registry, "bound_entries", False):
-            raise Refused("TypeScript whole-host reconciliation is not implemented; locks retained")
+            return self.reconcile_bound()
         log = []
         orders = {r["oid"]: r["status"] for r in self.registry.db.execute("select oid, status from orders")}
         for b in self.batches():

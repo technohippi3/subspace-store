@@ -5,7 +5,9 @@ TypeScript store. The governing independent recovery model is
 `ts/model/recovery.ts`. Python's frozen store baseline is unchanged.
 These commands recover and inspect a quarantined application database;
 controller/subs reconciliation and the whole-host acceptance gate remain
-separate work. They cannot clear quarantine or open sales.
+separate work. Restore/recover cannot clear quarantine or open sales.
+`RECONCILIATION.md` extends this contract with offline completion for known
+histories, preserving the global pause.
 
 ## Restore contract
 
@@ -105,9 +107,10 @@ for another address, issuance or refund send after detecting newer history.
 This is an additional consistency barrier, not a distributed ownership
 lease. It does not replace fencing the old host. A process which wrote a
 conflicting local tail requires inspection; the tool does not erase it.
-The eventual controller-completion protocol must reconcile armed entries,
-uncertain sends, roots, wallets and recovery incidents before any durable
-quarantine-clear operation is introduced. That operation is absent here.
+The controller-completion protocol in `RECONCILIATION.md` reconciles armed entries,
+uncertain sends, roots, wallets and the journaled completion before clearing
+quarantine. Delivery incidents remain explicit and need fresh verification
+or attended resolution. Restore/recover themselves never clear quarantine.
 
 ## Evidence
 

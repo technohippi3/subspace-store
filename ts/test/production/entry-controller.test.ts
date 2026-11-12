@@ -71,7 +71,7 @@ test("O17: payment loss before arming safely rebuilds the entry while whole-host
     assert.equal((yield* store.inspectionOrder("o2")).status, "converted");
     assert.equal((yield* store.registry.entry("o2")).batch_entry, false);
     assert.equal((yield* store.inspectionOrder("o2")).price_reserve, 1000);
-    assert.match((yield* Effect.promise(() => command("host-restore"))).error!, /whole-host reconciliation is not implemented/);
+    assert.match((yield* Effect.promise(() => command("host-restore"))).error!, /store-owned offline reconcile command/);
     const child = yield* Effect.promise(() => command("finish-child")); assert.equal(child.sends, 1); assert.equal(child.child_states.b2, "broadcast");
   }));
 });

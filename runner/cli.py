@@ -223,6 +223,9 @@ class Runner:
         """The controller's readiness report, with the store's start-up
         reconciliation of refund attempts. Marks the restore recovered once
         nothing waits."""
+        if getattr(self.store, "bound_entries", False):
+            from .recovery_status import recovery_status
+            return recovery_status(self)
         report = self.c.recovery_report()
         report["state"] = self.c.recovery_state()
         startup = (self.store.status() or {}).get("startup") or {}
@@ -274,6 +277,9 @@ class Runner:
                                + "; nothing was done")
         snap = snapshots[-1]
         manifest = json.loads((snap / "manifest.json").read_text())
+        if getattr(self.store, "offline_recovery", False):
+            from .recovery_snapshot import validate_snapshot
+            validate_snapshot(snap, manifest, self.store.inventory, c.journal.position())
         files = {rel: d for rel, d in manifest["files"].items() if rel.startswith("subs/")}
         bad = [rel for rel, digest in sorted(files.items())
                if not (snap / rel).is_file()

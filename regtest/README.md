@@ -48,15 +48,18 @@ wallets are made fresh for each run inside `.run/`.
   fresh network, then stop. This is the milestone script.
 - `run-typescript-sale.sh [prefix]`: a standalone TypeScript JSON-API sale
   through the shipped runner, real Spaces/libveritas and a local relay,
-  including store crashes/restarts. It requires Node 24.14 or newer, the
-  pinned dependencies installed under `ts/`, the fetched stack, verifier
-  and relay builds. Build them with `fetch.sh`, `build-relay.sh` and
+  including store crashes/restarts and application/controller/subs restore.
+  It requires Node 24.14 or newer, pinned dependencies installed under `ts/`,
+  the fetched stack, verifier and combined U1(b)/relay-seed subs build.
+  Build them with `fetch.sh`, `build-combined.sh` and
   `cargo build --locked --release` from `verifier/` first. The scenario
   itself downloads nothing. It uses the bootstrap harness only to set up
   fresh chain fixtures; no purchase uses the Python registry. Its scope
   includes buyer cancellation and an attended runner refund received by
   the buyer, with exact transaction confirmation and restart checks. It
-  excludes browser checkout, buyer-client import and host loss.
+  restores fresh application/controller/subs paths and issues again, while
+  Core and wallets stay live. It excludes browser checkout, buyer-client
+  import and whole-host loss.
 - `run-all.sh [prefix]`: every scenario in order. CPU proving makes it
   slow.
 - `run-continued.sh [pinned|u1b]`: the first purchase, the second

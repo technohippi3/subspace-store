@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-from .procs import OPERATOR_WALLET, PORTS, bitcoind_version, relay_url, subs_capabilities
+from .procs import OPERATOR_WALLET, PORTS, bitcoind_version, relay_url, subs_bin, subs_capabilities
 from .rpc import Http
 from .scenarios import PRICE, SPACE_A, VERIFIER, Run
 
@@ -189,6 +189,8 @@ def sale(run):
          {"status": "fulfilled", "same_receipt": True, "same_certificate": True})
     from .typescript_refund import refund
     refund(run, buyer, operator, command, restart)
+    from .typescript_reconciliation import reconcile
+    reconcile(run, buyer, operator, command, restart, file, runner_file, link, receipt)
 
 
 def main(argv):
@@ -197,10 +199,12 @@ def main(argv):
     run = Run(argv[1])
     files = sorted([*ROOT.glob("ts/src/**/*.ts"), *ROOT.glob("controller/*.py"),
                     *ROOT.glob("runner/*.py"), Path(__file__), Path(__file__).with_name("typescript_refund.py"),
-                    Path(__file__).with_name("report.py")])
-    run.report.meta.update({"scope": "real Spaces-stack sale and attended cancellation refund; JSON buyer, no buyer client or host-loss gate",
+                    Path(__file__).with_name("report.py"), Path(__file__).with_name("typescript_reconciliation.py"),
+                    Path(__file__).with_name("procs.py"), ROOT / "regtest/run-typescript-sale.sh"])
+    run.report.meta.update({"scope": "real Spaces-stack sale/refund and application/controller/subs restore with continued issuance; wallets and Core stay live, no whole-host gate",
                             "comparison_source": "fixed_spec",
-                            "core": bitcoind_version(), "source_files": {
+                            "core": bitcoind_version(),
+                            "subs_binary": {"name": subs_bin().name, "sha256": hashlib.sha256(subs_bin().read_bytes()).hexdigest()}, "source_files": {
                                 str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}})
     try:
         sale(run)

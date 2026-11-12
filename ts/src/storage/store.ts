@@ -259,4 +259,18 @@ export class DurableStore {
         restoreRequired: this.db.prepare("select restored from store_meta where id=1").get()?.restored === 1 };
     });
   }
+  checkpoint() {
+    return attempt("checkpoint", () => {
+      const row=this.db.prepare("select payload from outbox order by seq desc limit 1").get();
+      const last=row?decode(row.payload as string):null;
+      return { store:this.identity,sequence:last?.seq??0,hash:last?.hash??null };
+    });
+  }
+  clearRestoreRequired(sequence: number) {
+    return attempt("complete restore", () => {
+      const row=this.db.prepare("select seq,acknowledged from outbox order by seq desc limit 1").get();
+      if(!row||row.seq!==sequence||row.acknowledged!==1)throw Error("recovery completion is not acknowledged at the current head");
+      this.db.prepare("update store_meta set restored=0 where id=1").run();
+    });
+  }
 }

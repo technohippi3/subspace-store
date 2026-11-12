@@ -13,8 +13,9 @@ function refundSettings(config: Config) {
   return configuration({ version: 1, policy: structuredClone(config.refundPolicy), merchantDestinations: structuredClone([...(config.merchantDestinations ?? [])]) });
 }
 /** Monotone and idempotent. No cached balance is reported as current here. */
-export function prepareRecovery(state: State, sequence: number) {
-  if (!state.recovery) state.recovery = { version: 1, required: true, sourceSequence: sequence };
+export function prepareRecovery(state: State, sequence: number, fresh = false) {
+  if (!state.recovery || fresh && !state.recovery.required) state.recovery = { version: 1, required: true, sourceSequence: sequence };
+  if (!state.recovery.required) return;
   state.settings.paused = true; state.pending = [];
   for (const order of state.orders) if (order.destination) {
     if (state.payments.some(p => p.script === order.destination!.script)) order.paymentHistory = "detected";
@@ -22,12 +23,12 @@ export function prepareRecovery(state: State, sequence: number) {
   }
   for (const cert of state.certificates) invalidateCertificate(state, cert, "application_restored");
 }
-function prepare(storage: DurableStore, config: Config) {
+export function prepareStoredRecovery(storage: DurableStore, config: Config, fresh = false) {
   return Effect.gen(function* () {
     const records = yield* storage.records();
     const state = yield* checked(() => decode(records, config.riskBudgetSats, refundSettings(config)));
     const position = yield* storage.status();
-    yield* checked(() => { validateRecoverySequence(state, position.seq); prepareRecovery(state, position.seq); });
+    yield* checked(() => { validateRecoverySequence(state, position.seq); prepareRecovery(state, position.seq, fresh); });
     yield* persist(storage, records, state, config.riskBudgetSats, refundSettings(config));
     return state;
   });
@@ -61,12 +62,12 @@ export function restoreApplication(config: Config) {
         if (!records.length) fail("empty application recovery set");
         validateRecoverySequence(decode(records, config.riskBudgetSats, refunds), sequence);
       } });
-    return yield* receipt(storage, yield* prepare(storage, config));
+    return yield* receipt(storage, yield* prepareStoredRecovery(storage, config, true));
   });
 }
 /** Strip every wallet-mutation capability, including an adapter supplied by a
  * caller. The recovery command only observes and persists accounting facts. */
-function readOnly(adapters: Adapters): Adapters {
+export function readOnly(adapters: Adapters): Adapters {
   const denied = Effect.fail(new ApplicationError({ code: "unavailable", message: "wallet mutation is unavailable during recovery" }));
   return { ...adapters, newDestination: denied,
     ...(adapters.refunds ? { refunds: { resolveAddress: () => denied, estimateRate: () => Effect.succeed(null), build: () => denied,
@@ -76,7 +77,7 @@ export function inspectRecovered(config: Config, adapters: Adapters,
   observe: (storage: DurableStore, readOnly: Adapters) => Effect.Effect<{ state: State; tipHash?: string | undefined }, ApplicationError | StorageError>) {
   return Effect.gen(function* () {
     const storage = yield* DurableStore.open({ ...config, restore: false, requireRestore: true });
-    const state = yield* prepare(storage, config), initial = yield* receipt(storage, state);
+    const state = yield* prepareStoredRecovery(storage, config), initial = yield* receipt(storage, state);
     if (!initial.acknowledged) return initial;
     yield* checked(() => { if (allMembers(state).some(m => m.transaction) && !adapters.refunds?.sender) fail("refund observation adapter required", "unavailable"); });
     const current = yield* observe(storage, readOnly(adapters));

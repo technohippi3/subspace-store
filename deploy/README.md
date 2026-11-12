@@ -73,7 +73,12 @@ serving or sending. Stop and fence the old instance first. Exit 0 means its
 receipt is acknowledged; it still reports controller reconciliation required.
 Exit 2 means journal acknowledgment is pending. These commands preserve
 quarantine and do not replace wallet backups, coordinated subs/controller
-restore or the eventual installer. Never clear recovery flags by hand.
+restore or the eventual installer. `node ts/src/main.ts reconcile <config>
+<runner-config>` now checks known bound history, restores controller/subs
+when needed, and confirms both journals before paused startup. Unknown sends
+and unsupported tree states retain quarantine. See
+`docs/spec/RECONCILIATION.md` for its scope; Core and wallets remain live in
+the current full-stack fixture. Never clear recovery flags by hand.
 
 Five of the requirements are not obvious from the files:
 - The runner stops and starts `subs` around each coordinated snapshot,

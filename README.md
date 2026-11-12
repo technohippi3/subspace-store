@@ -74,8 +74,10 @@ follow `docs/spec/SUPERSESSION.md`. This observes an already-settled conflict;
 it does not generate a rollback transaction or repair a Spaces tree.
 Explicit journal-only restore and read-only chain inspection now follow
 `docs/spec/APPLICATION-RESTORE.md`. Recovery retains payment uncertainty,
-financial history and a journaled quarantine; controller completion is
-still required before serving the restored application.
+financial history and a journaled quarantine. Offline controller/subs
+reconciliation and durable paused-startup completion now follow
+`docs/spec/RECONCILIATION.md`; a full-stack fixture restores application,
+controller and subs paths and issues again while Core and wallets stay live.
 Browser checkout, remaining sale/refund scenarios,
 other supersession paths and full application recovery remain. The Python
 store has the H12 process-ownership safety amendment.

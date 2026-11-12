@@ -80,7 +80,10 @@ real Core 31.2, spaced, subs, libveritas and a local relay. That scenario
 uses the buyer JSON API and shipped attended runner, and records exact
 source hashes and crash/restart checks. `ATTENDED-REFUNDS.md` now extends
 it through cancellation and a real attended refund received by the buyer.
-It is not browser checkout, buyer-client import or whole-host restore qualification.
+`RECONCILIATION.md` extends it through application/controller/subs restore
+and continued issuance using the existing combined U1(b)/relay-seed subs
+build. Core and wallets stay live. It is not browser checkout, buyer-client
+import or whole-host restore qualification.
 Results are recorded in `regtest/REPORT.md`; the existence of the harness
 alone establishes none of them. No deployment or sales-opening authority
 is implied.

@@ -85,8 +85,11 @@ construction, tree repair and alternative/unknown-transaction paths remain.
 Application journal replay and read-only inspection now follow
 `APPLICATION-RESTORE.md`: restored invoices retain payment uncertainty,
 certificates require re-verification, financial/issuance history survives
-and quarantine is journaled. Controller/subs reconciliation and the explicit
-completion protocol remain unbuilt, so these commands cannot start service.
+and quarantine is journaled. `RECONCILIATION.md` now defines offline
+controller/subs reconciliation and journal-bound completion for known
+histories, allowing only paused startup. The full-stack fixture restores
+application/controller/subs paths and issues again while Core/wallets stay
+live; wallet/whole-host recovery qualification remains.
 Browser checkout, remaining sale/refund scenarios, remaining supersession and
 application recovery remain. The release gate stays blocked; neither component
 nor model tests open sales.

@@ -2401,3 +2401,70 @@ work includes controller/subs reconciliation and an explicit durable
 quarantine-completion protocol, wallet/whole-host restore, remaining
 supersession paths and browser/buyer-client gates. Installer/Alchemy,
 signed updates and essential seller commands follow. Paid sales stay closed.
+
+
+## Offline TypeScript/controller reconciliation, 2026-11-12
+
+`docs/spec/RECONCILIATION.md` defines completion for known issuance histories.
+The store-owned offline command holds store ownership while the shipped
+Python subprocess locks the controller, restores the coordinated subs set
+when needed and journals a statement bound to the store UUID, journal
+prefix and tip. Exact entries/spaces, recipients, operator-wallet history,
+known Core transactions and Spaces/subs roots are checked. The TypeScript
+parent independently rereads transaction/input/root/block facts and wallet/
+root/pipeline state before publishing completion. Both live journals must
+acknowledge it before the local startup latch clears. Startup remains
+paused; certificates need fresh verification. Unknown sends, missing
+bindings and unsupported tree states retain quarantine without a send,
+rollback, release or new arm.
+
+Final run `typescript-sale-20261112T112933Z-202ad9` passes all 35 required
+checks against 99 current source hashes. The report also records the
+combined U1(b)/relay-seed subs binary's name and SHA-256. After real issuance,
+verified relay delivery and a settled cancellation refund, it replaces the
+application/controller/subs paths, restores their journals/snapshot and
+completes recovery. The first delivery receipt and settled refund remain;
+the original certificate requires and passes real libveritas verification.
+The normal runner then prepares, sends, certifies and publishes another
+batch on the restored tree. Its report and five original/reverified/new
+certificate and relay messages are retained. All five independently
+reverify offline using real libveritas.
+
+Two initial runs, `typescript-sale-20261112T111746Z-2583e4` and
+`typescript-sale-20261112T112146Z-320a29`, stopped at reconciliation because
+the normal-sale subs build lacks U1(b). Recovery correctly refused the
+required transaction attachment. The second used temporary private
+failure diagnostics, subsequently removed. Both error reports and their
+four pre-restore certificate/relay messages are retained; none is successful
+recovery evidence. Run `typescript-sale-20261112T112427Z-31aaf8` then passed
+35 checks against 97 hashes with the combined build. It predates the final
+binary metadata and harness-launcher hashes; its report and two pre-restore
+messages are retained. All eleven retained messages from these four runs
+independently reverify offline. Only the final run binds all 99 current
+source hashes.
+
+Core run `core-adapter-2026-11-12T11-27-52-039Z-e8cce85b` passes its 79
+existing checks against 67 current source hashes. Its safe qualification
+JSON is retained under `regtest/runs/`. This narrower Core scenario still
+ends with controller quarantine and does not execute the Spaces/controller
+completion scenario. Default CI runs it and the recording-adapter suites;
+the full Spaces-stack evidence is recorded separately.
+
+Pinned installation, type checking, 324 TypeScript tests, 308 Python tests,
+development coverage, shell syntax and whitespace checks pass. O88–O96 and
+A51–A56 land with executable production cases; O88/O90 also have independent
+model cases. Coverage reports 384 fixed-price cases without gaps, 40
+deferred cases and TypeScript model/store plus Python controller case
+counts of 57/205/56. The pilot production gate still refuses for 112 cases.
+The workspace register validates 1,371 records with 369 existing warnings.
+Its script checker reports two unrelated binary-size advisories; it does
+not qualify this external repository. Shellcheck/shfmt are unavailable;
+no unpinned checker was installed.
+
+Core and both wallets remain live throughout this recovery fixture. It does
+not establish wallet onboarding-backup restore, whole-host loss, unknown
+transaction recovery, browser checkout or buyer-client acceptance. Those
+remain before installer/Alchemy, signed updates and essential seller
+commands. Only fresh isolated fixture wallets were used. No existing wallet,
+managed credential, deployed service or mainnet state changed. Paid sales
+stay closed.

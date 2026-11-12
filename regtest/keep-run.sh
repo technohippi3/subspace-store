@@ -45,6 +45,12 @@ if [ -d "$SRC/runner/certs" ]; then
   mkdir -p "$STAGE/evidence/$RUN/runner"
   cp -r "$SRC/runner/certs/." "$STAGE/evidence/$RUN/runner/"
 fi
+# The TypeScript recovery fixture uses a fresh controller path. Keep its
+# reverified and subsequently issued messages separately from pre-loss ones.
+if [ -d "$SRC/runner-recovered/certs" ]; then
+  mkdir -p "$STAGE/evidence/$RUN/runner-recovered"
+  cp -r "$SRC/runner-recovered/certs/." "$STAGE/evidence/$RUN/runner-recovered/"
+fi
 
 if ! python3 -I - "$STAGE" <<'PY'
 import pathlib, re, sys

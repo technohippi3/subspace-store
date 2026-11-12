@@ -33,7 +33,11 @@ and reorg-reversal handling (`../docs/spec/SUPERSESSION.md`). The store checks
 the Core proof; Spaces root exclusion is a trusted controller attestation.
 Journal-only application restore and read-only recovery inspection now follow
 `../docs/spec/APPLICATION-RESTORE.md`. The restored store remains quarantined
-until controller reconciliation; the commands cannot reopen sales.
+until controller reconciliation; restore/recover cannot reopen sales.
+`../docs/spec/RECONCILIATION.md` now defines the offline reconcile command,
+which independently checks known transaction/root/wallet histories and both
+journals before permitting paused startup. The Spaces-stack fixture restores
+application/controller/subs paths and issues again with live Core/wallets.
 Browser checkout, remaining sale/refund scenarios, other supersession paths and full application
 recovery remain. The Python service,
 controller and runner remain the
@@ -218,9 +222,10 @@ Domain rules of `service/ledger.py` still to port, each with its home:
    Pending selection, bound entry, commitment observation, certificate acceptance
    and explicit known-transaction delegate-conflict proof now exist. Generating
    a rollback, repairing the Spaces tree and resolving conflicts remain manual.
-3. Controller/subs reconciliation and a validated quarantine-completion protocol.
-   Journal-only restore now validates application records and comes back paused;
-   read-only inspection refreshes payment/refund facts without serving or sending.
+3. Wallet onboarding-backup and whole-host recovery qualification.
+   Journal-only restore and offline controller/subs reconciliation now permit
+   paused startup for known histories. Unknown sends and tree repair remain
+   manual; Core and wallets stay live in the current full-stack fixture.
 
 `src/application/` now has strict records, serialized Effect commands,
 public request validation, journal-gated addresses/cancellations and
@@ -288,7 +293,7 @@ are reconstructible local cache; their binding and invalidation are journaled.
 Bound delivery callbacks now retain first delivery and fulfilled ownership
 across certificate loss, with explicit recovery incidents.
 Next complete additional Spaces-stack qualification, remaining supersession/recovery, order views and
-application recovery, then run the production gates above. The
+wallet/whole-host recovery, then run the production gates above. The
 controller port follows the first pilot and must preserve the specified
 interrupted-broadcast recovery; the Python controller ships initially.
 

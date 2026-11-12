@@ -22,7 +22,8 @@ export function qualification(repository: string, root: string, name: string) {
     "ts/src/application/supersessions.ts", "ts/src/application/supersession-records.ts", "ts/src/application/supersession-http.ts",
     "ts/src/bitcoin/supersession.ts", "ts/regtest/supersessions.ts",
     "ts/src/storage/store.ts", "ts/src/application/recovery.ts", "ts/src/application/persistence.ts",
-    "ts/src/runtime/recovery.ts", "ts/regtest/recovery.ts"];
+    "ts/src/runtime/recovery.ts", "ts/regtest/recovery.ts", "ts/src/application/reconciliation.ts",
+    "ts/src/application/reconciliation-records.ts", "ts/src/runtime/reconciliation.ts"];
   writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
     files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
     checks: ["payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",

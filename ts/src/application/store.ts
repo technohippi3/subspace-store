@@ -21,6 +21,7 @@ import { recoveryView } from "./deliveries.ts";
 import { checkSupersessions, type SupersessionChain } from "./supersessions.ts";
 import { persist } from "./persistence.ts";
 import { inspectRecovered } from "./recovery.ts";
+import { reconcileRecovered, type RecoveryController } from "./reconciliation.ts";
 
 export interface Adapters {
   readonly clock: () => number;
@@ -75,12 +76,18 @@ export class SalesStore {
       return yield* new SalesStore(storage, readOnly, config, cache).refresh(true);
     }));
   }
+  static reconcileRecovery(config:Config,adapters:Adapters,controller:RecoveryController){
+    return reconcileRecovered(config,adapters,controller,(storage,readOnly)=>Effect.gen(function*(){
+      const cache=yield* verified(()=>new CertificateCache(config.database+".certificates"));
+      return yield* new SalesStore(storage,readOnly,config,cache).refresh(true);
+    }));
+  }
   private load(recovery = false) {
     const self = this;
     return Effect.gen(function* () {
       const records = yield* self.storage.records();
       const state = yield* verified(() => decode(records, self.budget, self.refunds));
-      if (state.recovery && !recovery) return yield* checked(() => fail("restored application requires controller and chain reconciliation", "unavailable"));
+      if (state.recovery?.required && !recovery) return yield* checked(() => fail("restored application requires controller and chain reconciliation", "unavailable"));
       return { records, state };
     });
   }
@@ -302,7 +309,7 @@ export class SalesStore {
       })) : null;
       return { orders: structuredClone(state.monitors), alerts: structuredClone(state.alerts), assessments: structuredClone(state.assessments),
         recovery_incidents: structuredClone(state.incidents), acknowledged: position.acknowledged === position.seq,
-        chain, paused: state.settings.paused };
+        chain, paused: state.settings.paused, application_recovery: state.recovery };
     }));
   }
   private inspectedOrder(state: State, order: Order) {
