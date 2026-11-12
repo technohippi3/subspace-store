@@ -1,3 +1,4 @@
+import {backendStorage} from "../storage/ssh-journal.ts";
 import {NativeArtifacts,CertificateExports} from "../application/certificate-export.ts";
 import {trustedRootAnchors} from "./export-anchors.ts";
 import { ownConfiguredInstallation } from "./installation-fence.ts";
@@ -28,7 +29,7 @@ export function startRuntime(value: unknown) {
     const installationIdentity = observeIdentity(coreConfig).pipe(Effect.flatMap(observed => checked(() => { bound = bindIdentity(bound ?? null, observed, false); return bound; })));
     const core = yield* CoreAdapter.make(coreConfig), refunds = yield* CoreRefundWallet.make(coreConfig), sender = yield* CoreRefundSender.make(coreConfig);
     const supersessionChain = yield* conflictVerifier(coreConfig);
-    const store = yield* SalesStore.open({...config, installationExpectation: expectedIdentity(config), startupPause: config.version === 2}, {
+    const store = yield* SalesStore.open({...config, ...backendStorage(config.recoveryBackend), installationExpectation: expectedIdentity(config), startupPause: config.version === 2}, {
       installationIdentity, clock: () => Math.floor(Date.now() / 1000), snapshot: destinations => core.snapshot(destinations),
       newDestination: core.newDestination(), certificateChain: checkpoint => core.containsBlock(checkpoint),
       supersessionChain,

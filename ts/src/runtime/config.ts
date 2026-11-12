@@ -1,3 +1,4 @@
+import {backendReference,type RecoveryBackendReference} from "../storage/ssh-journal.ts";
 import {externalOrigin} from "../application/certificate-export.ts";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve, sep } from "node:path";
@@ -11,6 +12,7 @@ export interface CertificateExportConfig { trustedOrigin:string;binary:string;ar
 export interface RuntimeConfig {
   version: 1 | 2; network: "main" | "regtest";
   certificateExport?:CertificateExportConfig;
+  recoveryBackend?:RecoveryBackendReference;
   maintenanceLock?: string;
   installation?: { genesis: string; descriptorHash: string };
   database: string; journalDirectory: string;
@@ -31,8 +33,10 @@ export function configuration(value: unknown): RuntimeConfig {
   try {
     fields(value, "version,network,database,journalDirectory,listen,core,credentials,riskBudgetSats,refundPolicy,merchantDestinations,pollMilliseconds" +
       ((value as {version?:unknown})?.version === 2 ? ",installation,maintenanceLock" : "") +
-      ((value as {version?:unknown;certificateExport?:unknown})?.version===2&&Object.hasOwn(value as object,"certificateExport")?",certificateExport":""));
+      ((value as {version?:unknown;certificateExport?:unknown})?.version===2&&Object.hasOwn(value as object,"certificateExport")?",certificateExport":"") +
+      ((value as {version?:unknown})?.version===2&&Object.hasOwn(value as object,"recoveryBackend")?",recoveryBackend":""));
     if (value.version === 1 ? value.network !== "regtest" : value.version !== 2 || (value.network !== "main" && value.network !== "regtest")) throw invalid();
+    if (Object.hasOwn(value,"recoveryBackend")) backendReference(value.recoveryBackend);
     fields(value.listen, "buyer,operator,subs");
     for (const port of Object.values(value.listen)) { whole(port, 1); if (port > 65535) throw invalid(); }
     if (new Set(Object.values(value.listen)).size !== 3) throw invalid();
@@ -48,7 +52,7 @@ export function configuration(value: unknown): RuntimeConfig {
       fields(e.spaced,"url,cookiePath");path(e.spaced.cookiePath);if(typeof e.spaced.url!=="string")throw invalid();new BitcoinRpc(e.spaced as unknown as RuntimeConfig["core"]);
     }
     fields(value.credentials, "operator,subs"); path(value.credentials.operator); path(value.credentials.subs);
-    const paths = [value.database, value.journalDirectory, value.core.cookiePath, value.credentials.operator, value.credentials.subs, ...(value.version === 2 ? [value.maintenanceLock as string] : []),...(value.certificateExport?[value.certificateExport.binary as string,value.certificateExport.artifactManifest as string,value.certificateExport.directory as string,(value.certificateExport.spaced as {cookiePath:string}).cookiePath]:[])].map(p => resolve(p));
+    const paths = [value.database, value.journalDirectory, value.core.cookiePath, value.credentials.operator, value.credentials.subs, ...(value.version === 2 ? [value.maintenanceLock as string] : []),...(value.recoveryBackend ? Object.values(backendReference(value.recoveryBackend)).filter((v):v is string=>typeof v==="string") : []),...(value.certificateExport?[value.certificateExport.binary as string,value.certificateExport.artifactManifest as string,value.certificateExport.directory as string,(value.certificateExport.spaced as {cookiePath:string}).cookiePath]:[])].map(p => resolve(p));
     if (new Set(paths).size !== paths.length || paths.some(p => p !== paths[1] && p.startsWith(paths[1]! + sep))) throw invalid();
     if(value.certificateExport){const cache=resolve(value.certificateExport.directory as string);if(paths.some(p=>p!==cache&&(p.startsWith(cache+sep)||cache.startsWith(p+sep))))throw invalid();}
     sats(value.riskBudgetSats); policy(value.refundPolicy); whole(value.pollMilliseconds, 100);

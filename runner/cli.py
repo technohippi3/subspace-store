@@ -297,7 +297,29 @@ class Runner:
             raise NotConfirmed("the controller's journal holds no batches: nothing to "
                                "restore, nothing was done")
         pending = c.restore_pending()
-        snapshots = sorted((d for d in Path(c.snapshot_dir).glob("*")
+        backend = getattr(c, "recovery_backend", None)
+        if backend:
+            import tempfile
+            from controller.recovery_backend import validate_snapshot_prefixes
+            # A new private destination for every attempt. Existing local copies
+            # can never authorize a restore when the remote is unavailable.
+            names = [name for name in backend.list_snapshots() if c.snapshot_number(name) >= 0]
+            if pending["snapshot"]:
+                names = [name for name in names if name == pending["snapshot"]]
+            if not names:
+                raise NotConfirmed("no acknowledged coordinated snapshot; nothing was done")
+            name = max(names, key=c.snapshot_number)
+            Path(c.snapshot_dir).mkdir(parents=True, exist_ok=True)
+            root = Path(tempfile.mkdtemp(prefix="restore-", dir=c.snapshot_dir))
+            snap = root / name
+            result = backend.materialize_snapshot(name, snap)
+            if result.get("snapshot") != name or result.get("kind") != "checkpoint":
+                raise NotConfirmed("remote coordinated snapshot identity differs")
+            manifest = json.loads((snap / "manifest.json").read_text())
+            validate_snapshot_prefixes(snap, manifest, backend)
+            snapshots = [snap]
+        else:
+            snapshots = sorted((d for d in Path(c.snapshot_dir).glob("*")
                             if (d / "manifest.json").is_file() and c.snapshot_number(d) >= 0),
                            key=c.snapshot_number) if Path(c.snapshot_dir).is_dir() else []
         if pending["snapshot"]:
@@ -339,10 +361,12 @@ class Runner:
             if not exact:
                 # Copied beside the data directory and moved into place
                 # whole, so an interruption leaves it empty or complete.
-                stage = data.with_name(data.name + ".restoring")
-                if stage.exists():
-                    shutil.rmtree(stage)
-                shutil.copytree(snap / "subs", stage)
+                import tempfile
+                # Never remove an ambiguous stage left by another attempt.
+                # The fresh private directory is owned by this invocation.
+                data.parent.mkdir(parents=True, exist_ok=True)
+                stage = Path(tempfile.mkdtemp(prefix=data.name + ".restoring-", dir=data.parent))
+                shutil.copytree(snap / "subs", stage, dirs_exist_ok=True)
                 os.replace(stage, data)
                 copied = True
             c.mark_subs_restored(snap.name)
@@ -600,7 +624,8 @@ def build(config, ask=None):
     fence = installation_fence(config)
     try:
         s = config["store"]
-        store = configured_store(s)
+        from controller.recovery_backend import configured as recovery_backend
+        store = configured_store(s, recovery_backend=recovery_backend(config))
         try:
             controller, publisher = host.build(config, store)
         except host.ConfigError as e:

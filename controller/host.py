@@ -46,6 +46,7 @@ from pathlib import Path
 from .installation_fence import configured as installation_fence, attach as attach_fence
 from .core import Capabilities, Clients, Controller
 from .journal import Journal
+from .recovery_backend import configured as recovery_backend, reference as backend_reference, RemoteJournal
 from .publication import Publisher
 from .rpc import Http, JsonRpc
 
@@ -151,6 +152,13 @@ def check(config):
             continue
         if not _value_ok(kind, section[path[-1]]):
             raise ConfigError(f"{'.'.join(path)} must be {WHAT[kind]}")
+    if "recovery_backend" in config:
+        try:
+            backend_reference(config["recovery_backend"])
+        except ValueError as e:
+            raise ConfigError(str(e)) from e
+        if config.get("version") != 2 or config["store"].get("implementation") != "typescript" or not Path(config["controller"].get("snapshot_dir", "")).is_absolute():
+            raise ConfigError("recovery_backend requires version 2, the TypeScript store and an explicit absolute controller.snapshot_dir")
     capabilities(config)
     if config["store"].get("implementation", "python") not in ("python", "typescript"):
         raise ConfigError("store.implementation must be python or typescript")
@@ -182,7 +190,8 @@ def build(config, registry, cwd=None):
         cc = _need(config, "controller")
         host = Path(_need(config, "controller", "dir"))
         host.mkdir(parents=True, exist_ok=True)
-        journal = Journal(_need(config, "controller", "journal_dir"), cc.get("journal_name", "runner"))
+        backend = recovery_backend(config)
+        journal = RemoteJournal(backend) if backend else Journal(_need(config, "controller", "journal_dir"), cc.get("journal_name", "runner"))
         s = _need(config, "subs")
         subs = CommandSubs(_need(config, "subs", "data_dir"), _need(config, "subs", "stop_command"),
                            _need(config, "subs", "start_command"), s.get("command_timeout", 300),
@@ -192,6 +201,7 @@ def build(config, registry, cwd=None):
                                 _need(config, "controller", "operator_wallet"), capabilities(config),
                                 snapshot_dir=cc.get("snapshot_dir"),
                                 ready_timeout=s.get("ready_timeout", 120))
+        controller.recovery_backend = backend
         attach_fence(controller, fence)
         fence = None
         try:

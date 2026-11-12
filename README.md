@@ -27,8 +27,9 @@ with the Python controller and runner at first. Further decisions the same
 day set buyer cancellation before issuance, the refund deadline and fees,
 the excess minimum, the delivery target and what evidence is published.
 The prices and the risk budget are still the workspace_owner's to set.
-Some pilot rules now have runtime coverage, but complete sales, refunds
-and recovery remain unfinished. These decisions authorize no deployment, no wallet
+The TypeScript store and Python controller now have source production coverage
+and isolated regtest sale, refund and recovery evidence. The complete installed
+release and buyer acceptance remain unfinished. These decisions authorize no deployment, no wallet
 transaction and no opening of sales.
 
 `docs/spec/SELLER-OPERATIONS.md` defines the repeatable seller CLI, explicit
@@ -102,6 +103,11 @@ Version 2 starts paused and closes never-detected historical payment prompts;
 `maintain` proves a normal same-database update without clearing real restore
 quarantine (`docs/spec/RUNTIME.md`). The production coverage gate now passes;
 package composition and buyer/operator acceptance remain separate release work.
+`docs/spec/RECOVERY-BACKEND.md` connects explicit version 2 configuration to
+encrypted remote journals and coordinated snapshots without local fallback.
+Its controlled-reply composition tests qualify application and controller
+boundaries; the signed package must separately qualify the actual SSH client,
+service credentials, installation, updates and restored service ownership.
 The Python store has the H12 process-ownership safety amendment.
 
 There is a reviewed specification, a reference model of the fixed-price

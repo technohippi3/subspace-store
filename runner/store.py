@@ -15,6 +15,7 @@ import weakref
 from pathlib import Path
 
 from controller.journal import Journal
+from controller.recovery_backend import acknowledged_store_position
 from controller.rpc import Http, HttpError
 from .commitments import receipt as commitment_receipt
 from .certificates import accept as accept_certificate
@@ -54,14 +55,22 @@ class _SnapshotJournal(Journal):
         return last
 
 
+class _RemoteSnapshotJournal:
+    def __init__(self, backend, store):
+        self.backend, self.store = backend, weakref.proxy(store)
+
+    def position(self):
+        return acknowledged_store_position(self.store.db, self.backend)
+
+
 class Store:
     bound_entries = False
 
-    def __init__(self, url, token_file, db_path, journal_dir):
+    def __init__(self, url, token_file, db_path, journal_dir, recovery_backend=None):
         self.url = url
         self.token_file = Path(token_file)
         self.db_path = Path(db_path)
-        self.journal = _SnapshotJournal(journal_dir, self)
+        self.journal = _RemoteSnapshotJournal(recovery_backend, self) if recovery_backend else _SnapshotJournal(journal_dir, self)
         self._db = None
 
     @property
@@ -270,9 +279,9 @@ class TypeScriptStore(Store):
         return commitment_receipt(self.op("POST", "/operator/commitments", payload), payload, Refused)
 
 
-def configured_store(config):
+def configured_store(config, recovery_backend=None):
     mode = config.get("implementation", "python")
     if mode not in ("python", "typescript"):
         raise Refused("unsupported store implementation")
     cls = TypeScriptStore if mode == "typescript" else Store
-    return cls(config["url"], config["operator_token_file"], config["db"], config["journal_dir"])
+    return cls(config["url"], config["operator_token_file"], config["db"], config["journal_dir"], recovery_backend=recovery_backend)

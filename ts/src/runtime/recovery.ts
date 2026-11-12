@@ -1,3 +1,4 @@
+import {backendStorage} from "../storage/ssh-journal.ts";
 import { ownConfiguredInstallation } from "./installation-fence.ts";
 import { observeIdentity } from "../bitcoin/observe-identity.ts";
 import { bindIdentity } from "../bitcoin/identity.ts";
@@ -18,7 +19,7 @@ export function recoveryCommand(mode: "restore" | "recover" | "reconcile" | "mai
   return Effect.gen(function* () {
     config = yield* checked(() => configuration(config));
     yield* ownConfiguredInstallation(config.maintenanceLock);
-    const applicationConfig = {...config, installationExpectation: expectedIdentity(config)};
+    const applicationConfig = {...config, ...backendStorage(config.recoveryBackend), installationExpectation: expectedIdentity(config)};
     if (mode === "restore") return yield* restoreApplication(applicationConfig);
     let bound = expectedIdentity(config);
     const settings = { ...config.core, network: config.network, identity: () => bound }, core = yield* CoreAdapter.make(settings);

@@ -1,3 +1,5 @@
+import {backendReference,sameBackend,RecoveryCommand,type RecoveryBackendReference} from "../storage/ssh-journal.ts";
+import {confirmControllerReceipt} from "./remote-controller-proof.ts";
 import { spawn } from "node:child_process";
 import { readFileSync, openSync, closeSync, fsyncSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
@@ -11,14 +13,16 @@ import { object, integer, hex } from "../bitcoin/validation.ts";
 import type { RuntimeConfig } from "./config.ts";
 
 const unavailable=()=>new ApplicationError({code:"unavailable",message:"controller recovery evidence unavailable or changed"});
-interface Host { network: "mainnet" | "regtest"; controller:{journal_dir:string;journal_name?:string;operator_wallet:string};
+interface Host { recovery_backend?:RecoveryBackendReference; network: "mainnet" | "regtest"; controller:{journal_dir:string;journal_name?:string;operator_wallet:string};
   spaced:{url:string;cookie_file:string}; subs:{url:string;write_url?:string} }
-function host(file:string,network:RuntimeConfig["network"]):Host{
+function host(file:string,network:RuntimeConfig["network"],backend:RecoveryBackendReference|undefined):Host{
   const raw=readFileSync(file);if(raw.length>65536)throw unavailable();
   const v=object(JSON.parse(raw.toString("utf8"))),c=object(v.controller),s=object(v.spaced),u=object(v.subs);
   for(const item of [c.journal_dir,c.operator_wallet,s.url,s.cookie_file,u.url])if(typeof item!=="string"||!item||item.length>4096)throw unavailable();
   if(c.journal_name!==undefined&&(typeof c.journal_name!=="string"||!/^[a-zA-Z0-9_-]{1,64}$/.test(c.journal_name)))throw unavailable();
   if(v.network!==(network==="main"?"mainnet":"regtest"))throw unavailable();
+  const remote=v.recovery_backend===undefined?undefined:backendReference(v.recovery_backend);
+  if(!sameBackend(backend,remote))throw unavailable();
   return v as unknown as Host;
 }
 /** Spawn with cancellation and a bounded response; inventory contains neither
@@ -30,11 +34,12 @@ function runController(file:string,config:RuntimeConfig,input:RecoveryInventory)
     child.stdout.on("data",data=>{size+=data.length;if(size>4194304)child.kill("SIGKILL");else output+=String(data);});
     child.stderr.on("data",()=>{});child.once("error",reject);
     child.once("close",code=>{clearTimeout(timer);try{if(code!==0||size>4194304)throw unavailable();resolvePromise(JSON.parse(output));}catch{reject(unavailable());}});
-    child.stdin.on("error",reject);child.stdin.end(JSON.stringify({inventory:input,network:config.network,database:config.database,journalDirectory:config.journalDirectory,core:config.core}));
+    child.stdin.on("error",reject);child.stdin.end(JSON.stringify({inventory:input,network:config.network,...(config.recoveryBackend?{recoveryBackend:config.recoveryBackend}:{}),database:config.database,journalDirectory:config.journalDirectory,core:config.core}));
   }),catch:unavailable});
 }
 function confirmController(h:Host,receipt:ControllerReceipt){
   return checked(()=>{
+    if(h.recovery_backend){const b=h.recovery_backend;confirmControllerReceipt(new RecoveryCommand(b.node,b.client,b.config),receipt,proofHash);return;}
     const name=h.controller.journal_name??"runner",directory=resolve(h.controller.journal_dir);
     if(existsSync(join(directory,name+".down")))throw unavailable();
     const file=join(directory,name+".jsonl"),lines=readFileSync(file,"utf8").trim().split("\n");
@@ -80,6 +85,6 @@ function verify(config:RuntimeConfig,h:Host,receipt:ControllerReceipt){
   },catch:unavailable});
 }
 export function controllerRecovery(config:RuntimeConfig,file:string):RecoveryController{
-  const h=host(file,config.network);
+  const h=host(file,config.network,config.recoveryBackend);
   return {run:input=>runController(file,config,input),verify:receipt=>verify(config,h,receipt),confirm:receipt=>confirmController(h,receipt)};
 }

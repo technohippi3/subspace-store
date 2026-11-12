@@ -122,6 +122,7 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
             self.db.executescript(SCHEMA)
             self._migrate()
             self.journal = journal
+            self.recovery_backend = getattr(journal, "backend", None)
             self._rebuild_policy()  # Refuse malformed/unsupported policy history before serving.
             self.registry = registry
             self.clients = clients
@@ -490,9 +491,20 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
         # Numbered from what is already there, so the latest is well defined
         # however many processes took them (each runner command is its own).
         self.snapshots += 1
-        n = max((self.snapshot_number(d) for d in self.snapshot_dir.glob("*")), default=0) \
-            if self.snapshot_dir.is_dir() else 0
-        dest = self.snapshot_dir / f"{n + 1:03d}-{label}"
+        backend = getattr(self, "recovery_backend", None)
+        if backend:
+            n = max([0, *(self.snapshot_number(name) for name in backend.list_snapshots())])
+        else:
+            n = max((self.snapshot_number(d) for d in self.snapshot_dir.glob("*")), default=0) \
+                if self.snapshot_dir.is_dir() else 0
+        snapshot_name = f"{n + 1:03d}-{label}"
+        if backend:
+            import tempfile
+            self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+            staging = Path(tempfile.mkdtemp(prefix="checkpoint-", dir=self.snapshot_dir))
+            dest = staging / snapshot_name
+        else:
+            dest = self.snapshot_dir / snapshot_name
         dest.mkdir(parents=True)
         self.subs_process.stop()
         if not self._subs_stopped():
@@ -503,11 +515,22 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
         for name, conn in (("registry.db", self.registry.db), ("controller.db", self.db)):
             out = sqlite3.connect(dest / name)
             conn.backup(out)
+            if backend:
+                # A self-contained backup must not create WAL/SHM files when
+                # its exact prefix is read or after remote materialization.
+                out.execute("pragma journal_mode=delete")
             out.close()
-        manifest = {"label": label,
-                    "store_journal": self.registry.journal.position(),
-                    "controller_journal": self.journal.position(),
-                    "files": {}}
+        if backend:
+            from .recovery_backend import acknowledged_store_position, acknowledged_controller_position
+            with sqlite3.connect((dest / "registry.db").resolve().as_uri() + "?mode=ro", uri=True) as db:
+                store_position = acknowledged_store_position(db, backend, exact_head=False)
+            with sqlite3.connect((dest / "controller.db").resolve().as_uri() + "?mode=ro", uri=True) as db:
+                controller_position = acknowledged_controller_position(db, backend)
+        else:
+            store_position = self.registry.journal.position()
+            controller_position = self.journal.position()
+        manifest = {"label": label, "store_journal": store_position,
+                    "controller_journal": controller_position, "files": {}}
         for f in sorted(dest.rglob("*")):
             if f.is_file():
                 manifest["files"][str(f.relative_to(dest))] = hashlib.sha256(f.read_bytes()).hexdigest()
@@ -520,10 +543,18 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
                 src = subs_dir / rel[len("subs/"):]
                 if hashlib.sha256(src.read_bytes()).hexdigest() != digest:
                     mismatches.append(rel)
-        self.subs_process.start()
-        self._wait_subs_ready()
         if mismatches:
             raise Refused(f"snapshot objects do not match: {mismatches}")
+        if backend:
+            if not self._subs_stopped():
+                raise Refused("subs restarted during checkpoint; nothing was acknowledged")
+            from .recovery_backend import sync_snapshot
+            sync_snapshot(dest)
+            backend.upload_snapshot(dest, snapshot_name)
+            if not self._subs_stopped():
+                raise Refused("subs restarted before checkpoint acknowledgment; nothing resumes")
+        self.subs_process.start()
+        self._wait_subs_ready()
         root = Path(__file__).resolve().parents[1]
         shown = dest.relative_to(root) if dest.is_relative_to(root) else dest
         return {"dir": str(shown), "objects": len(manifest["files"]),

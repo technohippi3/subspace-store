@@ -1,9 +1,22 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 
+export function productionSources(repository:string, directory="ts/src"):string[] {
+  const files:string[]=[];
+  let parent=repository;
+  for(const part of directory.split("/")) {parent=join(parent,part);if(lstatSync(parent).isSymbolicLink())throw Error("production source symlink refused");}
+  for(const entry of readdirSync(join(repository,directory),{withFileTypes:true})) {
+    const file=directory+"/"+entry.name;
+    // Do not follow a symlink into an unrelated tree or silently hash it.
+    if(entry.isSymbolicLink()) throw Error("production source symlink refused");
+    if(entry.isDirectory()) files.push(...productionSources(repository,file));
+    else if(entry.isFile() && /\.(?:ts|mjs)$/.test(entry.name)) files.push(file);
+  }
+  return files.sort();
+}
 export function qualification(repository: string, root: string, name: string) {
-  const files = ["ts/src/runtime/installation-fence.ts", "controller/installation_fence.py", "ts/src/bitcoin/identity.ts", "ts/src/bitcoin/observe-identity.ts", "ts/src/bitcoin/rpc.ts", "ts/src/bitcoin/core.ts", "ts/src/bitcoin/validation.ts", "ts/src/bitcoin/refunds.ts",
+  const selected = ["ts/src/runtime/installation-fence.ts", "controller/installation_fence.py", "ts/src/bitcoin/identity.ts", "ts/src/bitcoin/observe-identity.ts", "ts/src/bitcoin/rpc.ts", "ts/src/bitcoin/core.ts", "ts/src/bitcoin/validation.ts", "ts/src/bitcoin/refunds.ts",
     "ts/src/refunds/policy.ts", "ts/src/refunds/records.ts", "ts/src/refunds/types.ts", "ts/src/refunds/book.ts",
     "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts",
     "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
@@ -24,6 +37,7 @@ export function qualification(repository: string, root: string, name: string) {
     "ts/src/storage/store.ts", "ts/src/application/recovery.ts", "ts/src/application/persistence.ts",
     "ts/src/runtime/recovery.ts", "ts/regtest/recovery.ts", "ts/src/application/reconciliation.ts",
     "ts/src/application/reconciliation-records.ts", "ts/src/runtime/reconciliation.ts"];
+  const files=[...new Set([...selected,...productionSources(repository)])].sort();
   writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
     files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
     checks: ["installation-genesis-and-public-descriptor-identity", "identity-stable-across-keypool-advance", "identity-mismatch-blocks-address-allocation", "payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",

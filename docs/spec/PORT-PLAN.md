@@ -105,6 +105,12 @@ The source production-coverage gate now passes. Native export, scoped QR
 capabilities and cold-start/maintenance lifecycle rules have model and production
 coverage in `NATIVE-EXPORT.md` and `RUNTIME.md`. That source gate does not
 establish the signed package, buyer-client or operator acceptance gates.
+`RECOVERY-BACKEND.md` now defines the explicit version 2 remote journal
+selection shared by startup, maintenance and host-loss recovery. Production
+composition tests check complete decrypted prefixes, checkpoint acknowledgement
+before restart, fresh snapshot materialization and matching parent/child
+references. The final installed package still needs its separate actual SSH,
+systemd and restored-service qualification.
 
 The seller CLI and repeatable policy operations now follow
 `SELLER-OPERATIONS.md`, including explicit request limits and funded owner
@@ -156,8 +162,8 @@ their implementation and integration tests. Until then, the acceptance
 tasks in this plan remain unverified work. Do not add skipped placeholders,
 temporary exemptions or another case-status system to keep CI green.
 
-`python3 tools/case_coverage.py --release pilot` is implemented and
-intentionally blocks the pilot today. It rejects unknown arguments and
+`python3 tools/case_coverage.py --release pilot` is implemented and passes
+on the current source. It rejects unknown arguments and
 fails when any required pilot case lacks a production test of its shipped
 component. It runs in the pilot-readiness workflow after the relevant test
 suites. Future artifact publication must depend on this readiness result.

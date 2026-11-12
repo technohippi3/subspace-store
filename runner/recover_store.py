@@ -5,16 +5,19 @@ from pathlib import Path
 
 from controller.host import build, check
 from controller.errors import Refused
+from controller.recovery_backend import reference as backend_reference
 from runner.cli import Runner
 from .recovery_bridge import RecoveryStore, digest
 
 
 def main():
     request = json.loads(sys.stdin.buffer.read(4_194_305))
-    if len(json.dumps(request)) > 4_194_304 or set(request) != {"inventory", "network", "database", "journalDirectory", "core"}:
+    if len(json.dumps(request)) > 4_194_304 or set(request) not in ({"inventory", "network", "database", "journalDirectory", "core"}, {"inventory", "network", "database", "journalDirectory", "core", "recoveryBackend"}):
         raise Refused("invalid recovery request")
     config = json.loads(Path(sys.argv[1]).read_text())
     check(config)
+    if ("recoveryBackend" in request) != ("recovery_backend" in config) or "recoveryBackend" in request and backend_reference(request["recoveryBackend"]) != backend_reference(config["recovery_backend"]):
+        raise Refused("runner and store recovery backends differ")
     if request.get("network") not in {"main", "regtest"} or config.get("network") != {"main":"mainnet", "regtest":"regtest"}[request["network"]] or config["store"].get("implementation") != "typescript" or \
             Path(config["store"]["db"]).resolve() != Path(request["database"]).resolve() or \
             Path(config["store"]["journal_dir"]).resolve() != Path(request["journalDirectory"]).resolve() or \
