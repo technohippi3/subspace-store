@@ -78,6 +78,8 @@ try:
             pass
         elif mode == "rollback":
             c.rollback_local("b1")
+        elif mode == "rebuild":
+            c.rebuild_unsent("b1", ["o1"])
         elif mode == "host-restore":
             c._reconcile()
         elif c.batch("b1")["state"] == "checkpointed":

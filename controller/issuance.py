@@ -186,4 +186,3 @@ class Issuance:
         self._journal(bid)
         self._send(bid)
         return bid
-

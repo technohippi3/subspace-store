@@ -623,6 +623,8 @@ class Controller(Issuance):
         """A batch known never to have been sent: journal it as rebuilt, then
         return its members to paid, then roll back and continue without the
         failing members."""
+        if getattr(self.registry, "bound_entries", False):
+            raise Refused("TypeScript entry release is not implemented; locks retained")
         b = self.batch(bid)
         self.db.execute("update batches set state = 'rebuilt', intent = 0 where bid = ?", (bid,))
         if not self._journal(bid):
@@ -635,6 +637,8 @@ class Controller(Issuance):
 
     def rebuild(self, bid, failing):
         b = self.batch(bid)
+        if getattr(self.registry, "bound_entries", False) and b.get("entry_key"):
+            raise Refused("TypeScript entry release is not implemented; locks retained")
         self.subs.post(f"/spaces/{b['space']}/rollback-local")
         self._save(bid, state="rebuilt")
         return self._new_without(b, failing)

@@ -75,8 +75,9 @@ Entry records currently keep their orders issuing. Safe release/rebuild,
 commitment callbacks, finality and certificate transitions remain to be
 ported. A recovered entry whose payment recheck fails stays locked and
 waits; it is not automatically rebuilt. Local rollback once an entry ID
-has been assigned and TypeScript whole-host reconciliation explicitly
-refuse until their durable release protocol exists. The pilot release
+has been assigned, entry rebuild and TypeScript whole-host reconciliation
+refuse before changing controller state until their durable release
+protocol exists. The pilot release
 gate remains blocked. Normal-process restart evidence does not qualify
 whole-host recovery or a complete sale.
 

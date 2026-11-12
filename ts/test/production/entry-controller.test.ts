@@ -52,6 +52,8 @@ test("O17: a recovered entry waits through payment loss and refuses unsupported 
     const blocked = yield* Effect.promise(() => command("continue")); assert.equal(blocked.sends, 0);
     assert.match(blocked.error!, /not currently confirmed and batchable/);
     assert.match((yield* Effect.promise(() => command("rollback"))).error!, /reconcile the issuance entry/);
+    const rebuild = yield* Effect.promise(() => command("rebuild"));
+    assert.match(rebuild.error!, /entry release is not implemented/); assert.equal(rebuild.state, "checkpointed");
     assert.match((yield* Effect.promise(() => command("host-restore"))).error!, /whole-host reconciliation is not implemented/);
     yield* Effect.promise(() => assert.rejects(Effect.runPromise(store.cancel(tokens[0]!)), /once issuing/));
     f.node.outputs[1]!.confirmations = 3;
