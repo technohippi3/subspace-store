@@ -51,8 +51,14 @@ class Guest:
             if self.process.poll() is not None:
                 self.close()
                 raise RuntimeError("disposable guest stopped before SSH")
-            if self.exec("true", success=False, timeout=3).returncode == 0:
-                break
+            try:
+                if self.exec("true", success=False, timeout=3).returncode == 0:
+                    break
+            except subprocess.TimeoutExpired:
+                # A forwarded port can accept while the guest SSH daemon is
+                # still booting. The harmless probe may retry only inside
+                # the existing overall readiness deadline.
+                pass
             time.sleep(0.2)
         else:
             self.close()
