@@ -40,9 +40,11 @@ Before preparation mutation the fresh chain root must equal the batch's
 prior root, and the native pipeline must have that root, no pending pipeline
 and, for a nonnull prior root, a transaction ID. This bounded implementation
 requires an already loaded, inspectable native space and either an initial
-empty head or an already published prior pipeline. The pinned `has_pending`
-can remain true for a finalized but unpublished commitment; this state
-conservatively refuses preparation. Native setup or transport errors never
+empty head or a finalized prior pipeline. At pinned subs `4dcc923`,
+`has_pending = !is_done && current_step != "published"`, so a finalized
+commitment awaiting publication reports false and preparation is permitted.
+Publication is downstream distribution, not a preparation precondition.
+Native setup or transport errors never
 manufacture an empty initial head.
 
 Readback exhausts stable pages of 100 rows, with a bound of 10,000 staged
@@ -142,6 +144,24 @@ TypeScript refuses that first retirement. An already retired parent's
 completion retry remains read-only and permits its child to progress.
 
 ## Evidence boundary
+
+Runtime amendment following external audit, 2026-11-13: the selected Python
+controller now checks the exact native pipeline head, absence of a native
+transaction ID, and every member's label, recipient script, root, commitment
+index and unparked state during proving, before and after the coordinated
+checkpoint, and before consuming its first-send arm. It rereads the head after
+member reads. The post-arm check runs again immediately before `/broadcast`;
+a failure there retains attempted uncertainty and never grants another arm.
+An absent or changed head before arming refuses without consuming the attempt.
+The checkpoint cannot become `checkpointed` if restart loses the commitment.
+
+The existing restore helper `subs_holds()` only checks member roots and is
+insufficient here: `/broadcast` selects the latest native commitment, which
+may differ while older member roots remain unchanged. These checks require
+the installation's exclusive native writer; separate HTTP readback is not an
+atomic fence against an unsupported external writer. Durable proof-submission
+ownership and preparation-fence reconciliation remain unfinished. A successful
+source regression does not qualify native restart or a release package.
 
 The `controller-preparation-*.test.ts` tests use real authenticated store
 HTTP, SQLite, JSONL, native HTTP recording facts and child processes with

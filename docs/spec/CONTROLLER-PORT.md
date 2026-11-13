@@ -63,8 +63,9 @@ Older controller writers that ignore the ownership events must not alternate
 mid-stage; compatible JSONL envelopes are not cutover qualification.
 
 Preparation requires a loaded inspectable native space and an initial or
-already published prior pipeline. Finalized but unpublished prior pipelines
-conservatively refuse. Full stable staged and committed pages are bounded
+finalized prior pipeline. Pinned subs reports `has_pending=false` while a
+finalized commitment awaits publication; publication does not block the next
+preparation. Full stable staged and committed pages are bounded
 to 10,000 rows, and capacity is checked before commit. The strict explicit
 TypeScript selection API refuses a partly ineligible request; Python retains
 its existing filtered selection.

@@ -15,6 +15,7 @@ from runner.store import TypeScriptStore
 
 
 class SendGate:
+    handle = Controller.handle
     _require_preparation_idle = Controller._require_preparation_idle
     _issuance_acknowledged = Controller._issuance_acknowledged
     _send = Controller._send
@@ -29,6 +30,15 @@ class SendGate:
                         delegate_in="d" * 64 + ":0", members=["o1"], intent=1,
                         fee_rate=1, attempted=0, state="issuing")
         self.subs = self
+        self.subs_read = self
+
+    def get(self, path):
+        from tests.native_facts import local_pipeline, committed_handle
+        if path.endswith("/pipeline"):
+            return local_pipeline("a" * 64)
+        if path.endswith("/handles/n0"):
+            return committed_handle("n0", "a" * 64, "5120" + "1".rjust(64, "0"))
+        raise AssertionError(path)
 
     def batch(self, _):
         return self.row.copy()

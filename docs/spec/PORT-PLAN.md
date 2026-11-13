@@ -43,6 +43,12 @@ and must pass the shipped combination's integration and recovery checks.
 The end state removes the project's Python implementation and tooling;
 temporary Python comparisons are not a permanent runtime dependency.
 
+The [controller audit follow-up](../CONTROLLER-AUDIT-2026-11-13.md) takes
+priority over the next controller port increment. It records the selected
+Python native-root repair and current regtest evidence. Preparation-fence
+recovery, its effect on already-sent batches, and durable prover-submission
+ownership remain required work; the root repair does not resolve them.
+
 ## Implementation status
 
 The pilot production gate requires coverage for every applicable case. The

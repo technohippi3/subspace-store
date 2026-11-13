@@ -106,7 +106,7 @@ class RecoveryBackendCases(unittest.TestCase):
         self.addCleanup(lambda: self.store._db.close() if self.store._db else None)
         self.c = self.controller("controller.db", self.store, self.subs)
         self.addCleanup(self.c.close)
-        self.c.db.execute("insert into batches(bid,space,members,digest,state) values('b1','space','[]','fixture-digest','proved')")
+        self.c.db.execute("insert into batches(bid,space,members,digest,state,root) values('b1','space','[]','fixture-digest','proved',?)", ("a" * 64,))
         self.assertTrue(self.c._journal("b1"))
 
     def controller(self, name, registry, subs):

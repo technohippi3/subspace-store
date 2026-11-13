@@ -49,7 +49,7 @@ test("TypeScript stage withholds the native effect when its exact intent loses l
   });
 });
 
-test("TypeScript rejects changing or duplicate paginated native rows and unpublished prior pipelines before staging", async (t) => {
+test("TypeScript rejects changing or duplicate paginated native rows and unfinished prior pipelines before staging", async (t) => {
   for (const fault of ["changed", "duplicate", "pending-prior"] as const) await withPreparation(t, async (k, f, server) => {
     const state = readNative(f.root), space = state.spaces["@space"]!, keys = scripts(2);
     if (fault === "pending-prior") { space.root = space.chain = "b".repeat(64); space.txid = "c".repeat(64); space.idx = 0; space.pending = true; }
@@ -63,6 +63,23 @@ test("TypeScript rejects changing or duplicate paginated native rows and unpubli
     };
     await assert.rejects(using(k, c => c.stage("b1")), /pagination|incomplete|duplicate|ahead|ambiguous/);
     assert.equal(readNative(f.root).syncs, 0); assert.equal(readNative(f.root).parks, 0); assert.equal(readNative(f.root).commits, 0);
+  });
+});
+
+test("TypeScript accepts the pinned finalized-but-unpublished pipeline before staging", async (t) => {
+  await withPreparation(t, async (k, f, server) => {
+    const state = readNative(f.root), space = state.spaces["@space"]!;
+    space.root = space.chain = "b".repeat(64); space.txid = "c".repeat(64); space.idx = 0; space.pending = false;
+    saveNative(f.root, state);
+    // subs 4dcc923 core/src/app.rs: finalized, published_at=None. The pending
+    // flag follows the upstream expression; it is not a publication flag.
+    server.control.transform = (path, value) => path.endsWith("/pipeline") ? {
+      ...(value as object), has_pending: false, current_step: "published", unpublished: 1,
+      steps: { local: "complete", proving: "skipped", broadcast: "complete", confirmed: "complete", finalized: "complete", published: "in_progress" },
+    } : value;
+    await using(k, c => c.freeze("@space"));
+    assert.equal((await using(k, c => c.stage("b1"))).state, "staged");
+    assert.equal(readNative(f.root).syncs, 1);
   });
 });
 

@@ -160,7 +160,10 @@ class World:
                     root = world.handles.get(parts[2], {}).get(parts[4], "absent")
                     if root == "absent":
                         raise HttpError("GET", path, 404, "not found")
-                    return {"name": parts[4], "commitment_root": root}
+                    return {"name": parts[4], "commitment_root": root,
+                            "commitment_idx": 0 if root else None,
+                            "status": "committed" if root else "staged", "parked": False,
+                            "publish_status": None, "script_pubkey": "5120" + "ef" * 32}
                 raise AssertionError(path)
 
             def post(self, path, body=None, **kw):

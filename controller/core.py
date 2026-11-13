@@ -38,6 +38,7 @@ from .bound_recovery import BoundRecovery
 from .rebuild_guard import RebuildGuard
 from .preparation import CLOSED, Preparation
 from .preparation_history import history as preparation_history
+from .native_binding import require_local_commitment
 
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 LIVE = ("issuing", "broadcast", "broadcast_uncertain", "mined", "final")
@@ -323,7 +324,7 @@ class Controller(RebuildGuard, Preparation, Issuance, Rebuild, CommitmentTrackin
         last = None
         pushes = []
         while time.time() - started < timeout:
-            p = self.subs_read.get(f"/spaces/{space}/pipeline")
+            p = require_local_commitment(self, b)
             last = p
             if p["steps"]["proving"] in ("complete", "skipped") and p.get("pending_proofs", 0) == 0:
                 self._save(bid, state="proved")
@@ -358,7 +359,9 @@ class Controller(RebuildGuard, Preparation, Issuance, Rebuild, CommitmentTrackin
         b = self.batch(bid)
         if b["state"] != "proved":
             raise Refused("not proved")
+        require_local_commitment(self, b)
         snap = self.snapshot(label=bid)
+        require_local_commitment(self, b)
         self._save(bid, state="checkpointed")
         return snap
 

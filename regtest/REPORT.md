@@ -1,5 +1,33 @@
 # Regtest report
 
+## Selected controller audit regression, 2026-11-13
+
+Run [audit-root-binding-20261113T093820Z-64900d](runs/audit-root-binding-20261113T093820Z-64900d.md)
+passes all 35 required steps against the amended selected Python controller
+and TypeScript store. The [JSON receipt](runs/audit-root-binding-20261113T093820Z-64900d.json)
+binds 142 source files, including the new native-binding guard, and the exact
+combined subs binary digest. It uses Core 31.2, pinned Spaces/subs/libveritas
+and a local relay inside the isolated regtest namespace.
+
+The run exercises initial preparation, checkpoint restart and issuance,
+certificate verification and delivery, cancellation/refund, application,
+controller and subs restore, and a subsequent proof-bearing batch through
+delivery. Core and wallets remain live during this restore. This is native
+source qualification for those scenarios, not whole-host, signed-package or
+buyer-client acceptance. Preparation-fence exit and prover submission
+ownership remain unresolved in the [audit follow-up](../docs/CONTROLLER-AUDIT-2026-11-13.md).
+
+The separate [known-history host-recovery run](runs/audit-root-binding-host-20261113T094308Z-7957b0.md)
+passes all 43 required steps. Its [JSON receipt](runs/audit-root-binding-host-20261113T094308Z-7957b0.json)
+binds 146 source files and the same native binary. It restores the fixture
+seller from onboarding wallet backups, journals and the coordinated subs
+snapshot while the independent network, buyer wallets and relay remain live.
+Later issuance and a payment made during host absence both complete. This
+qualifies the local known-history harness scenario, not signed-package or
+buyer-client acceptance.
+
+## Earlier evidence
+
 Label: regtest. Every result here comes from Bitcoin Core 26.0, the pin until
 2026-11-11, except the section "Bitcoin Core 31.2", which ran on 31.2, the
 pin since. All of them ran `spaced` v0.5.0 and `subs` at `4dcc923` on a local regtest network, driven

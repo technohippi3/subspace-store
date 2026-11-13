@@ -51,6 +51,9 @@ class EntryRecovery(unittest.TestCase):
                 def observe(self):
                     pass
 
+                def order(self, oid):
+                    return dict(name="one@space", recipient_spk="5120" + "f" * 64)
+
                 def batch_entry_ok(self, oid):
                     return True
 
@@ -72,6 +75,14 @@ class EntryRecovery(unittest.TestCase):
                     return dict(self.entered, granted=True)
 
             class Subs:
+                def get(self, path):
+                    from tests.native_facts import local_pipeline, committed_handle
+                    if path.endswith("/pipeline"):
+                        return local_pipeline("a" * 64)
+                    if path.endswith("/handles/one"):
+                        return committed_handle("one", "a" * 64, "5120" + "f" * 64)
+                    raise AssertionError(path)
+
                 def post(self, path, body, **kwargs):
                     writes.append(path)
                     return json.dumps({"txid": "a" * 64})

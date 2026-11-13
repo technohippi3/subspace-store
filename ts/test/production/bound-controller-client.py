@@ -26,14 +26,21 @@ sends = root / "mock-subs-sends.jsonl"
 
 state_file = root / "mock-subs-state.json"
 if not state_file.exists():
-    state_file.write_text(json.dumps({"rollbacks": 0, "parks": 0, "handles": {
+    state_file.write_text(json.dumps({"root": "a" * 64, "rollbacks": 0, "parks": 0, "handles": {
         "n0": {"commitment_root": "a" * 64, "script_pubkey": "5120" + "1".rjust(64, "0"), "parked": False},
         "n1": {"commitment_root": "a" * 64, "script_pubkey": "5120" + "2".rjust(64, "0"), "parked": False}}}))
 
 
 class Writes:
     def get(self, path, **kwargs):
-        return json.loads(state_file.read_text())["handles"][path.rsplit("/", 1)[1]]
+        from tests.native_facts import local_pipeline
+        state = json.loads(state_file.read_text())
+        if path.endswith("/pipeline"):
+            return local_pipeline(state["root"])
+        name = path.rsplit("/", 1)[1]
+        value = state["handles"][name]
+        return dict(value, name=name, status="committed" if value["commitment_root"] else "staged",
+                    commitment_idx=0 if value["commitment_root"] else None, publish_status=None)
 
     def post(self, path, body=None, raw=False, **kwargs):
         if path.endswith("/rollback-local"):
@@ -42,6 +49,7 @@ class Writes:
                 if info["commitment_root"] == "a" * 64:
                     info["commitment_root"] = None
             state["rollbacks"] += 1
+            state["root"] = None
             state_file.write_text(json.dumps(state))
             if mode == "stop-after-rollback":
                 os._exit(9)
@@ -122,6 +130,7 @@ try:
         elif mode == "finish-child":
             child = next(b for b in c.batches() if b["supersedes"] == "b1")
             state = json.loads(state_file.read_text())
+            state["root"] = "b" * 64
             for member in child["members"]:
                 state["handles"][store.order(member)["name"].split("@")[0]]["commitment_root"] = "b" * 64
             state_file.write_text(json.dumps(state))

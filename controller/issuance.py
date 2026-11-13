@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from .errors import Refused
 from .rpc import HttpError
+from .native_binding import require_local_commitment
 
 ANSWER_LIMIT = 2000
 TXID_RE = re.compile(r"[0-9a-f]{64}")
@@ -73,6 +74,7 @@ class Issuance:
         # before the call.
         if not self._issuance_acknowledged(b):
             raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
+        require_local_commitment(self, b)
         self._save(bid, journal=False, attempted=1)
         if getattr(self.registry, "bound_entries", False):
             try:
@@ -85,8 +87,10 @@ class Issuance:
                 raise Refused("broadcast permission unavailable or already consumed; not sent")
         try:
             self._require_preparation_idle()
+            require_local_commitment(self, b)
         except Exception:
-            self._uncertain(bid, "preparation ownership changed after send permission", "preparation barrier after attempted arm")
+            self._uncertain(bid, "native commitment or preparation ownership unavailable after send permission",
+                            "native binding or preparation barrier after attempted arm")
             raise
         try:
             # The body as it came, so that whatever subs answered is kept.

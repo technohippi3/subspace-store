@@ -57,6 +57,9 @@ class InterruptedBroadcast(unittest.TestCase):
         self.w.spaced.answers.update({"getdelegation": lambda space: "made-up-num",
                                       "getnum": lambda num: {"txid": "made-up-delegate", "n": 0}})
         self.w.store.add("o1", "one@a", "issuing")
+        from tests.native_facts import local_pipeline
+        self.w.pipelines["@a"] = local_pipeline(ROOT_B1)
+        self.w.handles["@a"] = {"one": ROOT_B1}
         self.w.subs_running = True
         self.broadcasts = []
         self.answer = lambda: json.dumps({"txid": GOOD_TXID}).encode()

@@ -74,6 +74,17 @@ class ControllerPreparation(unittest.TestCase):
         self.addCleanup(lambda: world.c.close())
         return world
 
+    def test_finalized_unpublished_prior_pipeline_allows_staging_as_pinned_subs_reports(self):
+        w = self.world()
+        w.seed("frozen")
+        w.chain = w.head = "b" * 64
+        w.c._save("b1", prior_root=w.chain)
+        w.pipeline_change = lambda row: dict(row, has_pending=False, current_step="published", unpublished=1,
+            steps=dict(local="complete", proving="skipped", broadcast="complete", confirmed="complete",
+                       finalized="complete", published="in_progress"))
+        w.c.stage("b1")
+        self.assertEqual(w.c.batch("b1")["state"], "staged")
+
     def test_pending_false_is_completed_but_unknown_response_keeps_global_owner(self):
         w = self.world()
         w.seed("frozen")

@@ -94,6 +94,9 @@ class FakeSubs:
 
         class Client:
             def get(self, path, **kw):
+                if path.endswith("/pipeline"):
+                    from tests.native_facts import local_pipeline
+                    return local_pipeline("a" * 64)
                 if path == "/status":
                     if not subs.running:
                         raise urllib.error.URLError(ConnectionRefusedError(111, "refused"))
@@ -145,8 +148,8 @@ class Snapshot(unittest.TestCase):
                             self.tmp / "verifier", self.tmp / "certs", "made-up-wallet",
                             ready_timeout=1)
         self.addCleanup(self.c.close)
-        self.c.db.execute("insert into batches(bid, space, members, digest, state) "
-                          "values ('b1', '@space', '[]', 'made-up-digest', 'proved')")
+        self.c.db.execute("insert into batches(bid, space, members, digest, state, root) "
+                          "values ('b1', '@space', '[]', 'made-up-digest', 'proved', ?)", ("a" * 64,))
 
     def test_A7_a_snapshot_never_copies_a_running_subs_nor_resumes_before_it_answers(self):
         # After the stop, an answer of any kind, even an HTTP error, shows
