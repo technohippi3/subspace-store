@@ -39,6 +39,8 @@ function qualifyPlatform(){return platform??=(async()=>{
   if(!accelerator){try{accessSync('/dev/kvm',constants.R_OK|constants.W_OK);accelerator='kvm';}catch{accelerator='tcg';}}
   Object.assign(environment,{SUBSPACE_PACKAGE_VM_IMAGE:image,SUBSPACE_PACKAGE_VM_ACCELERATOR:accelerator});
   await run('python3',['-m','unittest','test_package','-v'],join(deployment,'systemd-fixture'),900000);
+  const evidence=process.env.SUBSPACE_PACKAGE_EVIDENCE_DIRECTORY;
+  if(evidence){mkdirSync(evidence,{recursive:true});cpSync(join(deployment,'evidence'),join(mkdtempSync(join(evidence,'platform-')),'receipts'),{recursive:true});}
 })();}
 let release:Promise<void>|undefined;
 function qualifyRelease(){return release??=(async()=>{await prepare();await run('python3',['-m','unittest','test_release','test_source_provenance','-v'],join(deployment,'native'));})();}
@@ -78,7 +80,9 @@ test('O149: actual current application restores ten thousand validated orders ov
 });
 test('O150: signed rollback and explicit reviewed admission state survive native maintenance',async()=>{
   await qualifyRelease();await prepare();await run('docker',['run','--rm','--network','none','--mount',
-    'type=bind,source='+join(deployment,'native')+',target=/code,readonly','--workdir','/code','subspace-recovery-ssh-fixture:20261112',
+    'type=bind,source='+join(deployment,'native')+',target=/code,readonly','--mount',
+    'type=bind,source='+join(repository,'controller')+',target=/application/controller,readonly',
+    '--env','SUBSPACE_PACKAGE_APPLICATION_SOURCE=/application','--workdir','/code','subspace-recovery-ssh-fixture:20261112',
     'python3','-m','unittest','test_profile','test_recover','-v']);await qualifyPlatform();
 });
 test('O184: actual reboot recreates private secret runtime storage and ordinary source restoration preserves the hold',async()=>{

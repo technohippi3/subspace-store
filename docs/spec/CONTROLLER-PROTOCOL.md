@@ -34,8 +34,13 @@ when history becomes available. Unavailable history cannot authorize native
 work or pending clear. Read-only diagnostics and local safety recording grant
 no exception to that rule.
 
-Both current file/remote journal readers, snapshot prefix checks, and file
-and remote store-reconciliation confirmation understand mandatory records.
+Both current file/remote journal readers and file and remote store-reconciliation
+confirmation understand mandatory records. The installed maintenance checkpoint
+reader was missed in the initial amendment. The checkpoint repair now loads the
+pure decoder from the staged, signature-verified target package, without importing
+the controller or initializing its database. It validates every framed record
+while retaining digest, contiguous-sequence, stable bounded-prefix and latest
+database agreement checks. Unknown protocols refuse before publishing a snapshot.
 Sequence numbers and checkpoint positions count the framed record. There is
 no JSON-only mirror fallback. A diagnostic reader knowing the frame may show
 history; an effect-bearing old controller remains excluded.
@@ -50,6 +55,15 @@ The current verifier rejects an older signed schema-2 release. Older
 installers reject a schema-3 installed receipt against a schema-2 target
 before staging or service changes. The raw journal frame independently blocks
 old controllers when launched directly or against an older controller DB.
+
+The bootstrap installer is separately provisioned; applying a payload does not
+replace it. An unchanged schema-2 bootstrap also rejects a schema-3 target with
+`unsupported-release-schema` before staging. Before the first 2-to-3 update,
+provision the reviewed schema-3 bootstrap and all sibling modules through the
+independently trusted bootstrap path. Select that explicit path for manual and
+Alchemy operations. Its dry-run must accept the signed successor and its ancestry
+before maintenance begins. Never weaken the old verifier or edit an installed
+receipt to force compatibility. `deploy/OPERATIONS.md` describes the handoff.
 
 These are source and test-fixture results. No new signed production package,
 deployment, rollback or installation acceptance is established by this change.
@@ -90,6 +104,15 @@ CI fetches full history so those tests use actual source rather than copied
 approximations. Package tests exercise authenticated legacy schema rejection
 and unchanged old installer code with recording host boundaries. Existing
 package tests separately exercise actual systemd installation and update.
+
+The installed regression additionally installs a schema-2 fixture with unchanged
+`7d43c77` bootstrap/controller modules, demonstrates old-bootstrap schema-3
+refusal, and selects the reviewed new bootstrap for the one-way update. The actual
+controller then aborts a cancelled fixture order through encrypted remote journal
+acknowledgment. A later installed update checkpoints that complete framed prefix,
+preserves the retired batch in both copied and live databases, and restarts paused.
+The old bootstrap still refuses a schema-2 downgrade afterward. Native/store
+ports in this platform regression are recording fixtures, not financial evidence.
 
 The [53-step native receipt](../../regtest/runs/abort-protocol-survivor-qualified-20261113T114658Z-0c3e55.json)
 binds 148 source hashes, including both journal codecs and reconciliation

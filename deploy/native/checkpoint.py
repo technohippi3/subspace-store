@@ -9,6 +9,7 @@ import tempfile
 import socket
 import urllib.parse
 import base64
+import runpy
 
 from common import atomic_json, command, json_file, paths, require, sync_directory
 from release import digest_file
@@ -81,6 +82,12 @@ def store_prefix(connection, config, release):
 
 
 def controller_prefix(connection, config, release):
+    # stage() already verified this target's complete signed inventory. Load
+    # its pure codec without importing the controller or creating bytecode.
+    # Bootstrap code must not assume the application is on sys.path.
+    decoder = Path(release) / 'app/controller/journal_protocol.py'
+    require(decoder.is_file() and not decoder.is_symlink(), 'checkpoint-controller-codec-unavailable')
+    decode_record = runpy.run_path(str(decoder))['decode_record']
     connection.row_factory = sqlite3.Row
     rows = connection.execute('select * from batches').fetchall()
     local = {}
@@ -92,12 +99,17 @@ def controller_prefix(connection, config, release):
         page = recovery(config, release, {'op':'journal-read','stream':'controller','after':after,'limit':8192})
         require(type(page['head']) is int and 0 <= page['head'] <= 1_000_000 and (head is None or page['head'] == head), 'checkpoint-controller-prefix-changed')
         head = page['head']
+        require(isinstance(page.get('entries'), list) and len(page['entries']) <= 8192, 'checkpoint-controller-prefix-bounds')
+        page_size = 0
         for item in page['entries']:
             raw = base64.b64decode(item['data'], validate=True); size += len(raw)
-            require(size <= 512 * 1024 * 1024 and item['sequence'] == after + 1 and
+            page_size += len(raw)
+            require(after < head and page_size <= 16 * 1024 * 1024 and size <= 512 * 1024 * 1024 and
+                type(item['sequence']) is int and item['sequence'] == after + 1 and
                 hashlib.sha256(raw).hexdigest() == item['sha256'], 'checkpoint-controller-journal-bytes-mismatch')
-            entry = json.loads(raw)
-            require(entry.get('seq') == after + 1 and isinstance(entry.get('kind'), str), 'checkpoint-controller-journal-sequence-mismatch')
+            entry = decode_record(raw.decode('utf-8'))
+            require(isinstance(entry, dict) and type(entry.get('seq')) is int and entry['seq'] == after + 1 and
+                isinstance(entry.get('kind'), str), 'checkpoint-controller-journal-sequence-mismatch')
             if entry['kind'] == 'batch':
                 batch = entry.get('batch'); require(isinstance(batch, dict) and isinstance(batch.get('bid'), str), 'checkpoint-controller-batch-invalid')
                 latest[batch['bid']] = batch

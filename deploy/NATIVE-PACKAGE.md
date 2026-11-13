@@ -45,6 +45,11 @@ about stored record version fields. Epoch 2 covers installation, seller and
 capability application records and rebuild-guard/restore-provenance controller
 semantics. An old implementation that ignores those meanings cannot appear
 in a rollback whitelist, even if its SQLite DDL is unchanged.
+Controller-journal epoch 3 adds the mandatory abort-protocol framing boundary.
+The first 2-to-3 update also requires the separately reviewed bootstrap
+transition in `OPERATIONS.md`; replacing a payload does not replace bootstrap
+code. Maintenance checkpoints use the verified target's pure controller decoder
+and retain complete-prefix and latest-database agreement checks after abort.
 
 `native/installer.py` is the one manual install/update entrypoint. The Alchemy
 resource invokes that same entrypoint with the same manifest, signature and

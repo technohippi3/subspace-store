@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -93,14 +94,40 @@ class ProfileTests(unittest.TestCase):
             directory=store_file.parent
         self.assertFalse(directory.exists())
     def test_controller_checkpoint_validates_decrypted_prefix_and_latest_database_state(self):
+        release=self.root/'release';codec=release/'app/controller/journal_protocol.py';codec.parent.mkdir(parents=True)
+        repository=Path(os.environ.get('SUBSPACE_PACKAGE_APPLICATION_SOURCE') or Path(__file__).resolve().parent.parent.parent)
+        shutil.copyfile(repository/'controller/journal_protocol.py',codec)
         db=sqlite3.connect(':memory:');self.addCleanup(db.close);db.execute('create table batches(bid text,members text,state text)')
         db.execute('insert into batches values(?,?,?)',('b1','[]','proved'))
         value={'seq':1,'kind':'batch','batch':{'bid':'b1','members':[],'state':'proved'}};raw=json.dumps(value).encode()
         page={'head':1,'entries':[{'sequence':1,'data':base64.b64encode(raw).decode(),'sha256':hashlib.sha256(raw).hexdigest()}]}
-        with patch('checkpoint.recovery',return_value=page):self.assertEqual(controller_prefix(db,{},Path('/release')),1)
+        with patch('checkpoint.recovery',return_value=page):self.assertEqual(controller_prefix(db,{},release),1)
+        frame=b'SSCJ3 {"kind":"controller_protocol","requires":["preparation_abort_v1"],"seq":2,"version":3}'
+        def item(raw,sequence):return {'sequence':sequence,'data':base64.b64encode(raw).decode(),'sha256':hashlib.sha256(raw).hexdigest()}
+        first={'head':2,'entries':page['entries']};second={'head':2,'entries':[item(frame,2)]}
+        with patch('checkpoint.recovery',side_effect=[first,second]):self.assertEqual(controller_prefix(db,{},release),2)
+        for fault in ('version','feature','duplicate','unframed','digest','sequence','gap','changed-head','incomplete','past-head','count','page-bytes'):
+            with self.subTest(fault=fault):
+                tail=json.loads(json.dumps(second))
+                raw=frame
+                if fault=='version':raw=frame.replace(b'"version":3',b'"version":4')
+                elif fault=='feature':raw=frame.replace(b'preparation_abort_v1',b'unknown')
+                elif fault=='duplicate':raw=frame[:-1]+b',"version":3}'
+                elif fault=='unframed':raw=frame[6:]
+                elif fault=='sequence':raw=frame.replace(b'"seq":2',b'"seq":3')
+                elif fault=='page-bytes':raw=b' '*(16*1024*1024)+frame
+                tail['entries']=[item(raw,2)]
+                if fault=='digest':tail['entries'][0]['sha256']='0'*64
+                elif fault=='gap':tail['entries'][0]['sequence']=3
+                elif fault=='changed-head':tail['head']=3
+                elif fault=='incomplete':tail['entries']=[]
+                elif fault=='past-head':tail['entries'].append(item(b'{"kind":"diagnostic","seq":3}',3))
+                elif fault=='count':tail['entries']*=8193
+                with patch('checkpoint.recovery',side_effect=[first,tail]):
+                    with self.assertRaises((Refused,ValueError)):controller_prefix(db,{},release)
         db.execute("update batches set state='checkpointed'")
         with patch('checkpoint.recovery',return_value=page):
-            with self.assertRaises(Refused):controller_prefix(db,{},Path('/release'))
+            with self.assertRaises(Refused):controller_prefix(db,{},release)
     def test_subs_configuration_disables_auto_publish_before_native_exec_and_preserves_other_values(self):
         spec=importlib.util.spec_from_file_location('subs_start',Path(__file__).with_name('subs-start.py'));module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         runtime=self.root/'store.json';runtime.write_text(json.dumps({'listen':{'subs':18949}}));runtime.chmod(0o644)

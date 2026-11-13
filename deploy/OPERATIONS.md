@@ -86,6 +86,27 @@ A compatible rollback uses that command with `--rollback` and the earlier
 verified artifact. Both its compatibility epochs and signed whitelist must match.
 Current databases and wallet history survive the rollback.
 
+Before the first controller-journal schema-2 to schema-3 update, provision a new
+versioned bootstrap directory containing the reviewed installer and all sibling
+modules. Verify its file inventory through the same independent review and trust
+path used for initial bootstrap provisioning. Keep the existing release public
+key. A payload update does not replace this separately provisioned bootstrap;
+the old verifier will refuse the schema-3 manifest with unsupported-release-schema.
+
+Point `bootstrap_installer` to that reviewed successor and run the following
+preflight with the exact signed update inputs before maintenance. For Alchemy,
+update its explicit `installer` path to the same reviewed bootstrap. Retain the
+bootstrap inventory digest with the candidate's acceptance index. Do not edit
+installed receipts or relax schema checks to make an old bootstrap accept it.
+
+```sh
+sudo python3 "$bootstrap_installer" --config "$installation_config" apply \
+  --manifest "$release_manifest" --signature "$release_signature" --artifact "$release_archive" --dry-run
+```
+
+After this succeeds, apply with the same inputs and bootstrap path. Downgrading
+to a schema-2 package remains prohibited, including before the first abort.
+
 Treat an upstream restart or cookie rotation as attended maintenance. Pause
 admission and inspect reported blockers before a planned restart. Once Core,
 spaced and both selected wallets are current at the same tip, verify both new

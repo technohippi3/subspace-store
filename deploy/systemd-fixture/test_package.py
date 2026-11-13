@@ -70,30 +70,36 @@ class PackageTests(unittest.TestCase):
         self.make_release("fixture-v2", "fixture-v1")
         self.make_release("fixture-broken", "fixture-v2", fail=True)
 
-    def make_release(self, name, prior=None, fail=False):
+    def make_release(self, name, prior=None, fail=False, legacy=None):
         host = self.host
         source = host.root / (name + "-source")
         source.mkdir()
         for directory in ("native", "client"):
-            shutil.copytree(DRAFT / directory, source / directory, ignore=shutil.ignore_patterns("test*", "__pycache__", "*.pyc"))
+            origin = legacy/'deploy/native' if legacy and directory=='native' else DRAFT/directory
+            shutil.copytree(origin, source / directory, ignore=shutil.ignore_patterns("test*", "__pycache__", "*.pyc"))
         for file in ("fixture-service.py", "fixture-lifecycle.py"):
             shutil.copyfile(HERE / file, source / file)
         # The normal-checkpoint platform case uses the actual snapshot method
         # from the separately qualified backend integration capture.
         application_source=Path(os.environ.get('SUBSPACE_PACKAGE_APPLICATION_SOURCE',str(DRAFT.parent)))
         for directory in ('controller','runner','service'):
-            shutil.copytree(application_source/directory,source/'app'/directory,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+            origin=legacy/directory if legacy else application_source/directory
+            shutil.copytree(origin,source/'app'/directory,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
         shutil.copyfile(HERE/'fixture-normal-checkpoint.py',source/'app/runner/__main__.py')
         write(source / "fixture-version.json", {"release": name, "fail": fail})
         write(source / "bin/node", "#!/bin/sh\nexec /usr/local/bin/node \"$@\"\n", 0o755)
         output = host.root / (name + "-artifact")
         build(source, output, name, "1" * 40, host.signer, [prior] if prior else [], [prior] if prior else [])
+        if legacy:
+            manifest=output/(name+'.manifest.json');value=json.loads(manifest.read_bytes());value['schemas']['controllerJournal']=2
+            write(manifest,value)
+            run(['openssl','pkeyutl','-sign','-rawin','-inkey',str(host.signer),'-in',str(manifest),'-out',str(output/(name+'.manifest.sig'))])
         host.exec("mkdir", "-p", "/var/lib/subspace-incoming/" + name)
         for suffix in ("manifest.json", "manifest.sig", "tar.gz"):
             host.copy(output / (name + "." + suffix), "/var/lib/subspace-incoming/" + name + "/" + ("release.tar.gz" if suffix == "tar.gz" else suffix))
 
-    def installer(self, release=None, *, success=True, flags=()):
-        args = ["/usr/bin/python3", "/bootstrap/native/installer.py", "--config", "/etc/subspace-store/installation.json"]
+    def installer(self, release=None, *, success=True, flags=(), bootstrap='/bootstrap/native/installer.py'):
+        args = ["/usr/bin/python3", bootstrap, "--config", "/etc/subspace-store/installation.json"]
         if release is None:
             args.append("status")
         else:
@@ -116,6 +122,45 @@ class PackageTests(unittest.TestCase):
     def sql(self, statement):
         code = "import sqlite3,json; c=sqlite3.connect('/srv/subspace-store/store/store.db'); r=c.execute(" + repr(statement) + "); print(json.dumps(r.fetchall())); c.commit()"
         return json.loads(self.host.exec("python3", "-c", code).stdout)
+
+    def test_schema2_bootstrap_transition_and_installed_post_abort_update(self):
+        application=Path(os.environ.get('SUBSPACE_PACKAGE_APPLICATION_SOURCE',str(DRAFT.parent)))
+        sys.path.insert(0,str(application))
+        from tests.legacy_controller_source import export_revision
+        legacy=self.host.root/'legacy';export_revision(legacy,'7d43c77','deploy/native','controller','runner','service')
+        h=self.host;h.exec('mkdir','-p','/reviewed-schema2/native')
+        for path in (legacy/'deploy/native').glob('*.py'):
+            if not path.name.startswith('test'):h.copy(path,'/reviewed-schema2/native/'+path.name)
+        self.make_release('fixture-schema2',legacy=legacy)
+        self.make_release('fixture-upgrade3','fixture-schema2')
+        self.make_release('fixture-postabort','fixture-upgrade3')
+        old='/reviewed-schema2/native/installer.py'
+        first,_=self.installer('fixture-schema2',bootstrap=old);self.assertTrue(first['ready'])
+        refused,code=self.installer('fixture-upgrade3',bootstrap=old,success=False)
+        self.assertEqual(code,2);self.assertEqual(refused['code'],'unsupported-release-schema')
+        self.assertEqual(self.installer()[0]['release'],'fixture-schema2')
+        upgraded,_=self.installer('fixture-upgrade3');self.assertTrue(upgraded['ready'])
+        h.exec('systemctl','stop','subspace-fixture-proxy.service','subspace-fixture-store.service','subspace-fixture-subs.service')
+        h.copy(HERE/'fixture-abort.py','/fixture-abort.py')
+        aborted=json.loads(h.exec('python3','/fixture-abort.py','/opt/subspace-store/current','/etc/subspace-store/installation.json',timeout=120).stdout)
+        self.assertEqual(aborted['state'],'rebuilt');self.assertEqual(aborted['pendingClears'],1)
+        h.exec('systemctl','start','subspace-fixture-subs.service','subspace-fixture-store.service','subspace-fixture-proxy.service')
+        updated,_=self.installer('fixture-postabort');self.assertTrue(updated['ready']);self.assertTrue(updated['paused'])
+        receipt=json.loads(h.exec('cat','/srv/subspace-store/lifecycle/installed.json').stdout)
+        self.assertEqual(receipt['checkpoint']['controllerJournal'],aborted['journalPosition'])
+        self.assertEqual(receipt['schemas']['controllerJournal'],3)
+        directory='/srv/subspace-store/checkpoints/'+receipt['checkpoint']['name']
+        query="import sqlite3,json,sys; c=sqlite3.connect(sys.argv[1]);print(json.dumps(c.execute('select bid,state from batches').fetchall()))"
+        for path in (directory+'/controller.db','/srv/subspace-store/controller/controller.db'):
+            self.assertEqual(json.loads(h.exec('python3','-c',query,path).stdout),[['b1','rebuilt']])
+        rolled,code=self.installer('fixture-schema2',bootstrap=old,success=False,flags=('--rollback',))
+        self.assertEqual(code,2);self.assertEqual(rolled['code'],'incompatible-schema')
+        self.assertEqual(self.installer()[0]['release'],'fixture-postabort')
+        write(DRAFT/'evidence/post-abort-update.json',dict(scope='actual installer/systemd/encrypted SSH with recording store and native ports',
+            schema2BootstrapRefused=True,reviewedBootstrapTransition=True,postAbortUpdate=True,abort=aborted,checkpoint=receipt['checkpoint'],
+            schema2DowngradeRefused=True,bootstrapHashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted((DRAFT/'native').glob('*.py')) if not p.name.startswith('test')},
+            codecSha256=hashlib.sha256((application/'controller/journal_protocol.py').read_bytes()).hexdigest()))
 
     def alchemy(self, operation, release="fixture-v1"):
         host = self.host
