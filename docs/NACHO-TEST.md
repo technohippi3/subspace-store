@@ -14,7 +14,26 @@ that build's certificate decoder and verifier to a supported export before
 claiming compatibility. The historical public client at commit
 32a1d438438de959ab7ce2b83d789d48057d373d expects a different JSON schema and
 does not accept these native formats. Its opaque fields have no reviewed
-conversion. The installed owner's build has not yet been identified.
+conversion.
+
+The inspected Android build on 2026-11-13 is Nacho 0.1.1, versionCode 18,
+running on Android 17. Its waiting-request file picker requests
+`application/json`. Static inspection of the installed bundle traces both
+file and QR import through JSON parsing and the legacy certificate shape
+check. The bundled native library supports SCRT, but this screen does not
+call its binary parser, verifier or native certificate persistence path.
+The disassembler does not formally support this bytecode version; direct
+opcode inspection and the observed file-picker MIME support the finding,
+but no successful import or cryptographic acceptance is claimed.
+
+This build's manual-import path is a compatibility blocker for the current
+native exports. A JSON wrapper that merely satisfies the legacy shape does
+not establish verified ownership. A client fix needs native decoding,
+verification against trusted client anchors, exact handle and recipient
+checks, and native certificate persistence. Matching current client source
+or an updated build is needed before implementing that fix. Recheck these
+paths if the installed build changes; do not fund a test solely to confirm
+the known format mismatch.
 
 The store offers `certificate.spacecert` (official SCRT CertificateChain v1),
 `certificate.spacemsg` (official libveritas 0.4.4 Message) and the original

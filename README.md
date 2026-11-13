@@ -36,9 +36,10 @@ Core/spaced wallets and explicit prover and relay endpoints. See
 [deploy/OPERATIONS.md](deploy/OPERATIONS.md) for its commands.
 
 Verified native SCRT and libveritas Message exports and certificate-only QR
-links exist. Their formats do not establish compatibility with an unidentified
-Nacho build. The workspace_owner's client build/platform and phone import,
-record signing, transfer and independent recovery acceptance remain open.
+links exist. The inspected Android Nacho 0.1.1 build 18 still uses a legacy
+JSON manual-import path; its bundled native decoder is not connected to that
+screen. Client import compatibility is a known blocker. Phone import, record
+signing, transfer and independent recovery acceptance remain open.
 The [device handoff](docs/NACHO-TEST.md), [buyer gate](docs/BUYER-GATE.md) and
 [native export contract](docs/spec/NATIVE-EXPORT.md) describe the required
 evidence. Browser QR checks are not phone import evidence.

@@ -284,8 +284,13 @@ not a mobile import certificate. The historical public Nacho decoder at
 `32a1d438438de959ab7ce2b83d789d48057d373d` expects a different JSON schema and
 is incompatible with these native artifacts. Neither that schema nor the
 base64 JSON from `/certs/:handle` has a reviewed conversion for the
-workspace_owner's installed client. Its exact build/platform and accepted import formats must still
-be established. [NACHO-TEST.md](NACHO-TEST.md) describes the device handoff;
+workspace_owner's installed client. Inspection on 2026-11-13 identifies
+Android Nacho 0.1.1, versionCode 18. Its waiting-request file picker requests
+JSON, and installed-bundle inspection traces both manual import paths through
+the legacy JSON parser. Bundled native SCRT support is not connected to that
+screen's import and persistence path. This is a compatibility blocker, not
+an accepted certificate. [NACHO-TEST.md](NACHO-TEST.md) records the inspection
+limits and required client remediation, and describes the device handoff;
 all gate steps, transaction-plan requirements and authorizations below remain
 in force.
 
