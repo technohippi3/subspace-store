@@ -2,356 +2,271 @@
 
 ## Status and scope
 
-These are proposed implementation requirements for the controller successor.
-They do not change the shipped runtime or establish acceptance. They follow the
-independent 88-path review at
-593b6bece79b2550658fc3b9962cfbfb0c47b9d0. PR24 remains frozen. No Python rule,
-TypeScript behavior, database, journal format, bootstrap or package changes here.
-The draft proposes lifecycle contracts, not payment policy. It introduces no
-named case IDs, skipped tests or coverage exemptions. The implementation PRs
-must supply their executable regressions with the corresponding effective rules.
+These are proposed implementation requirements, revised after independent review
+of the initial specification. They change no shipped Python/TypeScript behavior,
+payment rule, package, bootstrap or runtime selection. PR24 remains frozen at
+593b6be. Existing conservative refusal rules remain effective until independently
+reviewed implementations and their executable lifecycle tests land together.
+No new named case, skipped placeholder or coverage exemption is introduced here.
 
-The following contracts must govern effectful controller porting. Native API changes are a prerequisite for the promised
-native guarantees; an Effect wrapper cannot add them to the pinned endpoint.
-The existing conservative refusal paths remain the implemented baseline until
-reviewed successors demonstrate the new behavior.
+The [wire contract](CONTROLLER-OPERATION-WIRE.md) defines exact requests, results,
+canonical bytes, authority references and operation kinds. Native/store API changes
+are prerequisites. An Effect wrapper cannot add these guarantees to old endpoints.
+The scope is existing preparation, issuance and known-transaction recovery; this
+is not a general transaction engine or an arbitrary-history migration contract.
 
-## Persistent operation identity and custody
+## Authorities and trust
 
-Every native preparation, send or proving effect covered here has a stable
-operation ID generated and durably acknowledged before
-its first request. It binds installation/network identity, space, batch, immutable
-member digest and exact request digest. Send operations additionally bind entry,
-arm identity, commitment root/index, delegate, fee policy and native generation.
-Proving additionally binds exact input digest, proof kind/index and prover identity.
-Reusing an ID with different bytes refuses. Resending identical bytes is allowed
-only to an endpoint that durably deduplicates this identity; it is not a new effect.
-An acknowledged intent and its operation ID survive database restore through the
-live immutable journal. A database snapshot cannot erase later acknowledged work.
+The store owns pending-set replacement, entry/arm grants, terminal arm disposition
+and their journal confirmation. The native service owns native staging/commitment
+mutations, transaction construction/custody and proof submission. A native result
+is never evidence that an independent store request did or did not execute.
+The prover owns remote job acceptance/billing; native caching cannot invent that
+provider-level guarantee. Each authority has its own durable operation ledger.
 
-Native mutation ownership must be enforced at every mutating native route, not
-only in the controller database flock or the wrapped native process. A durable,
-monotonic fencing generation must be checked when effects are accepted AND when
-work can still mutate state. Background workers, raw mutation routes and commit,
-rollback, pending, sync, park, broadcast and restore paths must share that rule.
-A caller without the matching generation refuses. A process restart must not
-reset generation or forget accepted operation IDs. Unsupported native versions
-must refuse the new workflow before any effect; no retry through an old endpoint.
+A configured, authenticated installation coordinator owns the controller journal
+and enumerates every assigned request before dispatch. Its complete acknowledged
+history supplies the preparation barrier and cross-service ordering. Correctness
+assumes this narrowly authorized coordinator and protected-root custody, not a
+malicious credential holder or hostile root. Each service still enforces its own
+identity, generation, immutable bindings, deduplication and mutation preconditions.
+A public generation number is not a credential. Raw/legacy mutation paths and
+background workers must not bypass the same authority rules.
 
-Advancing a fence is not proof of quiescence by itself. The native implementation
-must serialize acceptance against fencing and account for accepted workers and
-queued/forwarded requests. A completion may be published only when old-generation
-work can no longer produce a later effect. A host PID disappearing, a timeout,
-a 404, empty pending or unchanged head does not prove this condition.
+Native admission obtains the exact authenticated live-acknowledged store arm record
+outside its local write lock, checks its association with the native request, then
+serializes native acceptance, expected-head checks and transaction selection. Store
+terminal retirement obtains immutable native no-effect evidence outside its write
+lock, then performs its own CAS. No cross-service RPC is made while holding both
+services' write locks, and no distributed atomic transaction is claimed. All paths
+that retire an unexecuted arm must first fence its bound native operation; other
+terminal/supersession transitions require their existing positive send evidence.
 
-## Durable result states
+## Incarnation, generation and restore continuity
 
-The logical states are prepared, accepted, completed, terminal_no_effect and
-unknown. Prepared is a controller intent, not native acceptance. Accepted means
-the native authority has durably recorded the operation and owns its effects.
-Completed includes the exact result and effect evidence. Terminal_no_effect is
-an authoritative permanent tombstone: this ID and all copies/late arrivals can
-never produce an effect. Unknown covers lost or contradictory evidence and keeps
-ownership. A result query returns the binding, generation and stable evidence;
-it cannot infer terminal_no_effect merely from absence in a volatile map.
+Stable installation/authority identity is distinct from process incarnation. On
+every authority startup, restart or supported restore, generate a fresh random
+256-bit incarnation before listening, scheduling workers or recovering effects.
+Never restore or reuse this value from a ledger, snapshot or installation file.
+Within that incarnation, generations are positive monotonic integers for the
+installation-wide authenticated owner lease, across all spaces. A new incarnation
+may start at generation one; the incarnation/generation tuple must never repeat.
 
-Partial effects require an explicit result and reconciliation, even if the final
-HTTP request failed. Contradictory histories, rollback of an operation ledger or
-an authority unable to establish its generation must pause the affected work.
-Keep a durable tombstone or an equivalent non-reusable generation boundary for
-as long as delayed delivery or restoration of an old controller can occur.
-Retention and compaction must never make a retired ID executable again.
+A lease transfer revokes old admission immediately and serializes against accepted
+work. It cannot declare drain while a worker or forwarded request may still act.
+New conflicting effects stay fenced until that work is accounted for. Current
+caller authorization for status/retirement is separate from the original request's
+immutable owner, generation and incarnation. Do not rewrite an old request to make
+it current. Delayed old-incarnation mutations always refuse.
 
-## Expected-commitment first send
+A no-effect tombstone for an absent ID is permitted only in its still-live origin
+incarnation, whose ledger has remained exclusively owned without replacement since
+startup. The authority serializes tombstone installation with acceptance and workers.
+If acceptance won, it may certify no effect only after proving no effect occurred
+and every queued/forwarded effect is permanently prevented. A timeout, HTTP status,
+404, empty pending, unchanged tree or stopped local worker alone is insufficient.
 
-The controller acknowledges its immutable send binding and validates the store's
-exact one-use arm before dispatch. Native acceptance checks the expected local
-commitment identity, root/index, delegate and generation under the same serialized
-ownership that selects and builds the transaction. The legacy fee-rate-only POST
-cannot satisfy this contract. Extra GET requests are diagnostics, not a send fence.
+Supported restore must stop/exclude the old authority and its workers, create a new
+incarnation, and reconcile before mutation. It must not replace a live authority's
+ledger in place. Protected-root/single-writer custody and stated durable-storage
+assumptions are required; this protocol does not detect hostile root or silent
+storage rollback defeating those assumptions. There is no external antirollback
+service in version one and no claim that fsync detects an older restored snapshot.
 
-Before any wallet send, native storage must durably own the operation and retain
-sufficient exact prepared transaction/ancestor bytes and transaction IDs to resume
-without selecting or signing another commitment. A lost wallet response or crash
-before txid persistence cannot authorize a different transaction. Where the wallet
-cannot prove an outcome, the same operation remains unknown and fenced. A repeated
-accepted request recovers its original result or identical transaction bytes.
+After restart/restore, old-incarnation absence stays unknown. A new tombstone could
+prevent future work but cannot prove no past effect. Never use it to release an arm,
+retry a job, repeat a local commit or clear an old owner. This deliberately sacrifices
+some never-arrived-operation recovery after authority restart. Retained historical
+positive results may be queried under current authentication without rewriting their
+origin. Exact independent transaction/provider evidence may resolve known outcomes;
+missing positive evidence never becomes permission. Unsupported import/adoption paths
+remain disabled rather than manufacturing a receipt.
 
-The response binds the selected commitment and operation to verified transaction
-evidence. The controller independently checks that evidence before advancing its
-batch. Failure to confirm the response preserves uncertainty; it does not grant
-another arm. Known transactions may be observed or rebroadcast using the same
-journaled bytes and ancestors. No new signing or first-send permission is implied.
+## Persistent operation outcomes
 
-## Post-arm recovery
+A request ID and exact request digest are acknowledged in the controller journal
+before its first same-invocation dispatch. The authority durably records acceptance
+before scheduling work, and durably records a result before reporting it. Same ID
+and bytes recover the existing record; changed bytes under that ID refuse.
+No original request is retried through a legacy or non-deduplicating endpoint.
 
-A reserved arm with authoritative terminal_no_effect evidence differs from a
-possible send and from a known transaction. Until that evidence is acknowledged,
-a post-arm refusal retains current uncertainty and ownership. In particular,
-the existing zero-dispatch test does not authorize resetting attempted in a live
-installation: the durable authority must also exclude every delayed original call.
+| State | Meaning and permission |
+| --- | --- |
+| prepared | Controller intent only; it does not prove service acceptance or absence. |
+| accepted | Service owns the request; future/forwarded effects may remain possible. |
+| completed | The operation's specified result is known. Store off-host confirmation is a separate gate. |
+| partial | Service certifies this request has stopped, with recorded partial effects. It is not no-effect evidence. |
+| terminal_no_effect | Permanent tombstone: no effect occurred and this request can never cause one. |
+| unknown | Controller knowledge after missing/contradictory evidence; retains ownership and cannot erase a positive result. |
 
-To retire a definitely unused permission, first make its native operation
-permanently non-executable, then reconcile exact store/native bindings, then
-acknowledge the terminal evidence and close that store arm permanently. A lost
-close response is recovered against the same arm. A successor receives a new
-operation/entry only after closure is proven. This is not reuse of the original
-one-use arm. A crash between those steps must allow only completion of retirement.
+Accepted results may advance by revision. Completed, partial and terminal_no_effect
+results are immutable; contradictory terminal results refuse. A partial result needs
+fresh exact inventory reconciliation before any continuation; it never authorizes
+blind retry or terminal-unused arm retirement. A forwarded unaccounted wallet/prover
+call remains accepted/unknown, not stopped-partial or no-effect.
 
-Possible-send operations retain their original entry and operation ID until
-native status supplies authoritative terminal or transaction evidence. Manual
-recovery follows the same evidence rules; journal editing or operator assertion
-alone supplies no clearance. Known transactions retain exact-byte rebroadcast
-and all existing recipient, finality, store and supersession checks.
+Version one retains identities, original bindings, results and tombstones indefinitely.
+No compaction, expiry, generation resurrection or force-clear API is supported. A
+later retention policy needs a separate reviewed contract and delayed/restore tests.
+Controller SQLite and service projections cannot override acknowledged history.
 
-## Unknown preparation requests
+## Store-owned global pending operations
 
-Pending set/clear, sync, park/unpark and local commit use operation identities,
-exact payloads and fenced native results. A completed false acknowledgment is
-known completion and is distinct from no reply. Reconciliation must inventory
-partial mutations and compare every frozen member, script, root and staged set.
+pending_set and pending_clear go to the store authority, not the native ledger.
+Before setting pending, the store records one pendingOwnerId bound to the exact
+batch, space, sorted members and digest. It is installation-global because the
+existing pending set is global. Another owner cannot replace or clear it. Requests
+carry store authority/incarnation/generation and a stable operation ID. The store
+serializes owner reservation, mutation, result and retirement with its normal queue.
 
-Ownership clears only after every prior operation is durably completed with its
-reconciled effect or terminally prevented from executing. A fence/drain protocol
-must cover forwarded requests and background work. If it cannot establish that
-condition, leave the owner unresolved. Completed-owner abort stays a separate
-path and never becomes an escape hatch for an unknown request. Sent-batch progress
-through an unrelated owner retains its existing disjointness and evidence checks.
+pending_set requires no owner or that exact active owner, validates current bindings
+and batchability, and sets the exact order-ID set. pending_clear compares the exact
+owner/current pending digest, clears that set and records owner retirement. A
+retired owner ID is a permanent marker: an exact historical retry returns its old
+result without touching a successor's set. Any late pending_set for it refuses.
+The store must not admit a successor owner until retirement is live-acknowledged.
 
-## Durable prover submission
+An off-host acknowledged:false response is not no effect. Its mutation/result can
+be locally complete while controller progress and owner transfer stay fenced.
+Confirmation is separate from immutable result evidence and may become true on a
+fresh exact live-prefix read, without repeating the mutation. A complete false
+confirmation is distinct from an unanswered request; neither silently clears the
+controller's preparation owner. Missing/old-incarnation store results stay unknown.
 
-Persist a stable proof identity and immutable input/pricing binding before remote
-submission. Native transport and the prover must deduplicate that identity and
-allow status recovery after response loss. Store the accepted provider job ID and
-receipt before allowing another submission. Polling must not create a new job.
+The coordinator may clear preparation ownership only after every assigned store
+and native request in its live acknowledged owner history is completed/reconciled
+or terminally prevented from acting, exact native/store inventory matches, and the
+store clear/retirement is live-confirmed. A native tombstone or native worker stop
+cannot substitute for store confirmation. Global sync partial effects require all
+affected-space inventory, not just the target members. Local-commit ambiguity keeps
+its separate one-opportunity fence. Already-sent disjoint-batch progress retains the
+[existing availability rules](CONTROLLER-AVAILABILITY.md); no new first-send authority
+is granted through an unrelated owner.
 
-If the provider offers no idempotency/status contract, an ambiguous accepted
-submission remains unresolved: do not automatically create a second job. A 404,
-missing local job ID, process death or a changed polling flag is insufficient
-negative evidence. Completion must verify the actual proof against the bound
-inputs, not merely a provider success flag. An intentional replacement requires
-separate explicit policy, terminal ownership/charge disposition and a new identity;
-this draft grants no replacement or additional-charge authority.
+## Prospective arm binding and terminal-unused retirement
 
-## History, compatibility and restore
+Before arm dispatch, assign a fresh 64-hex armId and native broadcast operation ID.
+Freeze the complete native broadcast request, including entry, expected root/index,
+members, delegate, fee rate and native authority incarnation/generation. Compute its
+digest before requesting the store arm. The store reservation binds that exact
+native request, not just an arm name. There is no circular grant-receipt hash inside
+the native request: the store grant binds the already frozen native digest.
 
-The eventual protocol must encode operation records as mandatory versioned history
-that older effectful writers refuse before external work. The mandatory wire boundary is specified below. Its database migration must land
-with the corresponding implementation and tests against unchanged historical readers. Do not silently add ignorable JSON fields
-and call that a compatibility boundary. Unsupported requirements refuse with no
-side effects; there is no plaintext/local mirror fallback during a journal outage.
+The existing entry ID remains 32 hex characters. arm_reserve uses armId as its store
+operation ID and atomically records at most one grant for that entry/arm/native
+binding. Different native operation/digest/delegate under the same arm refuses.
+Native acceptance verifies the authenticated store grant and records one native
+operation per arm; it cannot select a different operation using a copied arm name.
 
-Restore must replay later acknowledged intents/results and reconcile the native
-operation ledger before permitting mutation. Older databases, restored native
-state and remote ledger divergence require an explicit fail-closed procedure.
-No reset to an empty operation ledger or fresh installation may forget obligations.
+A new tagged terminal_unused disposition is distinct from ordinary closed and from
+supersession. Retain the original grant record and a grantCount of zero or one;
+never delete an arm or decrement its grant count. The terminal record binds the
+exact reservation and permanent native terminal_no_effect result. The controller
+acknowledges that evidence before invoking arm_retire. The store verifies it and
+serializes grant, terminal retirement and retries in one local ownership boundary.
 
-## Required evidence before effectful selection
+If retirement wins before an original grant arrives, it permanently tombstones the
+exact prospective arm/entry binding with grantCount zero and terminalizes its
+original arm_reserve operation without a grant; a late original grant or
+entry create returns terminal disposition and never acquires locks. If grant wins,
+retirement retains that consumed grant with grantCount one. An unknown prior-
+incarnation reservation cannot be assigned a fictional grant count or retired from
+absence. Changed bindings, possible sends, partial effects, missing live history or
+contradictory receipts refuse. There is no arbitrary adoption of legacy armed data.
 
-Exercise head substitution immediately after the final read; stale delegate,
-generation and commitment index; simultaneous raw native mutation; delayed
-original requests; partial sync; reply loss before and after acceptance; duplicate
-same-ID requests; same ID with different bytes; crash around transaction construction,
-wallet acceptance, result persistence and arm closure; job acceptance without a
-reply; prover status loss; restart and older database/native restore. Assert exact
-arms, builds, wallet sends, releases, accepted jobs and charge identities.
+In the same store commit, release only this entry's still-owned issuing orders to
+converted and remove only its own pending membership. Preserve payment addresses,
+price reserves, invoices, history, later cancellation/refund state and foreign or
+successor ownership. A retry returns the immutable terminal receipt and never
+reapplies order changes. An absent entry changes no orders. Foreign global pending
+ownership must not be cleared. These are ownership/lifecycle changes, not a refund
+or a payment-policy change; fresh eligibility remains necessary for any successor.
 
-Recording-port and model tests establish deterministic behavior but cannot establish
-native serialization, transaction custody or provider billing semantics. The
-corresponding native scenarios must run against the exact selected binaries and
-source. Installed abort and the final same-package native/browser/buyer/operator
-checks remain separate acceptance work. No scenario is verified by this document.
+A new entry/arm may use the same still-unspent delegate only after every prior arm
+for it has a live-confirmed terminal_unused disposition or the existing valid
+supersession evidence, with no active/unknown competing owner. Store grant CAS and
+fresh native/delegate checks still apply. Each arm grants once; the retained count
+across different retired arms may increase. This replaces neither an old grant nor
+the native operation ID. No fake supersession or attempted-flag reset is allowed.
 
-## Bootstrap and installer boundary
+A retired store entry does not remove an unbroadcast native root. Before preparing
+a changed successor, use the narrow rollback_local contract, with exact typed root
+ownership and no-send evidence; all preparation/restore fences remain. An old
+retirement retry cannot roll back a successor head. Known transaction recovery
+uses attach_txid/rebroadcast_known and positive transaction or irrevocable exact-
+transaction dispatch-claim evidence, never an unused-arm path. Prepared signed
+bytes alone are not evidence that a send occurred or authority to recover it.
 
-The accepted generated profile uses independently verified installation plus
-protected-root custody. It does not claim per-invocation verification of every
-direct payload prelude. Keep that trust model explicit while porting.
+## Expected-commitment send and prover ownership
 
-Bootstrap compatibility is a separate PR: require an incompatible signed envelope
-and reviewed bootstrap capabilities before staging/maintenance. Verify unchanged
-schema-3 as well as schema-2 bootstraps refuse the actual successor before effects.
-Manual and Alchemy select the same independently provisioned sibling inventory.
-A Python-free bootstrap requires independently trusted pinned Node before it
-verifies or executes a release. This draft chooses neither a runtime provisioning
-method nor a permanent Python exception and implements no new bootstrap format.
+Under the native mutation boundary, compare immutable commitment identity, root,
+index, member digest, intended delegate, proof state and request authority before
+selecting/building the transaction. A fee-rate-only POST or extra GET is insufficient.
+Persist exact prepared transaction/ancestor bytes before a wallet send and a durable
+dispatch claim before forwarding. After that claim, a crash cannot justify a new
+transaction or a no-effect certificate from plausible absence. A duplicate completed
+first-send request returns its result; it does not create a new broadcast permission.
+A retained irrevocable dispatch claim binds the exact signed transaction even if
+its physical send is unknown. Its recovery preserves that logical authority; mere
+prepared bytes without a claim are insufficient. Known-byte recovery keeps its
+explicit path and existing live guards.
 
-## Version-one authority and retention decisions
+Persist one proof identity for exact input/provider/pricing binding and a durable
+non-retry dispatch claim before remote submission. Provider deduplication/status
+must cover its own restart and billing authority. Native caching alone is insufficient.
+With that capability, only the same provider proof identity/input may be resubmitted.
+Without it, a claim followed by ambiguity permanently pauses automatic submission,
+even if the process died before the actual call. No 404 or lost job ID grants a
+replacement. Version one grants no additional-job or additional-charge policy.
+Recover_known may only poll/verify an existing positively bound job and apply its
+verified proof to the exact native head; it cannot submit a job. Unsupported proof
+import/adoption remains disabled. Verify actual proof inputs, not a success flag.
 
-The native service owns a durable operation ledger, separate from controller SQLite.
-Its header binds an installation identity, network, native-instance identity and
-monotonic generation. Operation IDs are random 256-bit lowercase hexadecimal values;
-identifiers are never reused, including after retirement or restore.
+## Compatibility, maintenance and test requirements
 
-The immutable request preimage has exactly `version: 1`, `operationId`,
-`operationKind`, `bindings`, `nativeInstance` and `generation`. `bindings` contains
-the domain inputs listed above, not another envelope or a digest of itself.
-`requestDigest` is SHA-256 of that object encoded as canonical UTF-8 JSON with
-sorted keys and no insignificant whitespace. Transport authentication and the
-requestDigest/result fields are excluded from that preimage; every effect-bearing
-domain input must be included. The native service recomputes the digest.
+Before new effects, acknowledge the controller SSCJ4 floor and the separate store
+SSSJ2 floor defined in the wire contract. Old stores do not read the controller
+floor. Package/native/store capabilities, all journal/reconciliation/checkpoint
+readers and the separately trusted bootstrap must support both before selection.
+An old authenticated entry/pending request cannot bypass the activated store floor
+through its older strict HTTP shape. Unsupported capabilities refuse before effects.
 
-Integer protocol values are nonnegative integers within
-the cross-language safe integer range; JSON floating-point literals and duplicate
-keys refuse. Fractional fee rates use exact canonical decimal strings, without
-exponents or redundant leading/trailing zeros, such as `"1.25"`. Encoding must
-preserve the configured rate and existing fee caps; rounding to a different rate
-is not permitted. Monetary values use existing exact integer units. Native roots, recipient bytes and proof
-inputs retain their existing canonical encodings.
+Activation and full restore are maintenance protocols, not unrecorded controller
+operation kinds. Establish real exclusive lifetime ownership, pause value effects,
+stop/exclude old processes/workers, create fresh incarnations and qualify both
+floors/readers before admission. Do not restore a live ledger or silently erase old
+unknown claims. Existing history bytes stay unchanged. Legacy unresolved arms or
+one-use intents lacking these bindings remain held; this is not a general cutover.
 
-Each operation stores version, ID, kind, request digest, immutable bindings,
-generation, state, result revision and evidence digest. The immutable bindings
-include the installed native/prover capability contract. Repeated identical input
-returns the existing record; changed input under the same ID refuses without an
-effect. Unknown fields or capabilities refuse at an effect-bearing boundary.
+[ENTRY-RELEASE](ENTRY-RELEASE.md) and [ENTRY-RECOVERY](ENTRY-RECOVERY.md) keep their
+implemented rules and named tests. terminal_unused is only a proposed capability-
+gated exception. Its models, effective specification changes and actual integration/
+native tests must land with implementation; existing expectations are not waived.
 
-The ledger fsyncs acceptance before scheduling work and fsyncs result evidence
-before reporting completion. All relevant native mutation routes, workers and
-restore tools enforce the same authenticated owner/generation boundary. A route
-that remains reachable without that boundary makes this capability unsupported.
-Generation ownership changes serialize with acceptance and all outstanding work;
-revocation closes future admission immediately, but cannot claim drain while an
-accepted worker can still act. There is no force-clear operation.
+Required negatives include after-final-read head/delegate/index changes; raw and
+background writers; store pending A delayed beyond B; grant versus retirement before/
+after forwarding; false confirmation; response loss; dispatch-claim crashes; same
+ID with changed input; same-delegate successors; later cancellation/foreign owner
+followed by an old retirement retry; lost native/store ledgers; snapshot rollback
+that loses acceptance or tombstones; old-incarnation requests; unsupported/missing
+floors; provider acceptance without reply; and partial global sync. Assert exact
+grants, wallet transactions, releases, jobs and charge identities. Pure models and
+recording ports do not establish native serialization, process ownership or billing.
 
-Version one retains operation identities, request bindings, results and terminal
-tombstones indefinitely. No ledger compaction, tombstone expiration or generation
-reset is supported. A future retention policy needs a separate contract and tests
-against delayed requests and restored old writers before it is enabled.
+## Bounded port order
 
-The controller journal holds acknowledged request bindings and recovered result
-references. The native ledger is authoritative for native acceptance/effects; the
-store is authoritative for its arm; neither controller SQLite nor a local receipt
-can override them. Restore reconciles these three authorities. Missing, rolled-back
-or contradictory native evidence leaves the operation unknown. A replacement host
-or new native-instance identity cannot declare an old operation unused. A service
-rejects operation bindings naming another native instance; it cannot adopt IDs
-from a lost instance to certify that they had no effect. Loss of the
-ledger without independently verifiable terminal/transaction evidence therefore
-preserves the hold, including across host replacement. This deliberately accepts
-availability loss rather than inventing a recovery certificate.
+First port strict read-only native facts and the official verifier boundary under
+TypeScript/Effect, with no runtime selection, effects or Python deletion. Pin official
+`@spacesprotocol/libveritas` to native 0.4.4 for this source. Exercise every API used,
+production verification options, exact certificate bytes and malformed/trailing,
+recipient and anchor negatives. The two-fixture/ten-check spike is preliminary.
 
-A terminal-no-effect operation may be created for a prepared ID that has not
-arrived at the native service. The retirement call carries that exact ID and
-request binding. Under the same acceptance lock, the service either returns the
-existing result, waits for/proves cessation of accepted work, or durably installs
-a terminal tombstone before admitting any later copy. It must never translate a
-not-found query into no-effect evidence without that permanent rejection step.
-Acceptance alone cannot establish no effect. Partially effective work cannot
-be declared unused by retirement; cancellation of accepted work needs durable
-evidence that it produced no effect and can produce none later.
-
-## Terminal arm closure decision
-
-A version-one closure request binds the exact store entry and arm, operation ID,
-request digest, native instance/generation and permanent terminal_no_effect result
-revision/digest. The controller retrieves that result from the authenticated native
-authority, verifies the immutable bindings, and acknowledges it in the controller
-journal before asking the authenticated store to close the arm. A caller-supplied
-free-text assertion is insufficient. This uses trusted authenticated service
-boundaries; it does not claim a new public cryptographic proof of non-broadcast.
-
-The store closure is one atomic compare-and-set on the exact armed entry: bindings
-must match, no transaction/send evidence may exist, and no other closure result
-may replace it. It durably journals and acknowledges terminal closure before
-returning a versioned receipt containing entry, arm, operation ID, evidence digest
-and closed phase. Repeating the identical request returns that same receipt.
-Different evidence or a changed entry refuses. An unanswered close grants no new
-entry; recover its acknowledged receipt first. Existing one-use grant counters
-never decrease. The original arm remains permanently consumed and closed.
-
-An accepted or unknown native operation, partial-effect result, unacknowledged
-controller evidence, journal outage, ledger loss or contradictory store receipt
-cannot use this closure path. Fresh eligibility/delegate/native checks are still
-required for any later successor batch. This contract must be implemented in the
-store and native service before a controller exposes terminal arm retirement.
-
-## Prover capability decision
-
-Version one supports one proof submission identity per exact proof input/provider
-binding. Bind a provider capability/version and the applicable pricing agreement
-identity when the job can incur a charge. The provider or its authoritative
-submission service must durably deduplicate and query that identity, including
-across its own restart. A native-only cache is insufficient when the provider can
-accept a job before the native cache records the answer.
-
-A provider lacking that capability can support one explicitly bounded submission,
-but ambiguous acceptance permanently pauses automated submission for that proof.
-No timeout, local missing job, provider 404 or process restart grants a replacement.
-Version one has no replacement-job or additional-charge policy. Such a policy is
-separate work with explicit ownership and billing disposition. Proof polling and
-verification may continue against a recovered existing job. No automatic retry
-through a non-deduplicating endpoint is supported.
-
-## Mandatory history boundary
-
-Before any new operation intent or effect, acknowledge the next-sequence protocol
-record. Its bytes are `SSCJ4 ` followed by compact sorted-key JSON with `kind` equal
-to `controller_protocol`, `version` equal to 4, the next integer `seq`, and `requires`
-equal to `["native_operation_ownership_v1","preparation_abort_v1"]`. Append one
-newline. There is no JSON-only mirror. Identical records have identical bytes in
-Python and TypeScript. The acknowledged journal prefix is not rewritten.
-
-New readers accept existing supported SSCJ3 history but must acknowledge SSCJ4
-before activating these effects. Readers reject unsupported mandatory features,
-duplicate fields, wrong sequence or an unframed protocol record. Existing readers
-must reject the actual new floor with zero native/store effects. This floor
-protects controller history; it cannot retroactively upgrade a bootstrap or an
-unauthenticated native endpoint. Signed package/native capability checks and the
-separate bootstrap compatibility transition remain prerequisites to selection.
-
-Ordinary operation records after the floor use `kind: controller_operation`,
-`version: 1`, their journal sequence, operation ID/kind, immutable request digest,
-bindings, native instance/generation, outcome and result revision/evidence digest.
-Results are append-only. A prepared record cannot erase acceptance; completion or
-terminal_no_effect is immutable, and contradictory terminal records refuse.
-The ordinary record has exactly the keys `seq`, `kind`, `version`, `operationId`,
-`operationKind`, `requestDigest`, `bindings`, `nativeInstance`, `generation`,
-`outcome`, `resultRevision` and `evidenceDigest`. The outer `kind` and `version` are
-`controller_operation` and `1`; `operationKind` is one of `pending_set`,
-`pending_clear`, `sync`, `park`, `unpark`, `commit_local`, `broadcast` or `prove`.
-Digests, operation IDs and native-instance identities are 64 lowercase hexadecimal
-characters. Bindings contain the exact canonical domain inputs acknowledged before
-dispatch. Evidence digests hash canonical result evidence, excluding the digest
-field itself; they bind the outcome and result revision to the request digest.
-Every operation record freezes a nonnull native instance and generation
-before dispatch. Generations and nonnull result revisions are positive safe
-integers. Result revision/digest may be null only before an authoritative result
-is known; accepted and terminal results require both. Status or retirement queries
-use the current caller authority while retaining the original operation generation;
-they never rewrite that binding to obtain a new send. Unknown is a controller
-knowledge state that cannot
-replace or downgrade acknowledged accepted/terminal evidence. It grants no effect.
-
-Database tables are projections of acknowledged records. Exact database migration
-and native storage layout may be chosen by their implementation PRs provided they
-preserve these bindings and pass restart/restore and historical-reader tests.
-
-## Implementation order and acceptance
-
-The separate specification PR changes requirements only. It neither selects a
-controller nor grants acceptance of unresolved defects in the frozen release.
-No new named-case identifiers are introduced here. Implementations must add the
-corresponding executable regressions with their effective lifecycle changes;
-case discovery is never substituted for passing execution.
-
-First port strict native facts and the official verifier boundary in a bounded
-TypeScript/Effect PR without runtime selection. Use official
-`@spacesprotocol/libveritas`, pinned to native version 0.4.4 for this source.
-Existing two-fixture/ten-check Node evidence is preliminary. Exercise every API
-used by the slice, production verification options, exact certificate bytes,
-malformed/trailing data, substituted anchors and wrong recipients. Scoped fixture
-agreement does not establish complete libveritas parity or native acceptance.
-
-Native operation/fencing and store closure capabilities precede their effectful
-controller callers. Proving, coordinated checkpoint/process ownership, send and
-recovery, observation/certificates, publication and supersession follow in small
-PRs with their own native/process tests. Keep the Python implementation as the
-comparison reference until the TypeScript slice passes equivalent native scenarios
-and specified negatives; then remove the replaced Python, retaining Git history.
-Runner/recovery, deployment and tooling follow. Bootstrap remains a separate PR.
-
-For unchanged behavior, Python/native and TypeScript/native outcomes must agree.
-Known unsafe frozen outcomes remain negative controls, not expected behavior for
-the successor. A contract-dependent change records the old result, the specified
-new result and its native regression explicitly. Keep those changes separate from
-pure translation PRs so a port discrepancy cannot conceal a design change.
+Native/store capability implementation precedes its effectful controller callers.
+Proving, checkpoint/process ownership, send/recovery, observations/certificates,
+publication and supersession follow in bounded PRs with their corresponding native
+scenarios. For unchanged behavior require Python/native and TypeScript/native
+agreement. Keep unsafe frozen results as explicit negative controls with specified
+successor differences, separated from pure translation changes. Remove replaced
+Python only after equivalent native scenarios and negatives pass, retaining history.
+Runner/recovery, deployment and tooling follow. Bootstrap remains a separate PR;
+a Python-free bootstrap requires a separately trusted pinned Node runtime first.
