@@ -22,6 +22,14 @@ The [mandatory protocol amendment](CONTROLLER-PROTOCOL.md) excludes older
 JSON-only controller builds after abort activation and defines native proof
 that a surviving paid member can complete a fresh batch after abort.
 
+The proposed [controller recovery operation contracts](CONTROLLER-RECOVERY-CONTRACT.md)
+define the prerequisite native ownership, expected-commitment send, post-arm,
+unknown-request, prover and mandatory-history requirements for the remaining
+controller port. They are implementation requirements, not evidence that the
+current runtime provides them. The specification is reviewed separately from
+bounded controller-first implementation PRs. Bootstrap remains a separate decision
+and PR, and Python comparison remains until equivalent native scenarios pass.
+
 ## Behavior during the transition
 
 The Python store, Python reference model and owner-only test follow the
