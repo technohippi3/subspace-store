@@ -12,6 +12,7 @@ import { RebuildPolicy } from "./rebuild-policy.ts";
 import { KnownUnsentRelease } from "./release.ts";
 import { BatchPreparation } from "./preparation.ts";
 import { requirePreparationIdle } from "./preparation-history.ts";
+import { upgradeAbortHistory } from "./journal-protocol.ts";
 
 export interface ControllerConfig { readonly database: string; readonly makeJournal: () => ControllerJournal }
 function bounded(text: string): string {
@@ -31,7 +32,10 @@ export class BoundController {
     const db = new BatchDatabase(config.database);
     try {
       // The factory and startup replay run only while lifetime flock is held.
-      this.journal = config.makeJournal(); settleRestart(db, this.journal);
+      this.journal = config.makeJournal();
+      try { upgradeAbortHistory(this.journal); }
+      catch (error) { if (!(error instanceof ControllerError) || error.code !== "unavailable") throw error; }
+      settleRestart(db, this.journal);
       this.db = db; this.ports = ports;
       this.policy = new RebuildPolicy(this.journal, ports.height);
       this.releases = new KnownUnsentRelease(db, this.journal, ports, this.policy);
@@ -63,6 +67,7 @@ export class BoundController {
   }
   private readJournal() {
     return checked("journal read", () => {
+      upgradeAbortHistory(this.journal);
       requirePreparationIdle(this.journal);
       const current = latest(this.journal.entries()); this.db.requireRestored(new Set(current.keys()));
       return current;

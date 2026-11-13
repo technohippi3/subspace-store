@@ -109,7 +109,10 @@ def _apply(value, manifest_file, signature, artifact, *, dry_run=False, rollback
     require(not os.path.lexists(paths(value)['lock'].parent/'recovery.json'),'attended-recovery-required')
     old = current_receipt(value)
     if old and old["manifestDigest"] != manifest["_digest"]:
-        require(old["schemas"] == manifest["schemas"], "incompatible-schema")
+        previous = dict(old["schemas"])
+        if not rollback and previous.get("controllerJournal") == 2:
+            previous["controllerJournal"] = 3
+        require(previous == manifest["schemas"], "incompatible-schema")
         require(manifest["release"] in old.get("rollbackTo", []) if rollback else old["release"] in manifest["upgradeFrom"], "unsupported-upgrade")
     if dry_run:
         return {"ok": True, "dryRun": True, "release": manifest["release"]}

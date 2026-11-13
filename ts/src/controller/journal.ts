@@ -4,10 +4,10 @@ import { createHash } from "node:crypto";
 import { json, type Json } from "../storage/codec.ts";
 import { JOURNAL_PAGE_BYTES, JOURNAL_PAGE_ENTRIES, type RecoveryCommand } from "../storage/ssh-journal.ts";
 import { batch, type Batch } from "./records.ts";
-import { strictJson } from "./json.ts";
 import { refuse } from "./errors.ts";
 import { guardRecord } from "./rebuild-policy.ts";
 import { preparationRecord } from "./preparation-history.ts";
+import { frameRecord, decodeRecord } from "./journal-protocol.ts";
 
 export interface ControllerEvent { readonly seq: number; readonly kind: string; readonly [key: string]: Json }
 /** Existing Python controller envelope; store DurableStore envelopes are distinct. */
@@ -22,7 +22,7 @@ function utf8(raw: Buffer): string {
   catch { return refuse("invalid controller journal UTF-8", "invalid"); }
 }
 function decode(raw: string, sequence: number): ControllerEvent {
-  const value = strictJson(raw);
+  const value = decodeRecord(raw);
   try { json(value); } catch { return refuse("invalid controller journal JSON value", "invalid"); }
   if (!value || typeof value !== "object" || Array.isArray(value) || value.seq !== sequence ||
       typeof value.kind !== "string" || !/^[a-z][a-z_]{0,63}$/.test(value.kind)) refuse("invalid controller journal envelope", "invalid");
@@ -43,7 +43,7 @@ export function latest(entries: readonly ControllerEvent[]): Map<string, Batch> 
 }
 function eventData(kind: string, data: Readonly<Record<string, Json>>): Record<string, Json> {
   if (Object.hasOwn(data, "seq") || Object.hasOwn(data, "kind")) refuse("reserved controller event fields", "invalid");
-  const value = { kind, ...data }; decode(JSON.stringify({ seq: 1, ...value }), 1); return value;
+  const value = { kind, ...data }; decode(frameRecord({ seq: 1, ...value }), 1); return value;
 }
 function digest(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
 
@@ -75,7 +75,7 @@ export class FileControllerJournal implements ControllerJournal {
     this.appendEvent("batch", { batch: batch(value) as unknown as Json });
   }
   appendEvent(kind: string, data: Readonly<Record<string, Json>>): void {
-    const value = eventData(kind, data), before = this.entries(), raw = JSON.stringify({ seq: before.length + 1, ...value });
+    const value = eventData(kind, data), before = this.entries(), raw = frameRecord({ seq: before.length + 1, ...value });
     const fd = openSync(this.path, "a", 0o600);
     try { writeFileSync(fd, raw + "\n"); fsyncSync(fd); } finally { closeSync(fd); }
     this.syncDirectory();
@@ -134,7 +134,7 @@ export class RemoteControllerJournal implements ControllerJournal {
       this.confirmPending(); if (previous.value === encoded) return;
     }
     const sequence = this.entries().length + 1;
-    this.pending = { value: encoded, sequence, raw: JSON.stringify({ seq: sequence, ...value }) };
+    this.pending = { value: encoded, sequence, raw: frameRecord({ seq: sequence, ...value }) };
     this.confirmPending();
   }
   private confirmPending(): void {

@@ -18,6 +18,10 @@ The [preparation availability amendment](CONTROLLER-AVAILABILITY.md) defines
 completed-owner abort and sent-batch progress through unrelated ownership.
 Unknown request outcomes, post-arm recovery and prover ownership remain open.
 
+The [mandatory protocol amendment](CONTROLLER-PROTOCOL.md) excludes older
+JSON-only controller builds after abort activation and defines native proof
+that a surviving paid member can complete a fresh batch after abort.
+
 ## Behavior during the transition
 
 The Python store, Python reference model and owner-only test follow the

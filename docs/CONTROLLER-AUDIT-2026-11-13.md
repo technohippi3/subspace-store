@@ -12,6 +12,11 @@ repair; the amendment supersedes their blanket fence-scope and no-exit
 statements for fully completed ownership only. Unknown requests, post-arm
 read failures and durable prover-submission ownership remain open.
 
+A further [protocol and continuation amendment](spec/CONTROLLER-PROTOCOL.md)
+adds an acknowledged framing boundary against older controller readers and
+extends the native scenario to issue and fulfill a surviving paid member.
+It also records the combined coordinator review and its non-independent scope.
+
 ## Native commitment binding
 
 The Python proving loop, checkpoint and first-send path previously lacked

@@ -11,6 +11,7 @@ import signal
 import sqlite3
 import tempfile
 import time
+from .journal_protocol import encode_record, decode_record
 
 try:
     from controller.journal import JournalDown
@@ -133,7 +134,7 @@ class RemoteJournal:
                 page_size += len(raw)
                 if page_size > JOURNAL_PAGE_BYTES or size > 512 * 1024 * 1024 or len(result) >= 1_000_000 or item["sequence"] != after + 1 or hashlib.sha256(raw).hexdigest() != item["sha256"]:
                     raise JournalDown("journal replay bounds or digest mismatch")
-                value = json.loads(raw)
+                value = decode_record(raw.decode("utf-8"))
                 if value.get("seq") != item["sequence"]:
                     raise JournalDown("journal sequence mismatch")
                 result.append(value)
@@ -153,7 +154,7 @@ class RemoteJournal:
             raise JournalDown("previous journal acknowledgment remains unresolved")
         if self.pending is None:
             sequence = self.position() + 1
-            raw = json.dumps({"seq": sequence, **request_data}, sort_keys=True).encode()
+            raw = encode_record({"seq": sequence, **request_data}).encode()
             self.pending = (request_data, sequence, raw)
         _, sequence, raw = self.pending
         result = self.backend.request({"op": "journal-append", "stream": self.stream, "sequence": sequence,

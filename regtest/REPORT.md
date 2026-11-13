@@ -1,5 +1,24 @@
 # Regtest report
 
+## Abort protocol and paid survivor, 2026-11-13
+
+Run [abort-protocol-survivor-qualified-20261113T114658Z-0c3e55](runs/abort-protocol-survivor-qualified-20261113T114658Z-0c3e55.md)
+passes all 53 required steps. Its [JSON receipt](runs/abort-protocol-survivor-qualified-20261113T114658Z-0c3e55.json)
+binds 148 source files. The aborted batch contains both a cancelled member
+and a surviving paid member. The mandatory journal protocol is acknowledged
+before abort and pending clear. That same paid member then enters a fresh
+batch, completes real step/fold proving and checkpointing, is issued, and
+reaches verified relay fulfillment. A separately downloaded certificate
+verifies its original recipient script and sovereign state. The cancelled
+member stays cancelled. Earlier sent-batch delivery also continues while a
+later pending request remains unresolved.
+
+The [protocol amendment](../docs/spec/CONTROLLER-PROTOCOL.md) specifies the
+older-reader barrier and package compatibility tests. The native result is
+locally produced; CI does not repeat this full scenario. It establishes no
+independent execution, new signed-package acceptance or phone acceptance.
+Earlier receipts below retain their original source bindings.
+
 ## Preparation availability amendment, 2026-11-13
 
 Run [preparation-availability-qualified-20261113T104905Z-cc7283](runs/preparation-availability-qualified-20261113T104905Z-cc7283.md)

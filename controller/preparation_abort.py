@@ -5,6 +5,7 @@ import json
 from .errors import Refused
 from .preparation_history import PreparationBarrier, abort_record, history, identity, same
 from .preparation_readback import PreparationReadback
+from .journal_protocol import require_abort_protocol
 
 
 class PreparationAbort:
@@ -44,6 +45,7 @@ class PreparationAbort:
             reader.available(b, {o["name"].split("@", 1)[0]: o["recipient_spk"] for o in orders})
         inspect()
         if prior is None:
+            require_abort_protocol(self.journal)
             self.journal.append("preparation_abort", **identity(b))
             history(self.journal)
         if owner is not None:

@@ -8,6 +8,10 @@ The active Python controller retains selection, with the runtime safety
 amendments below. These are lifecycle repairs, not new payment rules or a
 change to the independent payment model.
 
+The [mandatory protocol amendment](CONTROLLER-PROTOCOL.md) excludes older
+JSON-only controller builds after abort activation and defines native proof
+that a surviving paid member can complete a fresh batch after abort.
+
 ## Frozen identity and admission
 
 Freeze observes current converted orders and live batchability, excludes IDs

@@ -12,6 +12,7 @@ import { entryReceipt } from "./registry-client.ts";
 import { ISSUED } from "../order.ts";
 import { preparationHistory, requirePreparationIdle } from "./preparation-history.ts";
 import { PreparationReadback } from "./preparation-readback.ts";
+import { upgradeAbortHistory } from "./journal-protocol.ts";
 
 /** Known-unsent close/rebuild only; a child remains frozen for a later preparer. */
 export class KnownUnsentRelease {
@@ -24,6 +25,7 @@ export class KnownUnsentRelease {
   }
   private ready(bid: string): Result<Batch> {
     return checked("check known-unsent history", () => {
+      upgradeAbortHistory(this.journal);
       requirePreparationIdle(this.journal);
       if (preparationHistory(this.journal.entries()).aborted.has(bid)) refuse("preparation was aborted; only abort completion may resume", "restore_required");
       // An outage refuses before any local progress or stale journal append.

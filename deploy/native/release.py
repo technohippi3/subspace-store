@@ -15,7 +15,7 @@ from common import ID, Refused, command, json_file, public_directory, require, s
 
 MAX_ARTIFACT = 4 * 1024**3
 # Semantic versions are part of the rollback fence, independently of SQLite DDL.
-SCHEMAS = {"store": 1, "controller": 1, "storeJournal": 2, "controllerJournal": 2,
+SCHEMAS = {"store": 1, "controller": 1, "storeJournal": 2, "controllerJournal": 3,
            "applicationRecords": 2, "controllerRecords": 2, "recoveryEnvelope": 1}
 
 

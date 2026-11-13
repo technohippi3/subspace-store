@@ -10,6 +10,7 @@ import type { OrderBinding, Result } from "./ports.ts";
 import type { PreparationPorts } from "./preparation-ports.ts";
 import { PreparationBarrier, preparationHistory, requirePreparationIdle, type PreparationOperation } from "./preparation-history.ts";
 import { abortPreparation } from "./preparation-abort.ts";
+import { upgradeAbortHistory } from "./journal-protocol.ts";
 import { PreparationReadback } from "./preparation-readback.ts";
 import { count, object, syncFact } from "./preparation-facts.ts";
 import { settleRestart } from "./restart.ts";
@@ -26,6 +27,7 @@ export class BatchPreparation {
   }
   private ports(): PreparationPorts { return this.configured ?? refuse("preparation ports are not configured", "unavailable"); }
   private ready(bid?: string): void {
+    upgradeAbortHistory(this.journal);
     const entries = this.journal.entries(); this.db.requireRestored(new Set(latest(entries).keys()));
     requirePreparationIdle(this.journal, bid); settleRestart(this.db, this.journal);
   }

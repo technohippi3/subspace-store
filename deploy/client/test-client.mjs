@@ -71,6 +71,16 @@ test('encrypted journal retry and lost acknowledgment retain exact existing ciph
   assert.equal(Buffer.from(journalRead(f.client, 'store', 0).entries[0].data, 'base64').toString(), 'sensitive fixture data');
   assert.equal(journalHead(f.client, 'store').sha256, sha(Buffer.from('sensitive fixture data')));
 });
+test('mandatory controller framing survives encryption and immutable acknowledgment recovery', t => {
+  const f = fixture(t), raw = Buffer.from('SSCJ3 {"kind":"controller_protocol","requires":["preparation_abort_v1"],"seq":1,"version":3}');
+  f.drop('journal-append');
+  const ack = append(f.client, 1, raw, 'controller');
+  const encrypted = readFileSync(join(f.root, 'controller', '0000000000000001.json'));
+  assert(!encrypted.includes(raw));
+  assert.deepEqual(append(f.client, 1, raw, 'controller'), ack);
+  assert.deepEqual(Buffer.from(journalRead(f.client, 'controller', 0).entries[0].data, 'base64'), raw);
+  assert.deepEqual(readFileSync(join(f.root, 'controller', '0000000000000001.json')), encrypted);
+});
 test('AEAD rejects modified bytes, another stream, another sequence and wrong keys', t => {
   const f = fixture(t); append(f.client, 1);
   const bytes = readFileSync(join(f.root, 'store', '0000000000000001.json'));

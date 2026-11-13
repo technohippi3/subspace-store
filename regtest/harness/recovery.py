@@ -637,9 +637,10 @@ def _wait_held(run, timeout=600):
 
 
 def _journaled_batch(run, bid):
+    from controller.journal_protocol import decode_record
     last = None
     for e in (run.offhost / "runner.jsonl").read_text().splitlines():
-        e = json.loads(e)
+        e = decode_record(e)
         if e["kind"] == "batch" and e["batch"]["bid"] == bid:
             last = e["batch"]
     return last

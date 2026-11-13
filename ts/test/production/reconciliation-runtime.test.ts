@@ -5,6 +5,7 @@ import {promisify} from "node:util";
 import {once} from "node:events";
 import {join} from "node:path";
 import {writeFileSync,appendFileSync,unlinkSync} from "node:fs";
+import {frameRecord} from "../../src/controller/journal-protocol.ts";
 import {Effect} from "effect";
 import {runtimeFixture,until} from "./runtime-fixture.ts";
 import {fixture,setup,invoice,use} from "./application-fixture.ts";
@@ -57,4 +58,10 @@ test("O96: controller completion requires the exact latest live journal record a
   reset();writeFileSync(file,JSON.stringify({...row,statement:{...statement,store:"foreign-store"}})+"\n");await assert.rejects(confirm());
   writeFileSync(file,"");await assert.rejects(confirm());
   reset();await confirm();
+  const floor=frameRecord({seq:1,kind:"controller_protocol",version:3,requires:["preparation_abort_v1"]});
+  const framedReceipt={...receipt,position:2};
+  writeFileSync(file,floor+"\n"+JSON.stringify({...row,seq:2})+"\n");
+  await Effect.runPromise(controllerRecovery(core.config,h.file).confirm(framedReceipt));
+  writeFileSync(file,floor.replace('"version":3','"version":4')+"\n"+JSON.stringify({...row,seq:2})+"\n");
+  await assert.rejects(Effect.runPromise(controllerRecovery(core.config,h.file).confirm(framedReceipt)));
 });

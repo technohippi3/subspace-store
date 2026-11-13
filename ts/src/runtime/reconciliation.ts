@@ -11,6 +11,7 @@ import type { RecoveryController } from "../application/reconciliation.ts";
 import { BitcoinRpc } from "../bitcoin/rpc.ts";
 import { object, integer, hex } from "../bitcoin/validation.ts";
 import type { RuntimeConfig } from "./config.ts";
+import {decodeRecord} from "../controller/journal-protocol.ts";
 
 const unavailable=()=>new ApplicationError({code:"unavailable",message:"controller recovery evidence unavailable or changed"});
 interface Host { recovery_backend?:RecoveryBackendReference; network: "mainnet" | "regtest"; controller:{journal_dir:string;journal_name?:string;operator_wallet:string};
@@ -43,8 +44,8 @@ function confirmController(h:Host,receipt:ControllerReceipt){
     const name=h.controller.journal_name??"runner",directory=resolve(h.controller.journal_dir);
     if(existsSync(join(directory,name+".down")))throw unavailable();
     const file=join(directory,name+".jsonl"),lines=readFileSync(file,"utf8").trim().split("\n");
-    if(receipt.position!==lines.length||lines.some((line,index)=>(JSON.parse(line) as {seq?:unknown}).seq!==index+1))throw unavailable();
-    const row=JSON.parse(lines[receipt.position-1]!) as {[key:string]:unknown};
+    if(receipt.position!==lines.length||lines.some((line,index)=>(decodeRecord(line) as {seq?:unknown}).seq!==index+1))throw unavailable();
+    const row=decodeRecord(lines[receipt.position-1]!) as {[key:string]:unknown};
     fields(row,"seq,kind,statement,proofHash");
     if(row.seq!==receipt.position||row.kind!=="store_reconciliation"||row.proofHash!==receipt.proofHash||proofHash(row.statement)!==receipt.proofHash)throw unavailable();
     const fd=openSync(file,"r"),dir=openSync(directory,"r");

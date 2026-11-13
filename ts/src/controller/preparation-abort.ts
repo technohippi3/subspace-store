@@ -8,12 +8,14 @@ import type { PreparationPorts } from "./preparation-ports.ts";
 import { orderBinding, successorDigest } from "./rebuild-records.ts";
 import { PreparationBarrier } from "./preparation-history.ts";
 import { PreparationReadback } from "./preparation-readback.ts";
+import { requireAbortProtocol, upgradeAbortHistory } from "./journal-protocol.ts";
 
 /** Abort only fully completed staging ownership. Unknown requests never retry. */
 export function abortPreparation(db: BatchDatabase, journal: ControllerJournal, ports: PreparationPorts, bid: string): Result<Batch> {
   return Effect.gen(function* () {
     const barrier = new PreparationBarrier(journal), reader = new PreparationReadback(ports);
     const b = yield* checked("check abort history", () => {
+      upgradeAbortHistory(journal);
       const entries = journal.entries(); db.requireRestored(new Set(latest(entries).keys()));
       const b = db.get(bid), state = barrier.state(), prior = state.aborted.get(bid);
       const same = (r: { bid: string; space: string; members: string[]; digest: string }) =>
@@ -48,6 +50,7 @@ export function abortPreparation(db: BatchDatabase, journal: ControllerJournal, 
     });
     yield* inspect();
     yield* checked("acknowledge preparation abort", () => {
+      requireAbortProtocol(journal);
       if (!barrier.state().aborted.has(bid)) journal.appendEvent("preparation_abort", {
         version: 1, bid, space: b.space, members: b.members, digest: b.digest });
       barrier.state();

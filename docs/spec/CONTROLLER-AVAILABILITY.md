@@ -39,9 +39,11 @@ crash. Native/store checks run again before retirement. The abort marker
 survives a crash between owner clear and final batch acknowledgment, allowing
 only abort completion.
 
-Both controllers understand this event. Older controllers that ignore it
-must not run after abort begins. Compatible JSONL envelopes do not qualify
-downgrade or alternating writers. No new installation package is qualified.
+Both controllers understand this event. The [mandatory protocol amendment](CONTROLLER-PROTOCOL.md)
+now acknowledges a framed record before abort begins, making JSON-only older
+readers refuse. Package metadata enforces the corresponding one-way journal
+upgrade. Compatible ordinary JSONL envelopes do not qualify a downgrade or
+alternating writers. No new installation package is qualified.
 
 ## Sent-batch operations
 

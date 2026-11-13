@@ -40,6 +40,7 @@ from .preparation import CLOSED, Preparation
 from .preparation_history import history as preparation_history
 from .native_binding import require_local_commitment
 from .postsend import Postsend
+from .journal_protocol import upgrade_abort_history
 
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 LIVE = ("issuing", "broadcast", "broadcast_uncertain", "mined", "final")
@@ -122,6 +123,7 @@ class Controller(Postsend, RebuildGuard, Preparation, Issuance, Rebuild, Commitm
             self.db.executescript(SCHEMA)
             self._migrate()
             self.journal = journal
+            upgrade_abort_history(journal)
             preparation_history(journal, live=False)
             self.recovery_backend = getattr(journal, "backend", None)
             self._rebuild_policy()  # Refuse malformed/unsupported policy history before serving.
