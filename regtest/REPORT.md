@@ -1,5 +1,23 @@
 # Regtest report
 
+## Preparation availability amendment, 2026-11-13
+
+Run [preparation-availability-qualified-20261113T104905Z-cc7283](runs/preparation-availability-qualified-20261113T104905Z-cc7283.md)
+passes all 45 required steps. Its [JSON receipt](runs/preparation-availability-qualified-20261113T104905Z-cc7283.json)
+binds 146 source files and the native binary. It repeats sale, refund,
+application/controller/subs restore and later issuance, then cancels a buyer
+after real pending acknowledgment and uses the shipped abort command twice.
+An injected response loss after a later real pending acknowledgment leaves
+that request unresolved. The earlier sent batch still observes finality,
+passes real libveritas verification and reaches real relay delivery with its
+original fulfillment receipts. The unknown request remains fenced.
+
+These are locally produced native harness results, without independent
+execution or signed-package/phone acceptance. CI's Core regtest job does not
+repeat this full scenario. The [availability contract](../docs/spec/CONTROLLER-AVAILABILITY.md)
+states the remaining unknown-outcome, post-arm and prover-ownership work.
+The 35/43-step receipts below bind the earlier `8bb7312` source.
+
 ## Selected controller audit regression, 2026-11-13
 
 Run [audit-root-binding-20261113T093820Z-64900d](runs/audit-root-binding-20261113T093820Z-64900d.md)

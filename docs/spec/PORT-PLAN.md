@@ -14,6 +14,10 @@ Linux/systemd services. Bitcoin Core, spaced, subs and their cryptography
 remain upstream native software. There is no multi-tenant platform or
 general migration framework in this plan.
 
+The [preparation availability amendment](CONTROLLER-AVAILABILITY.md) defines
+completed-owner abort and sent-batch progress through unrelated ownership.
+Unknown request outcomes, post-arm recovery and prover ownership remain open.
+
 ## Behavior during the transition
 
 The Python store, Python reference model and owner-only test follow the

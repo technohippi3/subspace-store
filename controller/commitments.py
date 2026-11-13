@@ -30,7 +30,7 @@ class CommitmentTracking:
         return "verified" if newest - b["mined_height"] >= ANCHOR_FINALITY else "awaiting_anchor"
 
     def watch(self, bid):
-        self.require_restored()
+        self.require_postsend(bid)
         """Move a batch along with the chain, including loss of finality."""
         if getattr(self.registry, "bound_entries", False):
             return self.watch_bound(bid)
@@ -90,7 +90,7 @@ class CommitmentTracking:
         raise Refused("Core/spaced changed during commitment observation; retry")
 
     def watch_bound(self, bid):
-        self._require_preparation_idle()
+        self.require_postsend(bid)
         self.wait_synced()
         self.capture_bytes(bid)
         b = self.batch(bid)

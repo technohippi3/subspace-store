@@ -14,7 +14,7 @@ class CertificateVerification:
         handle, script_pubkey and root with the batch record. The root is
         the batch's own, or a later commitment of the same space that is on
         the active chain, final and covered (A19)."""
-        self.require_restored()
+        self.require_postsend(bid)
         typed = getattr(self.registry, "bound_entries", False)
         current = None
         if typed:

@@ -19,11 +19,12 @@ class Journal extends FileControllerJournal {
     if (mode === "before-committed-ack" && value.state === "committed_local") process.exit(9);
     super.append(value);
     if (mode === "after-freeze" && value.state === "frozen" || mode === "after-staged" && value.state === "staged" ||
-        mode === "after-committed" && value.state === "committed_local") process.exit(9);
+        mode === "after-committed" && value.state === "committed_local" || mode === "after-abort-retired" && value.state === "rebuilt") process.exit(9);
   }
   override appendEvent(kind: string, data: Readonly<Record<string, Json>>): void {
     super.appendEvent(kind, data);
     if (mode === "after-owner" && kind === "preparation_pending" && data.phase === "owned" ||
+        mode === "after-abort" && kind === "preparation_abort" ||
         mode === "after-clear-owner" && kind === "preparation_pending" && data.phase === "cleared" ||
         mode === "after-commit-intent" && kind === "commit_local_intent" ||
         kind === "preparation_effect" && mode === `after-${String(data.operation)}-${String(data.phase)}`) process.exit(9);
@@ -39,6 +40,6 @@ const output = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const current = readNative(root).spaces[space]; if (!current) refuse("recording space not loaded"); return current.chain;
     }) },
   });
-  return yield* (operation === "freeze" ? c.freeze("@space") : operation === "stage" ? c.stage(bid) : c.commitLocal(bid));
+  return yield* (operation === "freeze" ? c.freeze("@space") : operation === "stage" ? c.stage(bid) : operation === "abort" ? c.abortPreparation(bid) : c.commitLocal(bid));
 })).pipe(Effect.match({ onSuccess: value => ({ error: null, value }), onFailure: error => ({ error: error.message, value: null }) })));
 console.log(JSON.stringify({ ...output, batches: batches(join(root, "controller.db")) }));

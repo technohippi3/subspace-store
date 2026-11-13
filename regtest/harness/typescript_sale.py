@@ -194,6 +194,8 @@ def sale(run, recovery=None, buyer_wallet=None):
         from .typescript_reconciliation import reconcile
         recovery = reconcile
     recovery(run, buyer, operator, command, restart, file, runner_file, link, receipt)
+    from .typescript_preparation_availability import qualify
+    qualify(run, buyer, operator, command, runner_file, wait)
 
 
 def main(argv):
@@ -213,6 +215,7 @@ def main(argv):
     files = sorted([*ROOT.glob("ts/src/**/*.ts"), *ROOT.glob("controller/*.py"),
                     *ROOT.glob("runner/*.py"), Path(__file__), Path(__file__).with_name("typescript_refund.py"),
                     Path(__file__).with_name("report.py"), Path(__file__).with_name("typescript_reconciliation.py"),
+                    Path(__file__).with_name("typescript_preparation_availability.py"),
                     Path(__file__).with_name("procs.py"), ROOT / "regtest/run-typescript-sale.sh",
                     *([Path(__file__).with_name(n) for n in ("typescript_host_recovery.py", "recovery.py", "service.py")]
                       if whole_host else []), *([ROOT / "regtest/run-typescript-recovery.sh"] if whole_host else [])])

@@ -10,7 +10,7 @@ import type { RebuildPolicy } from "./rebuild-policy.ts";
 import { appendIfAvailable, settleRestart } from "./restart.ts";
 import { entryReceipt } from "./registry-client.ts";
 import { ISSUED } from "../order.ts";
-import { requirePreparationIdle } from "./preparation-history.ts";
+import { preparationHistory, requirePreparationIdle } from "./preparation-history.ts";
 import { PreparationReadback } from "./preparation-readback.ts";
 
 /** Known-unsent close/rebuild only; a child remains frozen for a later preparer. */
@@ -25,6 +25,7 @@ export class KnownUnsentRelease {
   private ready(bid: string): Result<Batch> {
     return checked("check known-unsent history", () => {
       requirePreparationIdle(this.journal);
+      if (preparationHistory(this.journal.entries()).aborted.has(bid)) refuse("preparation was aborted; only abort completion may resume", "restore_required");
       // An outage refuses before any local progress or stale journal append.
       const entries = this.journal.entries(); this.db.requireRestored(new Set(latest(entries).keys()));
       settleRestart(this.db, this.journal);

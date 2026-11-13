@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from .errors import Refused
 from .preparation_readback import PreparationReadback
+from .preparation_history import require_not_aborted
 
 PREPARING = ("frozen", "staged", "committed_local", "proved", "checkpointed")
 
@@ -18,6 +19,7 @@ class Rebuild:
         """Conditionally close the store entry before any local rollback.
         Its durable arm marker, not a stale local flag, is the final guard."""
         self.require_restored()
+        require_not_aborted(self.journal, bid)
         b = self.batch(bid)
         failed = sorted(failing)
         if len(set(failed)) != len(failed) or not set(failed) <= set(b["members"]):
@@ -61,6 +63,7 @@ class Rebuild:
 
     def resume_release(self, bid):
         self.require_restored()
+        require_not_aborted(self.journal, bid)
         b = self.batch(bid)
         if b["state"] == "rebuilt" and b.get("release_failed") is not None:
             return self._released_successor(b)
@@ -184,6 +187,7 @@ class Rebuild:
 
     def rollback_local(self, bid):
         self.require_restored()
+        require_not_aborted(self.journal, bid)
         b = self.batch(bid)
         if getattr(self.registry, "bound_entries", False):
             return self.release_unsent(bid, b["members"])
@@ -197,6 +201,7 @@ class Rebuild:
         return its members to paid, then roll back and continue without the
         failing members."""
         self.require_restored()
+        require_not_aborted(self.journal, bid)
         if getattr(self.registry, "bound_entries", False):
             return self.release_unsent(bid, failing, binding_failure=True)
         b = self.batch(bid)
@@ -211,6 +216,7 @@ class Rebuild:
 
     def rebuild(self, bid, failing):
         self.require_restored()
+        require_not_aborted(self.journal, bid)
         b = self.batch(bid)
         if getattr(self.registry, "bound_entries", False):
             return self.release_unsent(bid, failing, binding_failure=True)

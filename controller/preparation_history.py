@@ -20,6 +20,13 @@ def same(left, right):
 
 def validate(row):
     pending = row.get("kind") == "preparation_pending"
+    abort = row.get("kind") == "preparation_abort"
+    if abort:
+        # Reuse the exact binding validation without inventing an effect receipt.
+        if set(row) != FIELDS | {"kind", "seq"}:
+            raise Refused("invalid preparation abort fields")
+        validate(dict(row, kind="preparation_pending", phase="owned"))
+        return
     expected = FIELDS | {"kind", "seq", "phase"} | (set() if pending else {"operation", "labels", "acknowledged"})
     members = row.get("members")
     if row.get("kind") not in ("preparation_pending", "preparation_effect") or set(row) != expected or \
@@ -48,13 +55,19 @@ def validate(row):
 def history(journal, live=True):
     if live and journal.down():
         raise JournalDown("preparation journal unavailable")
-    owner, unresolved, last, latest = None, None, None, {}
+    owner, unresolved, last, latest, aborted = None, None, None, {}, set()
     for row in journal.entries():
-        if row.get("kind") not in ("preparation_pending", "preparation_effect"):
+        if row.get("kind") not in ("preparation_pending", "preparation_effect", "preparation_abort"):
             continue
         validate(row)
-        if row["kind"] == "preparation_pending":
+        if row["kind"] == "preparation_abort":
+            if owner is None or not same(owner, row) or unresolved is not None or row["bid"] in aborted:
+                raise Refused("preparation abort requires exact completed ownership")
+            aborted.add(row["bid"])
+        elif row["kind"] == "preparation_pending":
             if row["phase"] == "owned":
+                if row["bid"] in aborted:
+                    raise Refused("aborted preparation cannot reacquire ownership")
                 if owner is not None and not same(owner, row):
                     raise Refused("overlapping global preparation owners")
                 if owner is None:
@@ -67,6 +80,8 @@ def history(journal, live=True):
                 owner = None
             latest[row["bid"]] = row
         else:
+            if row["bid"] in aborted and row["operation"] != "pending_clear":
+                raise Refused("aborted preparation permits only pending clear")
             if owner is None or not same(owner, row):
                 raise Refused("preparation effect has no exact global owner")
             if row["phase"] == "intent":
@@ -88,6 +103,18 @@ def require_idle(journal, preparing_bid=None):
         raise Refused("preparation journal unavailable") from None
     if unresolved is not None or owner is not None and owner["bid"] != preparing_bid:
         raise Refused("preparation effect or global pending owner requires reconciliation")
+    if preparing_bid is not None:
+        require_not_aborted(journal, preparing_bid)
+
+
+def abort_record(journal, bid):
+    history(journal)
+    return next((row for row in journal.entries() if row.get("kind") == "preparation_abort" and row.get("bid") == bid), None)
+
+
+def require_not_aborted(journal, bid):
+    if abort_record(journal, bid) is not None:
+        raise Refused("preparation was aborted; only abort completion may resume")
 
 
 class PreparationBarrier:

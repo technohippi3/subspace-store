@@ -28,7 +28,7 @@ test("O53: shipped publisher and HTTP client recover fulfillment reply loss and 
       const tokens = yield* paidPair(store, f), listener = yield* serveOperator(store, Effect.succeed(credential));
       const proxy = yield* Effect.promise(() => faultProxy(t, listener.url)); yield* Effect.promise(() => controller(f, proxy.url)("issue"));
       writeFileSync(join(f.root, "mock-chain.json"), JSON.stringify(f.facts(50, 50, 210)));
-      writeFileSync(join(f.root, "mock-certificate.json"), JSON.stringify({ root: "a".repeat(64), height: 50 }));
+      writeFileSync(join(f.root, "mock-certificate.json"), JSON.stringify({ root: "a".repeat(64), height: 50, preparation_fault: true }));
       const command = publisher(f, proxy.url); assert.equal((yield* Effect.promise(() => command("certify")))!.error, null);
       if (fault === "before") proxy.control.beforePath = "/operator/fulfillments";
       if (fault === "after") proxy.control.afterPath = "/operator/fulfillments";
@@ -48,7 +48,7 @@ test("O54: temporary publication, immature roots, invalid verifier and changed c
       const tokens = yield* paidPair(store, f), listener = yield* serveOperator(store, Effect.succeed(credential));
       const proxy = yield* Effect.promise(() => faultProxy(t, listener.url)); yield* Effect.promise(() => controller(f, proxy.url)("issue"));
       writeFileSync(join(f.root, "mock-chain.json"), JSON.stringify(f.facts(50, 50, 210)));
-      const settings = join(f.root, "mock-certificate.json"), good = { root: "a".repeat(64), height: 50 };
+      const settings = join(f.root, "mock-certificate.json"), good = { root: "a".repeat(64), height: 50, preparation_fault: true };
       writeFileSync(settings, JSON.stringify(good)); const command = publisher(f, proxy.url);
       assert.equal((yield* Effect.promise(() => command("certify")))!.error, null);
       writeFileSync(settings, JSON.stringify({ ...good, ...bad }));

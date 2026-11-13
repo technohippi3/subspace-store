@@ -19,6 +19,10 @@ function binding(value: Record<string, unknown>): void {
 export function preparationRecord(value: unknown): void {
   if (!value || typeof value !== "object" || Array.isArray(value)) refuse("invalid preparation history", "invalid");
   const row = value as Record<string, unknown>, pending = row.kind === "preparation_pending";
+  if (row.kind === "preparation_abort") {
+    if (Object.keys(row).sort().join() !== "bid,digest,kind,members,seq,space,version") refuse("invalid preparation abort fields", "invalid");
+    preparationRecord({ ...row, kind: "preparation_pending", phase: "owned" }); return;
+  }
   const fields = "bid,digest,kind,members,phase,seq,space,version" + (pending ? "" : ",operation,labels,acknowledged");
   if (!pending && row.kind !== "preparation_effect" || Object.keys(row).sort().join() !== fields.split(",").sort().join() ||
       !Number.isSafeInteger(row.seq) || (row.seq as number) < 1) refuse("invalid preparation history fields", "invalid");
@@ -41,12 +45,18 @@ function identity(b: Batch): Binding { return { version: 1, bid: b.bid, space: b
 export function preparationHistory(entries: readonly ControllerEvent[]) {
   let owner: PendingRecord | null = null, unresolved: EffectRecord | null = null, last: EffectRecord | null = null;
   const latest = new Map<string, PendingRecord>();
+  const aborted = new Map<string, Binding>();
   for (const event of entries) {
-    if (event.kind !== "preparation_pending" && event.kind !== "preparation_effect") continue;
+    if (!["preparation_pending", "preparation_effect", "preparation_abort"].includes(event.kind)) continue;
     preparationRecord(event);
-    if (event.kind === "preparation_pending") {
+    if (event.kind === "preparation_abort") {
+      const row = event as unknown as Binding;
+      if (!owner || !same(owner, row) || unresolved || aborted.has(row.bid)) refuse("preparation abort requires exact completed ownership", "invalid");
+      aborted.set(row.bid, row);
+    } else if (event.kind === "preparation_pending") {
       const row = event as unknown as PendingRecord;
       if (row.phase === "owned") {
+        if (aborted.has(row.bid)) refuse("aborted preparation cannot reacquire ownership", "invalid");
         if (owner && !same(owner, row)) refuse("overlapping global preparation owners", "invalid");
         if (!owner) last = null;
         owner = row;
@@ -58,6 +68,7 @@ export function preparationHistory(entries: readonly ControllerEvent[]) {
       latest.set(row.bid, row);
     } else {
       const row = event as unknown as EffectRecord;
+      if (aborted.has(row.bid) && row.operation !== "pending_clear") refuse("aborted preparation permits only pending clear", "invalid");
       if (!owner || !same(owner, row)) refuse("preparation effect has no exact global owner", "invalid");
       if (row.phase === "intent") {
         if (unresolved) refuse("overlapping preparation effects", "invalid"); unresolved = row;
@@ -69,12 +80,13 @@ export function preparationHistory(entries: readonly ControllerEvent[]) {
       last = row;
     }
   }
-  return { owner, unresolved, latest };
+  return { owner, unresolved, latest, aborted };
 }
 export function requirePreparationIdle(journal: ControllerJournal, preparingBid?: string): void {
   const state = preparationHistory(journal.entries());
   if (state.unresolved || state.owner && state.owner.bid !== preparingBid)
     refuse("preparation effect or global pending owner requires reconciliation", "restore_required");
+  if (preparingBid && state.aborted.has(preparingBid)) refuse("preparation was aborted; only abort completion may resume", "restore_required");
 }
 export class PreparationBarrier {
   private readonly journal: ControllerJournal;

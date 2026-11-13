@@ -85,6 +85,11 @@ class FakeController:
         # history is real and controllable; it provides no process-lock evidence.
         require_idle(self.journal)
 
+    def require_postsend(self, bid):
+        # This chain-only fake retains its original idle guard. Actual sent
+        # ownership behavior is covered by the controller/process fixtures.
+        self.require_restored()
+
     def batch(self, bid):
         return {"space": SPACE, "root": R1, "txid": "made-up-txid", "mined_height": H1}
 

@@ -14,6 +14,9 @@ from tests.test_entry_release import World
 class PreparationWorld(World):
     def __init__(self, directory):
         super().__init__(directory)
+        # This preparation fixture starts before any local commitment. Discard
+        # the parent release fixture's synthetic checkpointed seed history.
+        self.journal.path.write_text("")
         self.chain = self.head = None
         self.pending = False
         self.pending_ack = True

@@ -8,7 +8,8 @@ import type { RebuildPolicy } from "./rebuild-policy.ts";
 import { hash, orderIds, possibleSend, type Batch } from "./records.ts";
 import type { OrderBinding, Result } from "./ports.ts";
 import type { PreparationPorts } from "./preparation-ports.ts";
-import { PreparationBarrier, requirePreparationIdle, type PreparationOperation } from "./preparation-history.ts";
+import { PreparationBarrier, preparationHistory, requirePreparationIdle, type PreparationOperation } from "./preparation-history.ts";
+import { abortPreparation } from "./preparation-abort.ts";
 import { PreparationReadback } from "./preparation-readback.ts";
 import { count, object, syncFact } from "./preparation-facts.ts";
 import { settleRestart } from "./restart.ts";
@@ -46,9 +47,13 @@ export class BatchPreparation {
     });
   }
   private noCommit(b: Batch): void {
+    if (preparationHistory(this.journal.entries()).aborted.has(b.bid)) refuse("preparation was aborted; only abort completion may resume", "restore_required");
     if (possibleSend(b) || b.intent || b.root || b.entry_key || b.recovery_paused ||
         this.journal.entries().some(event => event.kind === "commit_local_intent" && event.bid === b.bid))
       refuse("local commitment already requested or ambiguous; reconciliation required", "restore_required");
+  }
+  abort(bid: string): Result<Batch> {
+    return checked("read preparation abort ports", () => this.ports()).pipe(Effect.flatMap(ports => abortPreparation(this.db, this.journal, ports, bid)));
   }
   private effect<A>(b: Batch, operation: PreparationOperation, labels: readonly string[], work: () => Result<A>, acknowledgment: (value: A) => boolean | null = () => null): Result<A> {
     const self = this; return Effect.gen(function* () {

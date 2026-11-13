@@ -29,6 +29,8 @@ class CrashJournal(Journal):
         if (mode == "after-freeze" and kind == "batch" and batch.get("state") == "frozen" or
             mode == "after-staged" and kind == "batch" and batch.get("state") == "staged" or
             mode == "after-committed" and kind == "batch" and batch.get("state") == "committed_local" or
+            mode == "after-abort-retired" and kind == "batch" and batch.get("state") == "rebuilt" or
+            mode == "after-abort" and kind == "preparation_abort" or
             mode == "after-owner" and kind == "preparation_pending" and data["phase"] == "owned" or
             mode == "after-clear-owner" and kind == "preparation_pending" and data["phase"] == "cleared" or
             mode == "after-commit-intent" and kind == "commit_local_intent" or
@@ -68,6 +70,8 @@ try:
         result = controller.stage(bid)
     elif operation == "commit":
         result = controller.commit_local(bid)
+    elif operation == "abort":
+        result = controller.abort_preparation(bid)
     elif operation == "barriers":
         calls = {"freeze": lambda: controller.freeze("@other"), "stage": lambda: controller.stage(bid),
                  "commit": lambda: controller.commit_local(bid), "issue": lambda: controller.issue(bid), "send": lambda: controller._send(bid),

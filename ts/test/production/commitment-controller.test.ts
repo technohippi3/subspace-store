@@ -17,7 +17,7 @@ test("O34: the shipped watch path tracks mining, finality, root loss and reorgs 
     yield* paidPair(store, f); const listener = yield* serveOperator(store, Effect.succeed(credential));
     const proxy = yield* Effect.promise(() => faultProxy(t, listener.url));
     assert.equal((yield* Effect.promise(() => controller(f, proxy.url)("issue"))).sends, 1);
-    const args = ["test/production/commitment-controller-client.py", "watch", proxy.url, join(f.root, "mock-operator-token"),
+    const args = ["test/production/commitment-controller-client.py", "preparation-fault", proxy.url, join(f.root, "mock-operator-token"),
       f.config.database, f.config.journalDirectory, f.root];
     const watch = async (height: number | null, root = height, anchor: number | null = null) => {
       writeFileSync(join(f.root, "mock-chain.json"), JSON.stringify(f.facts(height, root, anchor)));

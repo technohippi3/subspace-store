@@ -3,7 +3,8 @@ import hashlib
 import json
 
 from .errors import Refused
-from .preparation_history import PreparationBarrier, history, require_idle
+from .preparation_history import PreparationBarrier, history, require_idle, require_not_aborted
+from .preparation_abort import PreparationAbort
 from .preparation_readback import PreparationReadback, hash_value
 
 CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
@@ -12,7 +13,7 @@ def label(handle):
     return handle.split("@", 1)[0]
 
 
-class Preparation:
+class Preparation(PreparationAbort):
     def _require_preparation_idle(self, preparing_bid=None):
         require_idle(self.journal, preparing_bid)
 
@@ -46,6 +47,7 @@ class Preparation:
         return bid
 
     def _preparation_no_commit(self, batch):
+        require_not_aborted(self.journal, batch["bid"])
         if batch["root"] is not None or batch["intent"] or batch["attempted"] or batch["entry_key"] is not None or batch["txid"] is not None or \
                 batch["raw"] is not None or batch.get("ancestors") is not None or batch["recovery_paused"] or \
                 any(e["kind"] == "commit_local_intent" and e.get("bid") == batch["bid"] for e in self.journal.entries()):
@@ -131,6 +133,7 @@ class Preparation:
         self.require_restored()
         self._require_rebuild_gate()
         b, reader = self.batch(bid), PreparationReadback(self)
+        require_not_aborted(self.journal, bid)
         expected = reader.bindings(b)
         if b["state"] == "committed_local" and b["root"]:
             reader.committed(b, expected, b["root"])

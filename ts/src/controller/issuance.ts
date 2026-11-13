@@ -45,6 +45,7 @@ export class BoundController {
   alerts() { return checked("read alerts", () => this.db.alerts()); }
   freeze(space: string, members?: readonly string[]): Result<Batch> { return this.queue.withPermit(this.preparation.freeze(space, members)); }
   stage(bid: string): Result<Batch> { return this.queue.withPermit(this.preparation.stage(bid)); }
+  abortPreparation(bid: string): Result<Batch> { return this.queue.withPermit(this.preparation.abort(bid)); }
   commitLocal(bid: string): Result<Batch> { return this.queue.withPermit(this.preparation.commit(bid)); }
   releaseUnsent(bid: string, failed: readonly string[], bindingFailure = false): Result<string | null> {
     return this.queue.withPermit(this.releases.release(bid, failed, bindingFailure));

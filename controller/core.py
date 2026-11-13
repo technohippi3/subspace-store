@@ -28,7 +28,7 @@ from pathlib import Path
 from .journal import JournalDown
 from .locking import LockedConnection
 from .rpc import HttpError
-from .errors import Refused
+from .errors import Refused, RESTORE_REQUIRED
 from .issuance import ANSWER_LIMIT, Issuance
 from .rebuild import PREPARING, Rebuild
 from .commitments import ANCHOR_FINALITY, FINAL_D, WATCHED, CommitmentTracking
@@ -39,6 +39,7 @@ from .rebuild_guard import RebuildGuard
 from .preparation import CLOSED, Preparation
 from .preparation_history import history as preparation_history
 from .native_binding import require_local_commitment
+from .postsend import Postsend
 
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
 LIVE = ("issuing", "broadcast", "broadcast_uncertain", "mined", "final")
@@ -65,9 +66,6 @@ MIGRATIONS = {"batches": {"ancestors": "text", "entry_key": "text", "release_fai
               "recoveries": {"snapshot": "text", "subs_at": "real", "replayed_at": "real",
                              "reconciled_at": "real", "ready_at": "real"}}
 
-RESTORE_REQUIRED = ("restore required: the controller's journal holds batches this database "
-                    "doesn't, or a restore hasn't finished replaying and reconciling them; "
-                    "run restore")
 
 
 def label(handle):
@@ -114,7 +112,7 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller(RebuildGuard, Preparation, Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking, BoundRecovery):
+class Controller(Postsend, RebuildGuard, Preparation, Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking, BoundRecovery):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
@@ -635,7 +633,7 @@ class Controller(RebuildGuard, Preparation, Issuance, Rebuild, CommitmentTrackin
         neither, such as a fresh host's, refuses the commitment's own bytes
         for a missing input. So the bytes of every unconfirmed ancestor the
         node holds now are journaled with it, parents first."""
-        self._require_preparation_idle()
+        self.require_postsend(bid)
         b = self.batch(bid)
         if b["raw"] or not b["txid"]:
             return bool(b["raw"])
@@ -679,7 +677,7 @@ class Controller(RebuildGuard, Preparation, Issuance, Rebuild, CommitmentTrackin
         """Send the identical journaled bytes of a commitment that is in no
         mempool and not on the best chain. Without journaled bytes the
         recovery pauses for the owner. Never /broadcast."""
-        self.require_restored()
+        self.require_postsend(bid)
         b = self.batch(bid)
         if b["state"] not in ("broadcast", "broadcast_uncertain"):
             raise Refused("nothing to recover")

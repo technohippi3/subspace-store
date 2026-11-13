@@ -20,6 +20,10 @@ reconciliation. Those ports and their real-native/package acceptance are
 required before the controller can replace Python. Full Python removal
 remains the target in `PORT-PLAN.md`.
 
+The [preparation availability amendment](CONTROLLER-AVAILABILITY.md) defines
+completed-owner abort and sent-batch progress through unrelated ownership.
+Unknown request outcomes, post-arm recovery and prover ownership remain open.
+
 ## Ownership, storage and history
 
 Opening acquires the existing lifetime database flock before schema work,

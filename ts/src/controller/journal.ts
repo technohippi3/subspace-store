@@ -31,7 +31,7 @@ function decode(raw: string, sequence: number): ControllerEvent {
     batch(value.batch);
   }
   if (value.kind === "rebuild_guard") guardRecord(value);
-  if (value.kind === "preparation_pending" || value.kind === "preparation_effect") preparationRecord(value);
+  if (["preparation_pending", "preparation_effect", "preparation_abort"].includes(value.kind)) preparationRecord(value);
   return value as ControllerEvent;
 }
 export function latest(entries: readonly ControllerEvent[]): Map<string, Batch> {

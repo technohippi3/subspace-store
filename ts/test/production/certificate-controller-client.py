@@ -21,6 +21,9 @@ chain_file = root / "mock-chain.json"
 store = configured_store(dict(implementation="typescript", url=url, operator_token_file=token,
                              db=database, journal_dir=journal_directory))
 journal = Journal(root / "controller-journal", "runner")
+if settings.get("preparation_fault"):
+    from preparation_fault import retain_unrelated_owner
+    retain_unrelated_owner(journal)
 
 
 class Rpc:

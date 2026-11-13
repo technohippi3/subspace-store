@@ -5,6 +5,13 @@ An external public-source review examined PR24 at
 controller selected by the pilot and take priority over extending the
 unselected TypeScript controller. Paid sales remain closed.
 
+The subsequent [availability amendment](spec/CONTROLLER-AVAILABILITY.md) adds
+completed-owner abort and permits acknowledged sent-batch work through an
+unrelated preparation owner. The sections below record the earlier root
+repair; the amendment supersedes their blanket fence-scope and no-exit
+statements for fully completed ownership only. Unknown requests, post-arm
+read failures and durable prover-submission ownership remain open.
+
 ## Native commitment binding
 
 The Python proving loop, checkpoint and first-send path previously lacked

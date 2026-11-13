@@ -94,8 +94,10 @@ Python store protocol remains unchanged.
 A retained owner prevents another batch from replacing global pending. An
 unresolved operation prevents further staging, commit, unsent release, issue
 or send, including after process restart. The active Python controller also
-fences direct proving, checkpoint, readback, recovery, snapshot, supersession
-and publication mutation entrypoints. Read-only diagnostics can still report
+fences direct proving, checkpoint, readback, recovery, snapshot and new
+supersession decisions. The [availability amendment](CONTROLLER-AVAILABILITY.md)
+permits acknowledged already-sent work through an unrelated owner and defines
+a completed-owner abort. Read-only diagnostics can still report
 the retained owner. A completed stage clears ownership only after acknowledged
 pending clear; a crash before the final `staged` row can finish by exact
 readback without repeating pending/native effects.

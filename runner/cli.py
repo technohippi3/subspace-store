@@ -431,6 +431,12 @@ class Runner:
         return {"bid": bid, "state": state, "txid": b["txid"], "depth": depth,
                 "certificate_status": self.c.certificate_status(bid)}
 
+    def abort_preparation(self, bid):
+        """Retire a completed precommit owner, including an ineligible member."""
+        self._require_active()
+        b = self.c.abort_preparation(bid)
+        return {"bid": bid, "state": b["state"], "aborted": True}
+
     def certify(self, bid):
         """Verify every member's certificate; deliver only the verified ones
         to the store's order pages."""
@@ -650,7 +656,7 @@ def main(argv=None, ask=None):
     p.add_argument("bid")
     p.add_argument("--fee-rate", type=int)
     p.add_argument("--confirm")
-    for name in ("watch", "certify", "publish"):
+    for name in ("watch", "certify", "publish", "abort-preparation"):
         sub.add_parser(name).add_argument("bid")
     sub.add_parser("cancel").add_argument("oid")
     p = sub.add_parser("refund")
@@ -697,6 +703,8 @@ def main(argv=None, ask=None):
             out = r.issue(args.bid, args.fee_rate, args.confirm)
         elif args.command == "watch":
             out = r.watch(args.bid)
+        elif args.command == "abort-preparation":
+            out = r.abort_preparation(args.bid)
         elif args.command == "certify":
             out = r.certify(args.bid)
         elif args.command == "publish":

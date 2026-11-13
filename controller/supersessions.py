@@ -6,7 +6,7 @@ from .errors import Refused
 
 class SupersessionTracking:
     def supersession_progress(self, b):
-        self._require_preparation_idle()
+        self.require_postsend(b["bid"])
         status = self.registry.supersession_status(b)
         if not status["acknowledged"]:
             raise Refused("supersession history not acknowledged; progress withheld")
