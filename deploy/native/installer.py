@@ -11,7 +11,7 @@ import shutil
 import tempfile
 import time
 
-from common import Refused, atomic_json, command, config, json_file, paths, require, sync_directory
+from common import Refused, atomic_json, command, config, json_file, paths, public_directory, require, sync_directory
 from checkpoint import checkpoint, recovery
 from fence import acquire
 from host import lifecycle, maintenance, pause, unknown_invoice_count
@@ -33,7 +33,7 @@ def capabilities(value):
 
 def stage(value, manifest, artifact):
     parent = Path(value["releaseDirectory"])
-    parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+    public_directory(parent, parents=True, exist_ok=True)
     target = parent / manifest["release"]
     if target.exists():
         require(target.is_dir() and not target.is_symlink() and
@@ -249,7 +249,7 @@ def apply(value, manifest_file, signature, artifact, *, dry_run=False, rollback=
     capabilities(value)
     if dry_run:return _apply(value,manifest_file,signature,artifact,dry_run=True,rollback=rollback)
     directory=paths(value)['lock'].parent
-    directory.mkdir(parents=True,exist_ok=True,mode=0o755)
+    public_directory(directory, parents=True, exist_ok=True)
     require(not directory.is_symlink() and directory.stat().st_uid==0 and not directory.stat().st_mode&0o022,'unsafe-lifecycle-directory')
     fd=os.open(directory/'updater.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
     try:

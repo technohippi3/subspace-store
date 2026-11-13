@@ -19,6 +19,12 @@ cookie files. Verify after every upstream start that both cookies are regular,
 single-link files with mode 0600, accessible to the root installer, with no
 symlink at either configured file path. Keep cookie values in those protected files.
 
+The installer and profile generator create their public directories with
+explicit traversal permissions even when the operator uses `umask 077`.
+Existing parent-directory permissions are retained; provision those parents
+so the service accounts can traverse the installation and configuration paths.
+Do not broaden wallet, checkpoint or credential directory permissions.
+
 Keep signing keys, native input profiles, wallet backups and deployment state
 outside the public checkout. The native input profile must bind all ten binaries
 and their owned build manifests. Assemble from clean reviewed source into a new

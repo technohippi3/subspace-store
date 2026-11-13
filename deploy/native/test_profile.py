@@ -2,6 +2,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -12,6 +13,7 @@ from profile import generate, PROFILE
 from maintenance_view import maintenance_view
 from checkpoint import controller_prefix
 from installer import resume_admission
+from units import shared_lock
 
 class ProfileTests(unittest.TestCase):
     def setUp(self):
@@ -28,6 +30,30 @@ class ProfileTests(unittest.TestCase):
     def make(self):
         p=self.root/'input.json';p.write_text(json.dumps(self.input));p.chmod(0o600)
         out=self.root/'generated';generate(p,out);return out
+    def test_generated_public_configuration_ignores_restrictive_umask(self):
+        previous=os.umask(0o077)
+        try:out=self.make()
+        finally:os.umask(previous)
+        self.assertEqual(out.stat().st_mode & 0o777,0o755)
+        for name in ('installation','store','runner','secrets','recovery-store','recovery-maintenance'):
+            self.assertEqual((out/(name+'.json')).stat().st_mode & 0o777,0o644)
+        self.assertEqual((self.root/'input.json').stat().st_mode & 0o777,0o600)
+    def test_shared_lifecycle_lock_normalizes_only_safe_regular_root_files(self):
+        safe=self.root/'safe.lock';safe.write_bytes(b'');safe.chmod(0o600)
+        shared_lock(safe)
+        self.assertEqual(safe.stat().st_mode & 0o777,0o644)
+        for kind in ('hardlink','writable','foreign','fifo','symlink'):
+            path=self.root/(kind+'.lock')
+            if kind=='hardlink':os.link(safe,path)
+            elif kind=='fifo':os.mkfifo(path,0o600)
+            elif kind=='symlink':path.symlink_to(safe)
+            else:
+                path.write_bytes(b'private fixture');path.chmod(0o666 if kind=='writable' else 0o600)
+                if kind=='foreign':os.chown(path,65534,65534)
+            before=path.lstat().st_mode
+            with self.assertRaises((Refused,OSError)):shared_lock(path)
+            self.assertEqual(path.lstat().st_mode,before)
+            path.unlink()
     def test_explicit_profile_has_shipped_commands_remote_only_refs_and_trusted_export_origin(self):
         out=self.make();host=config(out/'installation.json');runtime=json.loads((out/'store.json').read_text());runner=json.loads((out/'runner.json').read_text())
         self.assertEqual(runtime['certificateExport']['trustedOrigin'],host['publicOrigin'])

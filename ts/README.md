@@ -6,6 +6,14 @@ and loopback APIs have source production
 coverage. The installer and seller CLI are implemented. Each candidate requires
 same-payload real-native/browser and owner-client acceptance; see the root
 `../README.md` and `../deploy/NATIVE-PACKAGE.md` for the evidence boundary.
+
+The development kernel in `src/controller/` ports bound-entry first attempts
+and normal-process restart for preexisting checkpointed batches. It retains
+the Python controller journal protocol and has SQLite/HTTP/crash tests with
+recording native ports. It is not selected by the runner. Its remaining
+lifecycle and native/package qualification are explicit in
+`../docs/spec/CONTROLLER-PORT.md`; complete Python removal remains unfinished.
+
 The payment adapter has isolated Core 31.2 regtest qualification. Refund destinations,
 durable reservations and explicit-input signed refund preparation now run
 in tests (`../docs/spec/REFUND-PREPARATION.md`). First-attempt sends and

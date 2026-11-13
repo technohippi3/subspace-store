@@ -144,6 +144,15 @@ remapping and artifact manifest contract, and pins the complete Cargo lock
 digest. This removes that build tool's Python dependency; the controller,
 runner, reference baseline and remaining tooling still require Python.
 
+The bounded TypeScript/Effect controller kernel now handles a preexisting
+checkpointed batch's bound entry, first-send arm and normal-process restart.
+It retains Python-shaped SQLite/JSONL history and the existing remote journal
+protocol. `CONTROLLER-PORT.md` defines its scope and stand-in broadcast tests.
+The shipped runner continues to select the Python controller. Close/rebuild,
+the remaining controller lifecycle, native adapters and full replacement
+qualification still precede removal; this development slice changes no
+pilot activation gate.
+
 ## Work order and gates
 
 | Stage | Work | Evidence required before moving through its gate |

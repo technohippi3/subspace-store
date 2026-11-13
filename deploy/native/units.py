@@ -4,9 +4,22 @@ import os
 from pathlib import Path
 import pwd
 import shlex
-from common import ID, command, json_file, paths, require, sync_directory
+import stat
+from common import ID, command, json_file, paths, public_directory, require, sync_directory
 
 UNIT_DIRECTORY = Path("/usr/lib/systemd/system")
+
+
+def shared_lock(path):
+    fd = os.open(path, os.O_CREAT | os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == 0
+                and not info.st_mode & 0o022, "unsafe-lifecycle-lock")
+        os.fchmod(fd, 0o644)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def prepare(config, release):
@@ -22,12 +35,11 @@ def prepare(config, release):
     except KeyError:
         command(["/usr/sbin/useradd", "--system", "--user-group", "--no-create-home", "--shell", "/usr/sbin/nologin", "subspace-secrets"])
     base = Path(config["baseDirectory"])
-    base.mkdir(parents=True, exist_ok=True, mode=0o755)
+    public_directory(base, parents=True, exist_ok=True)
     state = paths(config)
-    state["lock"].parent.mkdir(exist_ok=True, mode=0o755)
+    public_directory(state["lock"].parent, exist_ok=True)
     for name in ('lock','subsLock'):
-        fd = os.open(state[name], os.O_CREAT | os.O_RDONLY | os.O_NOFOLLOW, 0o644)
-        os.close(fd)
+        shared_lock(state[name])
     for name in ("receipt", "latch"):
         require(not state[name].is_symlink(), "unsafe-lifecycle-state")
     state["checkpoints"].mkdir(exist_ok=True, mode=0o700)
@@ -40,8 +52,8 @@ def prepare(config, release):
             os.chown(directory, user.pw_uid, user.pw_gid)
         require(directory.is_dir() and not directory.is_symlink() and directory.stat().st_uid == user.pw_uid,
                 "persistent-data-owner-mismatch")
-    Path(config["releaseDirectory"]).mkdir(parents=True, exist_ok=True, mode=0o755)
-    Path(config["currentPath"]).parent.mkdir(parents=True, exist_ok=True)
+    public_directory(config["releaseDirectory"], parents=True, exist_ok=True)
+    public_directory(Path(config["currentPath"]).parent, parents=True, exist_ok=True)
     secrets = json_file(config["secretsConfig"])
     secret_root = Path(secrets["outputRoot"])
     require(secret_root.is_absolute() and secret_root.parts[:2] == ('/', 'run') and

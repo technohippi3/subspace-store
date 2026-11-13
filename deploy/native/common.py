@@ -44,6 +44,31 @@ def sync_directory(path):
         os.close(fd)
 
 
+def public_directory(path, *, parents=False, exist_ok=False):
+    """Create only public installation directories independently of umask.
+
+    Existing ancestors retain their permissions; this never widens private
+    state, credential directories or an operator-provisioned parent.
+    """
+    path = Path(path)
+    if parents and not path.parent.exists():
+        public_directory(path.parent, parents=True, exist_ok=True)
+    try:
+        path.mkdir(mode=0o755)
+    except FileExistsError:
+        if not exist_ok:
+            raise
+        require(path.is_dir() and not path.is_symlink(), "unsafe-public-directory")
+        return
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        require(os.fstat(fd).st_uid == os.geteuid(), "unsafe-public-directory")
+        os.fchmod(fd, 0o755)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def atomic_json(path, value):
     path = Path(path)
     fd, temporary = tempfile.mkstemp(prefix=".pending-", dir=path.parent)

@@ -11,7 +11,7 @@ import tarfile
 import tempfile
 
 from source_provenance import validate_payload
-from common import ID, Refused, command, json_file, require, sync_directory
+from common import ID, Refused, command, json_file, public_directory, require, sync_directory
 
 MAX_ARTIFACT = 4 * 1024**3
 # Semantic versions are part of the rollback fence, independently of SQLite DDL.
@@ -76,7 +76,7 @@ def verify(manifest_path, signature, artifact, trust_key):
 
 def extract(artifact, destination, manifest):
     destination = Path(destination)
-    destination.mkdir(mode=0o755)
+    public_directory(destination)
     seen = set()
     total = 0
     with tarfile.open(artifact, "r:gz") as archive:
@@ -88,7 +88,7 @@ def extract(artifact, destination, manifest):
             require(member.size == entry["size"] and total <= MAX_ARTIFACT and len(seen) < 100000, "unsafe-release-archive")
             seen.add(member.name)
             path = destination / member.name
-            path.parent.mkdir(parents=True, exist_ok=True)
+            public_directory(path.parent, parents=True, exist_ok=True)
             with archive.extractfile(member) as source, path.open("xb") as target:
                 remaining = member.size
                 while remaining:

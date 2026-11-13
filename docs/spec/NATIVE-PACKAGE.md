@@ -9,7 +9,7 @@ a VPS, creates wallet keys or chooses commercial settings.
 | Case | Required behavior | Executable component evidence |
 | --- | --- | --- |
 | O140 | Independently trusted Ed25519 signer and exact manifest/archive/file digests; corruption and another signer refuse before use. | native/test_release.py |
-| O141 | One native installer installs/idempotently reads the same artifact that Alchemy drives; separate stable data and release paths. | systemd-fixture/test_package.py with recorded application/node facts |
+| O141 | One native installer installs/idempotently reads the same artifact that Alchemy drives; separate stable data and release paths. Fresh installation also works with operator umask 077. | systemd-fixture/test_package.py with recorded application/node facts; native/test_release.py; native/test_profile.py |
 | O142 | Update pauses, reports live blockers, preserves historical addresses and review count, and reconciles before paused readiness. | systemd-fixture/test_package.py; actual TS domain guards in application suite |
 | O143 | Lifetime shared raw owners exclude exclusive maintenance; an interrupted update leaves a durable fail-paused latch. | runtime/controller installation-fence tests; systemd-fixture/test_package.py |
 | O144 | Normal and update snapshots retain subs stop/restart ownership throughout copying and acknowledged remote upload. Competing restart refuses. | systemd-fixture/test_package.py actual Controller.snapshot; native/test_profile.py |
@@ -20,6 +20,15 @@ a VPS, creates wallet keys or chooses commercial settings.
 | O149 | Representative 10,000-order actual application restore completes under one minute. Live guard latency is recorded separately without cache. | replay/replay.py generates and restores fresh production records from the source under test; it measures restore and live guard separately |
 | O150 | Failed startup remains paused; rollback requires matching compatibility epochs and an explicit signed whitelist. Ordinary update never restores a newly crossed review threshold. | native/test_release.py; native/test_profile.py; systemd-fixture/test_package.py |
 | O184 | After an actual host reboot with an active hold and Infisical unavailable, restoring the ordinary source recreates private runtime storage without installer preparation or attended fallback; the address, review count and hold remain. | systemd-fixture/test_package.py actual guest reboot and per-start fetch units; complete signed application rehearsal additionally required |
+
+New public installation and release directories have mode 0755 regardless of
+the operator's umask. Generated nonsecret configuration and shared lifecycle
+lock files have mode 0644. The installer does not widen existing private
+ancestors, wallet data, checkpoints, credentials or secret directories. An
+operator-provisioned parent must already allow the intended service traversal.
+This closes the restrictive-umask extraction failure without relaxing native
+cookie or secret-file requirements. A source regression does not replace a
+complete signed-package installation acceptance run.
 
 Every secret-fetch unit lets systemd create its validated relative runtime
 directory under /run with mode 0700 and the secrets service identity. The

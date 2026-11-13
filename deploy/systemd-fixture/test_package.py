@@ -99,7 +99,10 @@ class PackageTests(unittest.TestCase):
         else:
             path = "/var/lib/subspace-incoming/" + release
             args.extend(["apply", "--manifest", path + "/manifest.json", "--signature", path + "/manifest.sig", "--artifact", path + "/release.tar.gz", *flags])
-        result = self.host.exec(*args, success=False, timeout=120)
+        # Real service users must traverse public code and lifecycle locks even
+        # when the root operator retains the upstream-wallet umask.
+        result = self.host.exec('/bin/sh', '-c', 'umask 077; exec "$@"', 'installer',
+                                *args, success=False, timeout=120)
         if success and result.returncode:
             journal = self.host.exec("journalctl", "--no-pager", "-n", "60", "--unit=subspace-*", success=False)
             unit = self.host.exec("systemctl", "cat", "subspace-secrets-fixture-store.service", success=False)

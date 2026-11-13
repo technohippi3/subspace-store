@@ -290,7 +290,9 @@ JSON, and installed-bundle inspection traces both manual import paths through
 the legacy JSON parser. Bundled native SCRT support is not connected to that
 screen's import and persistence path. This is a compatibility blocker, not
 an accepted certificate. [NACHO-TEST.md](NACHO-TEST.md) records the inspection
-limits and required client remediation, and describes the device handoff;
+limits, unavailable client fix and potential existing-build relay discovery
+route, and describes the device handoff. Relay discovery remains unproved on
+the phone and cannot substitute for the separate file/QR acceptance;
 all gate steps, transaction-plan requirements and authorizations below remain
 in force.
 

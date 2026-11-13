@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
-from common import atomic_json, json_file, require
+from common import atomic_json, json_file, public_directory, require
 
 PROFILE='existing-native-linux-x86_64-systemd255'
 
@@ -92,7 +92,7 @@ def generate(source, destination):
       'tls':{'certificateFile':secretRoot+'/proxy/tls-cert','privateKeyFile':secretRoot+'/proxy/tls-key','caFile':p['tlsCAFile'],'listenPort':ports['https'],'listenAddress':'0.0.0.0'},
       'nativeRpc':{'core':{key:p['core'][key] for key in ('url','wallet','cookiePath')},'spaced':{key:p['spaced'][key] for key in ('url','cookiePath')}},'proverUrl':p['proverUrl']}
     recovery={**p['recovery'],'version':1,'installation':identifier,'identityFile':'','encryptionKeyFile':'','connectTimeoutSeconds':5,'operationTimeoutSeconds':30}
-    destination.mkdir(mode=0o755,parents=True)
+    public_directory(destination, parents=True)
     for name,value in [('installation',installation),('store',runtime),('runner',runner),('secrets',secrets)]:atomic_json(destination/(name+'.json'),value);(destination/(name+'.json')).chmod(0o644)
     for role in ('store','maintenance'):
         recovery['identityFile']=credential('store','recovery-ssh-key') if role=='store' else secretRoot+'/maintenance/recovery-ssh-key'

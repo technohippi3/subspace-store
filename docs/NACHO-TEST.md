@@ -30,10 +30,21 @@ This build's manual-import path is a compatibility blocker for the current
 native exports. A JSON wrapper that merely satisfies the legacy shape does
 not establish verified ownership. A client fix needs native decoding,
 verification against trusted client anchors, exact handle and recipient
-checks, and native certificate persistence. Matching current client source
-or an updated build is needed before implementing that fix. Recheck these
-paths if the installed build changes; do not fund a test solely to confirm
-the known format mismatch.
+checks, and native certificate persistence. The workspace_owner confirms
+this is the latest Google Play release and that matching current source or
+a newer build is unavailable. The store cannot repair this client screen.
+Recheck these paths if the installed build changes; do not fund a test
+solely to confirm the known format mismatch.
+
+Separate installed-bundle inspection identifies an existing relay discovery
+path, reachable through resolution refresh and a `Check now` action. It
+queries native messages, verifies them, checks the recipient and can save a
+native certificate. This is a possible route for the existing build, subject
+to the same static-inspection limitation above. Its availability for the
+waiting requests and successful persistence/control have not been demonstrated
+on the phone. Positive relay discovery would not satisfy the separate file
+and QR import requirements. No relay publication or funded test is authorized
+by this observation.
 
 The store offers `certificate.spacecert` (official SCRT CertificateChain v1),
 `certificate.spacemsg` (official libveritas 0.4.4 Message) and the original

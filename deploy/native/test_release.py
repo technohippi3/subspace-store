@@ -1,10 +1,11 @@
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
-from common import Refused
+from common import Refused, public_directory
 from release import build, extract, verify, SCHEMAS
 
 
@@ -60,6 +61,34 @@ class ReleaseTests(unittest.TestCase):
         file.write_text(file.read_text().replace("fixture-v1", "fixture-v2"))
         with self.assertRaises(Refused):
             self.validate(directory)
+
+    def test_restrictive_umask_preserves_public_release_traversal_and_private_ancestors(self):
+        nested = self.source / "native" / "nested"
+        nested.mkdir(parents=True)
+        (nested / "public.py").write_text("fixture")
+        directory, _ = self.make()
+        verified = self.validate(directory)
+        self.root.chmod(0o700)
+        previous = os.umask(0o077)
+        try:
+            public_directory(self.root / "new" / "releases", parents=True)
+            destination = self.root / "new" / "releases" / "installed"
+            extract(directory / "fixture-v1.tar.gz", destination, verified)
+        finally:
+            os.umask(previous)
+        self.assertEqual(self.root.stat().st_mode & 0o777, 0o700)
+        for path in [self.root / "new", destination.parent, destination,
+                     destination / "native", destination / "native" / "nested"]:
+            self.assertEqual(path.stat().st_mode & 0o777, 0o755)
+        self.assertEqual((destination / "native/nested/public.py").stat().st_mode & 0o777, 0o644)
+        private = self.root / "private"
+        private.mkdir(mode=0o700)
+        public_directory(private, exist_ok=True)
+        self.assertEqual(private.stat().st_mode & 0o777, 0o700)
+        link = self.root / "link"
+        link.symlink_to(private)
+        with self.assertRaises(Refused):
+            public_directory(link, exist_ok=True)
 
     def test_extraction_rejects_manifest_path_escape_and_incomplete_archive(self):
         directory, _ = self.make()
