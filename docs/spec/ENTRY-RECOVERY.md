@@ -102,3 +102,15 @@ the store does not itself verify that root on chain.
 | A24 | explicit Python/TypeScript protocol selection | choose an invalid mode or return malformed/mismatched entry replies | refuse without setup or anonymous fallback |
 | A25 | a checkpointed batch | lose the controller journal, recover it, lose an entry response and restart | entry identity acknowledged before entry lookup/creation, retained across restart, one entry creation and one stand-in send |
 | A26 | an acknowledged intent or an already attempted commitment | lose the controller journal, recover it, then repeat `_send` | outage prevents the attempt; recovery permits one call; a second call refuses |
+
+## Proposed terminal-unused capability exception
+
+The [recovery operation contracts](CONTROLLER-RECOVERY-CONTRACT.md) propose a
+separate terminal_unused arm/entry disposition after permanent authoritative
+native no-effect evidence. It is not ordinary close, supersession, a reset of an
+attempted flag or permission inferred from absence. The [wire contract](CONTROLLER-OPERATION-WIRE.md)
+defines its prospective binding, late-request fence and retained grant history.
+Until that capability, both history floors, exact models and integration/native
+regressions land together, the implemented armed-entry/uncertain-send rules and
+all existing named expectations in this document remain unchanged. No arbitrary
+legacy armed history is adopted into the exception.

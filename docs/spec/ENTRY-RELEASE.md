@@ -160,3 +160,15 @@ Sales remain closed and the public-pilot release gate remains blocked.
 | A30 | another member fails during release | complete then retry original request | failed set grows, no successor when all fail, one retirement alert |
 | A31 | local release progress and an older or newer same-phase journal | restart and resume | union failed sets, never downgrade rebuilding to releasing, preserve exclusions |
 | A32 | an all-failed batch at issue or release completion | invoke the attended runner with wrong and correct batch confirmation | refuse wrong confirmation before changes; report retired parent without looking up a nonexistent successor; repeat completion safely |
+
+## Proposed terminal-unused capability exception
+
+The [recovery operation contracts](CONTROLLER-RECOVERY-CONTRACT.md) propose a
+separate terminal_unused arm/entry disposition after permanent authoritative
+native no-effect evidence. It is not ordinary close, supersession, a reset of an
+attempted flag or permission inferred from absence. The [wire contract](CONTROLLER-OPERATION-WIRE.md)
+defines its prospective binding, late-request fence and retained grant history.
+Until that capability, both history floors, exact models and integration/native
+regressions land together, the implemented armed-entry/uncertain-send rules and
+all existing named expectations in this document remain unchanged. No arbitrary
+legacy armed history is adopted into the exception.

@@ -28,6 +28,10 @@ The [mandatory protocol amendment](CONTROLLER-PROTOCOL.md) excludes older
 JSON-only controller builds after abort activation and defines native proof
 that a surviving paid member can complete a fresh batch after abort.
 
+The proposed [recovery operation contracts](CONTROLLER-RECOVERY-CONTRACT.md)
+govern the remaining effectful port. The current library does not implement the
+new native operation ledger, terminal arm closure or prover deduplication.
+
 ## Ownership, storage and history
 
 Opening acquires the existing lifetime database flock before schema work,
