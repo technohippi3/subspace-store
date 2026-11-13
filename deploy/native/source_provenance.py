@@ -10,7 +10,7 @@ REQUIRED = {"node", "bitcoind", "bitcoin-cli", "spaced", "space-cli", "subs", "s
 EXTRA_INPUTS = {"regtest/pins.env", "regtest/verifier/Cargo.toml", "regtest/verifier/Cargo.lock",
     "regtest/verifier/src/main.rs", "regtest/verifier/src/lib.rs", "native/export/Cargo.toml",
     "native/export/Cargo.lock", "native/export/src/main.rs", "native/export/rust-toolchain.toml",
-    "tools/build_native_export.py", *{"regtest/upstream/" + name for name in
+    "ts/tools/build-native-export.ts", *{"regtest/upstream/" + name for name in
         ("subs-u1b-attach-commit-txid.patch", "subs-fabric-seed.patch", "subs-loopback.patch")}}
 
 

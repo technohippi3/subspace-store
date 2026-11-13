@@ -17,5 +17,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src", "model", "test", "regtest"]
+  "include": ["src", "model", "test", "regtest", "tools"]
 }

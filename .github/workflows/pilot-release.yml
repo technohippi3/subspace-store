@@ -27,13 +27,13 @@ jobs:
           docker info > /dev/null
       - name: Install pinned native compiler
         run: rustup toolchain install 1.94.1 --profile minimal
-      - name: Fetch exact native crates and build the owned exporter offline
-        run: python3 tools/build_native_export.py --fetch
-      - name: Python baseline and shipped controller tests
-        run: python3 -m unittest discover -s tests -t .
       - name: Install pinned TypeScript dependencies
         working-directory: ts
         run: npm ci --ignore-scripts
+      - name: Fetch exact native crates and build the owned exporter offline
+        run: node ts/tools/build-native-export.ts --fetch
+      - name: Python baseline and shipped controller tests
+        run: python3 -m unittest discover -s tests -t .
       - name: Type check the model and production code
         working-directory: ts
         run: npm run check

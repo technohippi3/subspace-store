@@ -325,15 +325,17 @@ pinned Rust build below.
 
 The default suite includes unconditional native-package VM/SSH fixtures.
 Follow `../.github/workflows/model.yml` for Docker, QEMU, OpenSSH and image
-verification prerequisites, and first run from the repository root:
-
-    python3 tools/build_native_export.py --fetch
-
-This uses the pinned Rust 1.94.1 toolchain. Then, from this directory:
+verification prerequisites. From this directory:
 
     npm ci --ignore-scripts
+    node tools/build-native-export.ts --fetch
     npm run check
     npm test
+
+The TypeScript/Effect builder uses Rust 1.94.1 and checks the entire generated
+Cargo lock digest before fetching. Dependency changes require reviewing that
+digest alongside the lock. It builds offline, remaps local paths and retains
+the native artifact manifest consumed by the runtime and package assembler.
 
 CI runs the same (`.github/workflows/model.yml`, job `typescript`).
 Production storage tests invoke Python only for temporary interoperability

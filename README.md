@@ -94,16 +94,22 @@ From the repository root:
 ```sh
 python3 -m unittest discover -s tests -t .
 python3 tools/case_coverage.py --check
-python3 tools/build_native_export.py --fetch
 ```
 
 Then, from `ts/`:
 
 ```sh
 npm ci --ignore-scripts
+node tools/build-native-export.ts --fetch
 npm run check
 npm test
 ```
+
+The exporter builder is TypeScript with Effect. It checks the complete pinned
+Cargo lock before fetching, builds offline with remapped paths and records the
+same native artifact manifest. From the repository root, after installing the
+TypeScript dependencies, its direct command is
+`node ts/tools/build-native-export.ts --fetch`.
 
 `python3 tools/case_coverage.py --release pilot` is the production discovery
 gate; the corresponding suites must execute successfully as well. The

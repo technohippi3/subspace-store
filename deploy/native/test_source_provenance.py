@@ -91,6 +91,9 @@ class SourceProvenanceTests(unittest.TestCase):
         expected = hashlib.sha256((self.repository / "ts/src/main.ts").read_bytes()).hexdigest()
         self.assertEqual(proof["repositoryInputs"]["ts/src/main.ts"], expected)
         self.assertEqual(proof["payloadInputs"]["app/ts/src/main.ts"], expected)
+        self.assertEqual(proof["repositoryInputs"]["ts/tools/build-native-export.ts"],
+                         hashlib.sha256((self.repository / "ts/tools/build-native-export.ts").read_bytes()).hexdigest())
+        self.assertIsNone(copied_path("ts/tools/build-native-export.ts"))
         self.assertIn("native/application.py", proof["payloadInputs"])
         self.assertTrue(all(not Path(path).is_absolute() for path in proof["repositoryInputs"]))
         self.assertIsNone(validate_payload(self.payload(proof), proof["sourceCommit"], safe_path))

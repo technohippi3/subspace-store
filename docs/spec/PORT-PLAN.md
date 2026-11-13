@@ -138,6 +138,12 @@ destination. Required restore cases now execute in production coverage.
 Final signed-package/native acceptance and owner phone acceptance remain
 open; passing source tests do not establish those gates.
 
+The owned native exporter builder now runs in TypeScript with Effect at
+`ts/tools/build-native-export.ts`. It retains the offline Rust build, path
+remapping and artifact manifest contract, and pins the complete Cargo lock
+digest. This removes that build tool's Python dependency; the controller,
+runner, reference baseline and remaining tooling still require Python.
+
 ## Work order and gates
 
 | Stage | Work | Evidence required before moving through its gate |

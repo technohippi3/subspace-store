@@ -45,11 +45,11 @@ jobs:
           docker info > /dev/null
       - name: Install pinned native compiler
         run: rustup toolchain install 1.94.1 --profile minimal
-      - name: Fetch exact native crates and build the owned exporter offline
-        run: python3 tools/build_native_export.py --fetch
-        working-directory: .
       - name: Install the compiler pinned in package-lock.json
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Fetch exact native crates and build the owned exporter offline
+        run: node ts/tools/build-native-export.ts --fetch
+        working-directory: .
       - name: Type check the port, tests included
         run: npm run check
       - name: TypeScript models, application and native package integration

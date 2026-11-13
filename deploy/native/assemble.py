@@ -103,7 +103,7 @@ def assemble(repository, native_profile, destination, packaging_source):
                     exported.get("profiles") == ["spacecert-v1", "spacemsg-0.4.4"], "export-artifact-profile-mismatch")
             inputs={'native/export/Cargo.toml':'cargoTomlSha256','native/export/Cargo.lock':'lockSha256','native/export/src/main.rs':'sourceSha256'}
             require(all(digest_file(repository/path)==exported.get(field) for path,field in inputs.items()),'export-source-profile-mismatch')
-            native[name]['sourceInputs']={path:digest_file(repository/path) for path in [*inputs,'tools/build_native_export.py','native/export/rust-toolchain.toml']}
+            native[name]['sourceInputs']={path:digest_file(repository/path) for path in [*inputs,'ts/tools/build-native-export.ts','native/export/rust-toolchain.toml']}
             native[name]["artifactManifest"] = manifest_path.relative_to(destination).as_posix()
     require(native["node"]["version"] == "24.14.0" and native["bitcoind"]["version"] == native["bitcoin-cli"]["version"] == "31.2", "unsupported-native-version")
     (destination / "app/ts").mkdir(parents=True)
