@@ -13,39 +13,36 @@ gives it clients, the `subs` process control, the operator wallet's name
 and what the running `subs` can do (`Capabilities`). The regtest harness
 gives it the harness stack (`regtest/harness/controller.py`); the runner
 gives it a host configuration (`controller/host.py`). Nothing here depends
-on the network, and the runner still runs it on regtest only. Results from
-it are regtest results until it has run anywhere else.
+on the network; mainnet in the runner requires the explicit private test.
+Results from it are regtest results until it has run anywhere else.
 """
 
 import hashlib
 import json
-import re
 import shutil
 import sqlite3
-import subprocess
 import time
 import urllib.error
 from pathlib import Path
 
 from .journal import JournalDown
+from .locking import LockedConnection
 from .rpc import HttpError
+from .errors import Refused, RESTORE_REQUIRED
+from .issuance import ANSWER_LIMIT, Issuance
+from .rebuild import PREPARING, Rebuild
+from .commitments import ANCHOR_FINALITY, FINAL_D, WATCHED, CommitmentTracking
+from .certificates import CertificateVerification
+from .supersessions import SupersessionTracking
+from .bound_recovery import BoundRecovery
+from .rebuild_guard import RebuildGuard
+from .preparation import CLOSED, Preparation
+from .preparation_history import history as preparation_history
+from .native_binding import require_local_commitment
+from .postsend import Postsend
+from .journal_protocol import upgrade_abort_history
 
-FINAL_D = 150
-TXID_RE = re.compile(r"[0-9a-f]{64}")
-# How much of an answer from subs is kept: bounded, so a large body can't
-# swell the journal, and said when cut.
-ANSWER_LIMIT = 2000
-
-
-def _bounded(text):
-    if len(text) <= ANSWER_LIMIT:
-        return text
-    return f"{text[:ANSWER_LIMIT]} [cut: {len(text)} characters in all]"
-ANCHOR_FINALITY = 144  # libveritas: newest anchor - commitment height
-PREPARING = ("frozen", "staged", "committed_local", "proved", "checkpointed")
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
-CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
-WATCHED = ("broadcast", "broadcast_uncertain", "mined")
 LIVE = ("issuing", "broadcast", "broadcast_uncertain", "mined", "final")
 
 SCHEMA = """
@@ -55,7 +52,7 @@ create table if not exists batches (
   delegate_in text, fee_rate integer, txid text, mined_height integer,
   intent integer not null default 0, attempted integer not null default 0,
   supersedes text, answer text, raw text, recovery_paused integer not null default 0,
-  ancestors text
+  ancestors text, entry_key text, release_failed text
 );
 create table if not exists alerts (n integer primary key, kind text, bid text, detail text);
 create table if not exists recoveries (
@@ -66,17 +63,10 @@ create table if not exists recoveries (
 
 # Columns added since the first released schema (commit 5226810), added to an
 # existing database when it is opened: table -> {column: declaration}.
-MIGRATIONS = {"batches": {"ancestors": "text"},
+MIGRATIONS = {"batches": {"ancestors": "text", "entry_key": "text", "release_failed": "text"},
               "recoveries": {"snapshot": "text", "subs_at": "real", "replayed_at": "real",
                              "reconciled_at": "real", "ready_at": "real"}}
 
-RESTORE_REQUIRED = ("restore required: the controller's journal holds batches this database "
-                    "doesn't, or a restore hasn't finished replaying and reconciling them; "
-                    "run restore")
-
-
-class Refused(Exception):
-    pass
 
 
 def label(handle):
@@ -123,33 +113,42 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller:
+class Controller(Postsend, RebuildGuard, Preparation, Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking, BoundRecovery):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
-        self.db = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
-        self.db.row_factory = sqlite3.Row
-        self.db.executescript(SCHEMA)
-        self._migrate()
-        self.journal = journal
-        self.registry = registry
-        self.clients = clients
-        self.subs_process = subs_process
-        self.verifier_bin = verifier_bin
-        self.workdir = Path(workdir)
-        self.workdir.mkdir(parents=True, exist_ok=True)
-        self.operator_wallet = operator_wallet
-        self.capabilities = capabilities or Capabilities()
-        # Snapshots sit beside the controller's journal unless placed
-        # elsewhere, so they leave with it when the host is lost.
-        self.snapshot_dir = Path(snapshot_dir) if snapshot_dir else Path(journal.dir) / "snapshots"
-        self.ready_timeout = ready_timeout
-        self.snapshots = 0
-        # Before anything else can write: a database that lacks batches its
-        # journal holds is recorded as needing a restore.
-        self.recovery_state()
-        # A broadcast this database records as attempted but unanswered.
-        self._settle_interrupted()
+        self.db = LockedConnection(db_path, check_same_thread=False, isolation_level=None)
+        try:
+            self.db.row_factory = sqlite3.Row
+            self.db.executescript(SCHEMA)
+            self._migrate()
+            self.journal = journal
+            upgrade_abort_history(journal)
+            preparation_history(journal, live=False)
+            self.recovery_backend = getattr(journal, "backend", None)
+            self._rebuild_policy()  # Refuse malformed/unsupported policy history before serving.
+            self.registry = registry
+            self.clients = clients
+            self.subs_process = subs_process
+            self.verifier_bin = verifier_bin
+            self.workdir = Path(workdir)
+            self.workdir.mkdir(parents=True, exist_ok=True)
+            self.operator_wallet = operator_wallet
+            self.capabilities = capabilities or Capabilities()
+            # Snapshots sit beside the controller's journal unless placed
+            # elsewhere, so they leave with it when the host is lost.
+            self.snapshot_dir = Path(snapshot_dir) if snapshot_dir else Path(journal.dir) / "snapshots"
+            self.ready_timeout = ready_timeout
+            self.snapshots = 0
+            # Ownership is held before schema work or startup reconciliation.
+            self.recovery_state()
+            self._settle_interrupted()
+        except BaseException:
+            self.db.close()
+            raise
+
+    def close(self):
+        self.db.close()
 
     def _migrate(self):
         """Add the columns a database from an earlier schema lacks. Each is
@@ -225,14 +224,14 @@ class Controller:
 
     def root_anchors(self, attempts=20):
         """spaced's root anchors. spaced v0.5.0 rewrites its anchors file in
-        place while getrootanchors reads it, so a read can see a truncated
-        file (finding R15). Retry that error only."""
+        place while getrootanchors reads it. A fresh host can also be at tip
+        before that file exists. Retry only these bounded file errors."""
         from .rpc import RpcError
         for i in range(attempts):
             try:
                 return self.spaced.call("getrootanchors")
             except RpcError as e:
-                if "Could not read anchors file" not in str(e) or i == attempts - 1:
+                if not any(m in str(e) for m in ("Could not read anchors file", "Could not open anchors file")) or i == attempts - 1:
                     raise
                 self.anchor_read_retries = getattr(self, "anchor_read_retries", 0) + 1
                 time.sleep(0.25)
@@ -313,86 +312,6 @@ class Controller:
     def handle(self, space, handle):
         return self.subs_read.get(f"/spaces/{space}/handles/{handle}")
 
-    # 1. Freeze
-
-    def freeze(self, space, members=None, supersedes=None):
-        self.require_restored()
-        open_ = [b for b in self.batches(space) if b["state"] not in CLOSED]
-        if open_:
-            raise Refused(f"another batch is open ({open_[0]['bid']}); one commitment per space")
-        busy = {m for b in self.batches() if b["state"] not in CLOSED for m in b["members"]}
-        candidates = [o for o in self.registry.converted_orders()
-                      if o not in busy and self.registry.batch_entry_ok(o)
-                      and self.registry.order(o)["name"].endswith(space)]
-        chosen = candidates if members is None else [m for m in members if m in candidates]
-        if not chosen:
-            raise Refused("nothing to batch")
-        members_full = sorted((self.registry.order(m)["name"], self.registry.order(m)["recipient_spk"], m)
-                              for m in chosen)
-        digest = hashlib.sha256(json.dumps(members_full).encode()).hexdigest()
-        bid = f"b{self.db.execute('select count(*) from batches').fetchone()[0] + 1}"
-        prior = self.onchain_commitment(space)
-        self.db.execute("""insert into batches(bid, space, members, digest, state, prior_root, supersedes)
-                           values (?, ?, ?, ?, 'frozen', ?, ?)""",
-                        (bid, space, json.dumps(sorted(chosen)), digest,
-                         prior["state_root"] if prior else None, supersedes))
-        self._journal(bid)
-        return bid
-
-    # 2. Stage
-
-    def stage(self, bid):
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] != "frozen":
-            raise Refused("not frozen")
-        space = b["space"]
-        expected = {label(self.registry.order(m)["name"]): self.registry.order(m)["recipient_spk"]
-                    for m in b["members"]}
-        self.registry.set_pending(b["members"])
-        sync = self.subs.post("/registry/sync")
-        staged = self.handles(space, "staged")
-        strays = [h["name"] for h in staged if not h["parked"] and h["name"] not in expected]
-        if strays:
-            self.subs.post(f"/spaces/{space}/park", {"handles": strays, "parked": True})
-        # A member parked by an earlier rebuild is unparked; parking only
-        # touches staged handles, so this can't reach a committed one.
-        parked_members = [h["name"] for h in staged if h["parked"] and h["name"] in expected]
-        if parked_members:
-            self.subs.post(f"/spaces/{space}/park", {"handles": parked_members, "parked": False})
-        if strays or parked_members:
-            staged = self.handles(space, "staged")
-        unparked = {h["name"]: h["script_pubkey"] for h in staged if not h["parked"]}
-        if unparked != expected:
-            raise Refused(f"staged readback mismatch: {unparked} != {expected}")
-        self.registry.set_pending([])
-        self._save(bid, state="staged")
-        return {"sync": sync, "staged": unparked, "parked": strays}
-
-    # 3. Local commit
-
-    def commit_local(self, bid):
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] != "staged":
-            raise Refused("not staged")
-        space = b["space"]
-        self.journal.append("commit_local_intent", bid=bid, space=space)
-        result = self.subs.post(f"/spaces/{space}/commit", {})
-        root = result["root"]
-        on_root = 0
-        for m in b["members"]:
-            info = self.handle(space, label(self.registry.order(m)["name"]))
-            if info["commitment_root"] != root:
-                raise Refused(f"member {m} readback root {info['commitment_root']} != {root}")
-            on_root += 1
-        result["members_on_root"] = on_root
-        still = {h["name"] for h in self.handles(space, "staged")}
-        if still & {label(self.registry.order(m)["name"]) for m in b["members"]}:
-            raise Refused("a member is still staged after the local commit")
-        self._save(bid, state="committed_local", root=root)
-        return result
-
     # 4. Prove
 
     def prove(self, bid, timeout=6 * 3600, poll=5):
@@ -405,7 +324,7 @@ class Controller:
         last = None
         pushes = []
         while time.time() - started < timeout:
-            p = self.subs_read.get(f"/spaces/{space}/pipeline")
+            p = require_local_commitment(self, b)
             last = p
             if p["steps"]["proving"] in ("complete", "skipped") and p.get("pending_proofs", 0) == 0:
                 self._save(bid, state="proved")
@@ -440,7 +359,9 @@ class Controller:
         b = self.batch(bid)
         if b["state"] != "proved":
             raise Refused("not proved")
+        require_local_commitment(self, b)
         snap = self.snapshot(label=bid)
+        require_local_commitment(self, b)
         self._save(bid, state="checkpointed")
         return snap
 
@@ -491,12 +412,24 @@ class Controller:
         any other failure leaves the shutdown unestablished, and nothing is
         copied. Work resumes only once subs answers /status with a status
         again after its start."""
+        self._require_preparation_idle()
         # Numbered from what is already there, so the latest is well defined
         # however many processes took them (each runner command is its own).
         self.snapshots += 1
-        n = max((self.snapshot_number(d) for d in self.snapshot_dir.glob("*")), default=0) \
-            if self.snapshot_dir.is_dir() else 0
-        dest = self.snapshot_dir / f"{n + 1:03d}-{label}"
+        backend = getattr(self, "recovery_backend", None)
+        if backend:
+            n = max([0, *(self.snapshot_number(name) for name in backend.list_snapshots())])
+        else:
+            n = max((self.snapshot_number(d) for d in self.snapshot_dir.glob("*")), default=0) \
+                if self.snapshot_dir.is_dir() else 0
+        snapshot_name = f"{n + 1:03d}-{label}"
+        if backend:
+            import tempfile
+            self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+            staging = Path(tempfile.mkdtemp(prefix="checkpoint-", dir=self.snapshot_dir))
+            dest = staging / snapshot_name
+        else:
+            dest = self.snapshot_dir / snapshot_name
         dest.mkdir(parents=True)
         self.subs_process.stop()
         if not self._subs_stopped():
@@ -505,13 +438,26 @@ class Controller:
         subs_dir = Path(self.subs_process.data_dir)
         shutil.copytree(subs_dir, dest / "subs")
         for name, conn in (("registry.db", self.registry.db), ("controller.db", self.db)):
+            if backend and name == "registry.db":
+                from .recovery_backend import copy_acknowledged_store
+                store_position = copy_acknowledged_store(conn, backend, dest / name)
+                continue
             out = sqlite3.connect(dest / name)
             conn.backup(out)
+            if backend:
+                # A self-contained backup must not create WAL/SHM files when
+                # its exact prefix is read or after remote materialization.
+                out.execute("pragma journal_mode=delete")
             out.close()
-        manifest = {"label": label,
-                    "store_journal": self.registry.journal.position(),
-                    "controller_journal": self.journal.position(),
-                    "files": {}}
+        if backend:
+            from .recovery_backend import acknowledged_controller_position
+            with sqlite3.connect((dest / "controller.db").resolve().as_uri() + "?mode=ro", uri=True) as db:
+                controller_position = acknowledged_controller_position(db, backend)
+        else:
+            store_position = self.registry.journal.position()
+            controller_position = self.journal.position()
+        manifest = {"label": label, "store_journal": store_position,
+                    "controller_journal": controller_position, "files": {}}
         for f in sorted(dest.rglob("*")):
             if f.is_file():
                 manifest["files"][str(f.relative_to(dest))] = hashlib.sha256(f.read_bytes()).hexdigest()
@@ -524,86 +470,25 @@ class Controller:
                 src = subs_dir / rel[len("subs/"):]
                 if hashlib.sha256(src.read_bytes()).hexdigest() != digest:
                     mismatches.append(rel)
-        self.subs_process.start()
-        self._wait_subs_ready()
         if mismatches:
             raise Refused(f"snapshot objects do not match: {mismatches}")
+        if backend:
+            if not self._subs_stopped():
+                raise Refused("subs restarted during checkpoint; nothing was acknowledged")
+            from .recovery_backend import sync_snapshot
+            sync_snapshot(dest)
+            backend.upload_snapshot(dest, snapshot_name)
+            if not self._subs_stopped():
+                raise Refused("subs restarted before checkpoint acknowledgment; nothing resumes")
+        self.subs_process.start()
+        self._wait_subs_ready()
         root = Path(__file__).resolve().parents[1]
         shown = dest.relative_to(root) if dest.is_relative_to(root) else dest
         return {"dir": str(shown), "objects": len(manifest["files"]),
                 "store_journal": manifest["store_journal"],
                 "controller_journal": manifest["controller_journal"]}
 
-    # 8. Issue
-
-    def issue(self, bid, fee_rate=1):
-        """The binding check, the serialized `issuing` step, both journals, and
-        one `/broadcast`. Returns the batch that went on (a rebuilt one if a
-        member failed)."""
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] != "checkpointed":
-            raise Refused("not checkpointed")
-        failing = self.failing(bid)
-        if failing:
-            return self.rebuild(bid, failing)
-        delegate = self.live_delegate(b["space"])
-        acked_members = self.registry.mark_issuing(b["members"])
-        self._save(bid, journal=False, state="issuing", intent=1,
-                   delegate_in=delegate["outpoint"], fee_rate=fee_rate)
-        self._journal(bid)
-        self._send(bid)
-        return bid
-
-    def _issuance_acknowledged(self, b):
-        acked = self.acknowledged(b["bid"])
-        if not acked or not acked["intent"]:
-            return False
-        if (acked["root"], acked["delegate_in"], acked["members"]) != \
-                (b["root"], b["delegate_in"], b["members"]):
-            return False
-        return all(self.registry.acknowledged_status(m) == "issuing" for m in b["members"])
-
-    def _send(self, bid):
-        b = self.batch(bid)
-        # The only path to the network for a commitment, checked immediately
-        # before the call.
-        if not self._issuance_acknowledged(b):
-            raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
-        self._save(bid, journal=False, attempted=1)
-        try:
-            # The body as it came, so that whatever subs answered is kept.
-            body = self.subs.post(f"/spaces/{b['space']}/broadcast",
-                                  {"fee_rate": b["fee_rate"]}, timeout=600, raw=True)
-        except HttpError as e:
-            # subs answered with an error. The wallet send may still have
-            # happened (subs stores the txid only after the send returns), so
-            # an error without a txid is not proof that nothing was sent.
-            self._uncertain(bid, _bounded(f"HTTP {e.status}: {e.body}"),
-                            "error answer without txid")
-            return
-        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
-            self._uncertain(bid, f"no answer: {type(e).__name__}", "no answer")
-            return
-        except Exception as e:  # noqa: BLE001 - a truncated read, a protocol error
-            # The call was made and no usable answer came back, whatever the
-            # failure: uncertain, and never sent again.
-            self._uncertain(bid, _bounded(f"no usable answer: {type(e).__name__}: {e}"),
-                            "no usable answer")
-            return
-        text = body.decode("utf-8", errors="replace") if isinstance(body, bytes) else str(body)
-        try:
-            answer = json.loads(text) if text else None
-        except ValueError:
-            answer = None
-        txid = answer.get("txid") if isinstance(answer, dict) else None
-        if not (isinstance(txid, str) and TXID_RE.fullmatch(txid)):
-            # An answer without a transaction id is no answer (A20).
-            self._uncertain(bid, _bounded(f"answer without a txid: {text}"),
-                            "answer without txid")
-            return
-        self._save(bid, state="broadcast", txid=txid, answer=_bounded(text))
-        self.capture_bytes(bid)
+    # Entry and send methods are inherited from controller.issuance.Issuance.
 
     def _atomically(self, *statements):
         """Several writes to this database in one SQLite transaction."""
@@ -651,6 +536,7 @@ class Controller:
           without another alert."""
         if self.recovery_state() is not None:
             return
+        self._settle_checkpointed_entries()
         for r in self.db.execute("select bid from batches where state in "
                                  "('issuing', 'broadcast_uncertain') order by rowid").fetchall():
             b, acked = self.batch(r["bid"]), self.acknowledged(r["bid"])
@@ -681,81 +567,13 @@ class Controller:
              ("database_behind_journal", row["bid"],
               f"held here as an older state; took the journal's {acked['state']}")))
 
-    def resume(self, bid):
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] != "issuing":
-            raise Refused("nothing to resume")
-        if b["attempted"]:
-            raise Refused("the broadcast was attempted: the outcome is uncertain")
-        failing = self.failing(bid, recheck_issuing=True)
-        if failing:
-            return self.rebuild_unsent(bid, failing)
-        delegate = self.live_delegate(b["space"])
-        # Journal the members' marks again, then the intent, then send.
-        for m in b["members"]:
-            self.registry.journal_ok(m)
-        self._save(bid, journal=False, intent=1, delegate_in=delegate["outpoint"])
-        self._journal(bid)
-        self._send(bid)
-        return bid
-
     def retry_broadcast(self, bid):
         raise Refused("never repeat a broadcast whose outcome is unknown")
-
-    def rollback_local(self, bid):
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] not in PREPARING or b["intent"] or b["attempted"]:
-            raise Refused("never roll back a commitment that may have escaped")
-        self.subs.post(f"/spaces/{b['space']}/rollback-local")
-        self._save(bid, state="rebuilt")
-
-    def rebuild_unsent(self, bid, failing):
-        """A batch known never to have been sent: journal it as rebuilt, then
-        return its members to paid, then roll back and continue without the
-        failing members."""
-        b = self.batch(bid)
-        self.db.execute("update batches set state = 'rebuilt', intent = 0 where bid = ?", (bid,))
-        if not self._journal(bid):
-            self.db.execute("update batches set state = 'issuing', intent = 1 where bid = ?", (bid,))
-            raise Refused("rebuild not acknowledged off-host; nothing sent, still issuing")
-        for m in b["members"]:
-            self.registry.unissue(m)
-        self.subs.post(f"/spaces/{b['space']}/rollback-local")
-        return self._new_without(b, failing)
-
-    def rebuild(self, bid, failing):
-        b = self.batch(bid)
-        self.subs.post(f"/spaces/{b['space']}/rollback-local")
-        self._save(bid, state="rebuilt")
-        return self._new_without(b, failing)
-
-    def _new_without(self, b, failing):
-        space = b["space"]
-        names = [label(self.registry.order(m)["name"]) for m in failing]
-        if names:
-            self.subs.post(f"/spaces/{space}/park", {"handles": names, "parked": True})
-        keep = [m for m in b["members"] if m not in failing]
-        if not keep:
-            self.alert("every_member_failed", b["bid"])
-            return None
-        # The kept members are staged again by the rollback; the new batch
-        # skips the registry pull and is read back as staged.
-        nb = f"b{self.db.execute('select count(*) from batches').fetchone()[0] + 1}"
-        members_full = sorted((self.registry.order(m)["name"], self.registry.order(m)["recipient_spk"], m)
-                              for m in keep)
-        self.db.execute("""insert into batches(bid, space, members, digest, state, prior_root, supersedes)
-                           values (?, ?, ?, ?, 'frozen', ?, ?)""",
-                        (nb, space, json.dumps(sorted(keep)),
-                         hashlib.sha256(json.dumps(members_full).encode()).hexdigest(),
-                         b["prior_root"], b["bid"]))
-        self._journal(nb)
-        return nb
 
     # Uncertain broadcast: readback, never retried
 
     def readback(self, bid):
+        self._require_preparation_idle()
         b = self.batch(bid)
         if b["state"] != "broadcast_uncertain":
             return {"adopted": False, "reason": "not uncertain"}
@@ -817,6 +635,7 @@ class Controller:
         neither, such as a fresh host's, refuses the commitment's own bytes
         for a missing input. So the bytes of every unconfirmed ancestor the
         node holds now are journaled with it, parents first."""
+        self.require_postsend(bid)
         b = self.batch(bid)
         if b["raw"] or not b["txid"]:
             return bool(b["raw"])
@@ -860,17 +679,17 @@ class Controller:
         """Send the identical journaled bytes of a commitment that is in no
         mempool and not on the best chain. Without journaled bytes the
         recovery pauses for the owner. Never /broadcast."""
-        self.require_restored()
+        self.require_postsend(bid)
         b = self.batch(bid)
         if b["state"] not in ("broadcast", "broadcast_uncertain"):
             raise Refused("nothing to recover")
+        if getattr(self.registry, "bound_entries", False) and self.supersession_progress(b) is not None:
+            raise Refused("commitment is safely superseded; rebroadcast refused")
         if self.commitment_seen(bid):
             raise Refused("the commitment is still on the chain or in the mempool")
         acked = self.acknowledged(bid)
         if not b["raw"] or not acked or acked.get("raw") != b["raw"]:
-            if not b["recovery_paused"]:
-                self._save(bid, recovery_paused=1)
-                self.alert("recovery_paused", bid)
+            self.pause_missing_commitment_bytes(bid)
             raise Refused("no journaled commitment bytes: recovery paused for the owner")
         if not self._issuance_acknowledged(self.batch(bid)):
             raise Refused("order locks or broadcast intent not acknowledged off-host; not sent")
@@ -888,134 +707,7 @@ class Controller:
         self._save(bid, recovery_paused=0)
         return txid
 
-    def certificate_status(self, bid):
-        """"verified" needs d >= 150 and a root anchor 144 past the commitment;
-        "awaiting_anchor" in between; "not_final" otherwise."""
-        b = self.batch(bid)
-        if b["state"] != "final":
-            return "not_final"
-        newest = self.root_anchors()[0]["block"]["height"]
-        return "verified" if newest - b["mined_height"] >= ANCHOR_FINALITY else "awaiting_anchor"
-
-    def watch(self, bid):
-        self.require_restored()
-        """Move a batch along with the chain, including loss of finality."""
-        self.wait_synced()
-        self.capture_bytes(bid)
-        b = self.batch(bid)
-        state = b["state"]
-        if state not in WATCHED + ("final",) or not b["txid"]:
-            return state
-        pos = self.tx_position(b["txid"])
-        onchain = self.onchain_commitment(b["space"], b["root"])
-        if state == "final" and (pos is None or pos[1] < FINAL_D):
-            new = "mined" if pos else "broadcast"
-            self._save(bid, state=new, mined_height=pos[0] if pos else None)
-            self.alert("finality_lost", bid, f"position {pos}")
-            for m in b["members"]:
-                if self.registry.order(m)["status"] == "ready":
-                    self.registry.unready(m)
-            return new
-        if pos and pos[1] >= FINAL_D and onchain:
-            self._save(bid, state="final", mined_height=pos[0])
-            return "final"
-        if pos:
-            if state != "mined":
-                self._save(bid, state="mined", mined_height=pos[0])
-            return "mined"
-        if state == "mined":
-            self._save(bid, state="broadcast", mined_height=None)
-            return "broadcast"
-        return state
-
     # 11. Certificates
-
-    def verify_certificates(self, bid):
-        """Fetch each member's certificate message from subs, read the root
-        anchors from spaced directly, verify with libveritas, and compare
-        handle, script_pubkey and root with the batch record. The root is
-        the batch's own, or a later commitment of the same space that is on
-        the active chain, final and covered (A19)."""
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] != "final":
-            raise Refused("not final")
-        anchors = self.root_anchors()
-        newest = anchors[0]["block"]["height"] if anchors else 0
-        if newest - b["mined_height"] < ANCHOR_FINALITY:
-            # d >= 150 by the tip, but no root anchor covers the commitment
-            # yet, so libveritas would answer "pending" (finding R11).
-            raise Refused(f"no anchor covers the commitment yet (newest {newest}, "
-                          f"mined {b['mined_height']})")
-        # Numbered from what is on disk, so a controller reopened after a
-        # restore never reuses a verification's directory.
-        n = len([d for d in self.workdir.iterdir() if d.is_dir()]) + 1
-        out_dir = self.workdir / f"{n:03d}-{bid}"
-        out_dir.mkdir(parents=True)
-        anchors_path = out_dir / "anchors.json"
-        anchors_path.write_text(json.dumps(anchors))
-        results = {}
-        for m in b["members"]:
-            o = self.registry.order(m)
-            handle = o["name"]
-            msg = self.subs_read.get(f"/certs/{handle}/message", raw=True)
-            msg_path = out_dir / f"{handle}.message.bin"
-            msg_path.write_bytes(msg)
-            proc = subprocess.run([str(self.verifier_bin), str(msg_path), str(anchors_path)],
-                                  capture_output=True, text=True)
-            (out_dir / f"{handle}.libveritas.json").write_text(proc.stdout + proc.stderr)
-            out = json.loads(proc.stdout or "{}") if proc.stdout.strip().startswith("{") else \
-                {"verified": False, "error": proc.stderr[-500:]}
-            zones = out.get("zones", [])
-            zone = next((z for z in zones if z["handle"] == handle), None)
-            # The handle's zone proves inclusion; the committed root and its
-            # height are on the space's zone in the same verified message.
-            space_zone = next((z for z in zones if z["handle"] == b["space"]), None)
-            root = space_zone and space_zone.get("commitment_root")
-            height = space_zone and space_zone.get("commitment_height")
-            own = root == b["root"] and height == b["mined_height"]
-            gate = None
-            if space_zone and not own and root != b["root"] and height is not None \
-                    and height > b["mined_height"]:
-                # subs builds a certificate on the space's latest commitment
-                # when it is fetched, so after a later batch it proves
-                # inclusion in that later root (R23, R24). It counts once
-                # that root is a commitment of the space on the active chain
-                # at the height the certificate states, final and covered,
-                # with the batch's own root still on chain.
-                gate = self.root_gate(b["space"], root, height)
-                gate["own_root_on_chain"] = self._on_chain_at(b["space"], b["root"],
-                                                              b["mined_height"])
-            later_ok = bool(gate and gate["ok"] and gate["own_root_on_chain"])
-            checks = {
-                "verified": out.get("verified", False),
-                "handle": zone is not None,
-                "script_pubkey": bool(zone and zone["script_pubkey"] == o["recipient_spk"]),
-                "root": own or later_ok,
-                "root_height": own or later_ok,
-                "sovereign": bool(zone and zone["sovereignty"] == "sovereign"),
-            }
-            ok = all(checks.values())
-            # A later root on chain that isn't final or covered yet is
-            # waiting, not a failure: nothing is alerted, and the
-            # certificate is checked again later (L9). Only a sovereign or
-            # pending zone waits; libveritas's dependent state is a failure
-            # whatever the root's depth, and is alerted.
-            waiting = bool(not ok and gate and gate["on_chain"] and gate["own_root_on_chain"]
-                           and not gate["ok"] and checks["verified"] and checks["handle"]
-                           and checks["script_pubkey"]
-                           and zone["sovereignty"] in ("sovereign", "pending"))
-            results[m] = {"handle": handle, "ok": ok, "checks": checks, "zone": zone,
-                          "artifacts": str(out_dir),
-                          "space_zone": space_zone,
-                          "root_basis": "batch" if own else ("later" if gate else None),
-                          "root_gate": gate, "waiting": waiting,
-                          "error": out.get("error"), "message_bytes": len(msg)}
-            if ok and o["status"] == "issuing":
-                self.registry.mark_ready(m)
-            if not ok and not waiting:
-                self.alert("certificate_failed", bid, handle)
-        return results
 
     def _on_chain_at(self, space, root, height):
         try:
@@ -1045,6 +737,7 @@ class Controller:
         reconcile. A restore that was interrupted resumes: a replay that
         didn't commit left nothing and runs again; one that committed isn't
         repeated, and reconciliation, which is idempotent, runs again."""
+        self._require_preparation_idle()
         pending = self.restore_pending()
         if pending is None or not pending["replayed_at"]:
             self._replay(pending["n"] if pending else None)
@@ -1082,6 +775,9 @@ class Controller:
             raise
 
     def _reconcile(self):
+        self._require_preparation_idle()
+        if getattr(self.registry, "bound_entries", False):
+            return self.reconcile_bound()
         log = []
         orders = {r["oid"]: r["status"] for r in self.registry.db.execute("select oid, status from orders")}
         for b in self.batches():
@@ -1178,16 +874,19 @@ class Controller:
             return "incomplete"
         return "reconciling"
 
-    def require_restored(self):
+    def require_restored(self, *, preparation_bid=None):
         """Normal writes wait until a restore has replayed and reconciled."""
         if self.recovery_state() in ("required", "incomplete"):
             raise Refused(RESTORE_REQUIRED)
+        self._require_preparation_idle(preparation_bid)
 
     def mark_subs_restored(self, snapshot):
+        self._require_preparation_idle()
         self.db.execute("update recoveries set snapshot = ?, subs_at = ? where n = ?",
                         (snapshot, time.time(), self.restore_pending()["n"]))
 
     def mark_recovered(self):
+        self._require_preparation_idle()
         if self.recovery_state() == "reconciling":
             self.db.execute("update recoveries set ready_at = ? where ready_at is null",
                             (time.time(),))
@@ -1231,6 +930,12 @@ class Controller:
         lacks attached, or the space paused for want of the U1(b)
         capability. It reads only."""
         waiting, paused = [], []
+        try:
+            owner, unresolved, _ = preparation_history(self.journal)
+            if owner is not None or unresolved is not None:
+                waiting.append("preparation effect or global pending owner requires reconciliation")
+        except JournalDown:
+            waiting.append("preparation journal unavailable")
         state = self.recovery_state()
         if state in ("required", "incomplete"):
             missing = self.missing_batches()

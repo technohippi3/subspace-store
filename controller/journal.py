@@ -1,5 +1,6 @@
-"""The off-host journals: append-only JSON lines in a directory that must
-live off the host (a mount of other storage on a real host).
+"""The off-host journals: append-only records in a directory that must
+live off the host (a mount of other storage on a real host). Ordinary records
+remain JSON lines; mandatory controller protocol records use SSCJ3 framing.
 
 Two journals, as in CONTROLLER-DESIGN.md: the store's (orders, `issuing`
 marks) and the controller's (batches, intents, answers). An append is
@@ -14,9 +15,9 @@ directory and keeps this one.
 """
 
 import hashlib
-import json
 import os
 from pathlib import Path
+from .journal_protocol import encode_record, decode_record
 
 
 class JournalDown(Exception):
@@ -46,7 +47,7 @@ class Journal:
             raise JournalDown(f"{self.name} journal unavailable")
         seq = len(self.entries()) + 1
         entry = {"seq": seq, "kind": kind, **data}
-        line = json.dumps(entry, sort_keys=True)
+        line = encode_record(entry)
         digest = hashlib.sha256(line.encode()).hexdigest()
         with open(self.path, "a") as f:
             f.write(line + "\n")
@@ -61,7 +62,7 @@ class Journal:
     def entries(self):
         if not self.path.exists():
             return []
-        return [json.loads(l) for l in self.path.read_text().splitlines() if l]
+        return [decode_record(l) for l in self.path.read_text().splitlines() if l]
 
     def acknowledged(self, predicate):
         """True if some acknowledged entry satisfies `predicate`."""

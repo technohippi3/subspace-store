@@ -1,11 +1,196 @@
-# TypeScript port (in progress)
+# TypeScript pilot store
 
-The start of a port of the store to TypeScript. Nothing runs from it yet:
-the Python service, controller and runner in the parent directory are the
-implementation, and `docs/spec/` stays authoritative.
+This is the pilot store, with the Python controller and attended runner
+retained for issuance. Its domain code, Effect-based storage, browser checkout
+and loopback APIs have source production
+coverage. The installer and seller CLI are implemented. Each candidate requires
+same-payload real-native/browser and owner-client acceptance; see the root
+`../README.md` and `../deploy/NATIVE-PACKAGE.md` for the evidence boundary.
 
-Three pure state machines and the store-wide request and quote rules are
-ported so far, from `service/ledger.py`:
+The development kernel in `src/controller/` now freezes, stages and verifies
+one local commitment, then stops at `committed_local`. It also ports bound-entry first attempts,
+known-unsent close/rebuild, the durable rebuild throttle and normal-process
+restart for preexisting checkpointed batches, plus safe precommit retirement
+with concrete native head/member readback. It has durable global ownership
+and ambiguity barriers for pending/sync/parking, and one local commit
+opportunity per batch. Unknown replies require reconciliation; no automatic
+root adoption, rollback or recommit is provided. Explicit TypeScript member
+selection conservatively refuses partly ineligible sets. Native spaces must
+already be loaded and prior pipelines published. Proving and checkpointing
+remain unimplemented. Compatible journal envelopes do not qualify alternating
+older controller writers mid-stage.
+It retains
+the Python controller journal protocol and has SQLite/HTTP/crash tests with
+recording native ports. It is not selected by the runner. Its remaining
+lifecycle and native/package qualification are explicit in
+`../docs/spec/CONTROLLER-PORT.md`; complete Python removal remains unfinished.
+
+The payment adapter has isolated Core 31.2 regtest qualification. Refund destinations,
+durable reservations and explicit-input signed refund preparation now run
+in tests (`../docs/spec/REFUND-PREPARATION.md`). First-attempt sends and
+settlement/reorg accounting are now qualified in `../docs/spec/REFUND-SENDING.md`.
+Family maxima, fee bumps and exclusive rebuilds now have separate coverage
+in `../docs/spec/REFUND-FAMILIES.md`. Cancellation/refund-due clocks and
+durable deficit/loss reporting are specified in `../docs/spec/REFUND-OBLIGATIONS.md`.
+Read-only unsigned Core template measurement follows in `../docs/spec/REFUND-ESTIMATES.md`.
+Converted/issuing excess clocks now use that assessment in `../docs/spec/EXCESS-DEADLINES.md`.
+K21 keeps partial refunds cancel-first; a new purchase uses a new checkout.
+The separate operator inspection listener is covered in `../docs/spec/OPERATOR-INSPECTION.md`.
+Atomic issuing marks, live journal guards and frozen pending sets follow in
+`../docs/spec/REGISTRY-ENTRY.md`. Entry retry, normal-process restart
+and older-controller-database handling now follow `../docs/spec/ENTRY-RECOVERY.md`;
+the HTTP controller protocol requires an exact entry/root/member binding.
+Known-unsent bound-entry release/rebuild now follows `../docs/spec/ENTRY-RELEASE.md`.
+Permanent closure cannot unlock a successor, and one-use broadcast permission
+prevents a stale controller from releasing a possibly sent entry. Bound
+commitment observations now track finality and reorgs (`../docs/spec/COMMITMENT-TRACKING.md`).
+Bound certificate readiness, local cache and binary buyer download now follow
+`../docs/spec/CERTIFICATES.md`. Verified-delivery callbacks and sticky
+fulfilled recovery incidents now follow `../docs/spec/FULFILLMENT.md`.
+One standalone JSON-API sale through the real Spaces stack and local relay
+now passes with store crashes/restarts (`../docs/spec/RUNTIME.md`).
+The same scenario now includes a real attended cancellation refund, with
+the operator API/runner contract in `../docs/spec/ATTENDED-REFUNDS.md`.
+Known-transaction confirmed delegate conflicts now have explicit supersession
+and reorg-reversal handling (`../docs/spec/SUPERSESSION.md`). The store checks
+the Core proof; Spaces root exclusion is a trusted controller attestation.
+Journal-only application restore and read-only recovery inspection now follow
+`../docs/spec/APPLICATION-RESTORE.md`. The restored store remains quarantined
+until controller reconciliation; restore/recover cannot reopen sales.
+`../docs/spec/RECONCILIATION.md` now defines the offline reconcile command,
+which independently checks known transaction/root/wallet histories and both
+journals before permitting paused startup. The Spaces-stack fixture restores
+application/controller/subs paths and issues again with live Core/wallets.
+`../docs/spec/HOST-RECOVERY.md` adds a separate fresh seller-node/wallet
+fixture using the original onboarding backups. It covers known mined history;
+the complete operator recovery acceptance gate remains separate.
+Browser checkout now serves a public catalog, exact recipient-request forms,
+private orders, journal-gated BIP21 invoices, payment uncertainty,
+cancellation/refund destinations and progress, and certificate downloads.
+Production C1–C12 tests exercise real HTTP/SQLite/journals with simulated
+adapters; `../docs/spec/CHECKOUT-SPEC.md` and `../docs/spec/PILOT-SPEC.md` define the
+transport and exact baseline-to-pilot mappings. All required pilot cases
+now have shipped-component production coverage. Final same-payload native
+sale/refund/browser/recovery acceptance and the identified Nacho phone gate
+remain separate. The Python store is the retained owner-only baseline; the
+pilot ships this TypeScript store with the Python controller and runner.
+`../docs/spec/` stays authoritative.
+
+This port follows the workspace_owner's direction: TypeScript, Effect and
+explicit state machines, deployed through Alchemy to a general Linux host
+over SSH, not a provider's own service resource. The first pilot ships on
+this store once it is complete, with the Python controller and attended
+runner at first (workspace_owner, 2026-11-10; the pilot decisions at the
+top of `docs/spec/PAYMENT-SPEC.md`). Complete means its database, journal
+and HTTP API, built on Effect around these machines, and the regtest
+service, checkout and recovery scenarios passing with it in place of the
+Python store.
+
+## Port handoff and pilot boundary
+
+`../docs/spec/PORT-PLAN.md` defines the work order and release gates.
+Stage 1 now has the independent model under `model/`, named model cases
+K1–K20 in `test/model/pilot.test.ts`, generated trace/recovery checks and
+coverage enforcement. `../docs/spec/PILOT-SPEC.md` states the exact scope
+and expected outcomes. The Python store and model retain the owner-only
+baseline at `66db98c`, plus the H12 process-ownership safety amendment.
+
+The pilot model imports no production reducers. It models the new payment
+admission, conversion-review, cancellation and refund-policy rules, with
+explicit time and chain observations. It is not a full replacement for the
+Python payment/controller model. These are model results only; real refund
+funding, journal boundaries and node behavior need production/regtest tests.
+Fixed traces and invariants supplement the model; baseline comparisons
+remain for unchanged rules. The 2,000-step seeded trace caught and now
+checks against a released hold reviving after a reorg (K19).
+
+Case coverage accepts literal names such as
+`test("K1: rolling ration", () => { ... })`. The directory distinguishes
+model evidence from production tests in `test/production/`. The existing
+unnumbered production-reducer tests remain useful but do not supply named
+runtime coverage. The development gate accepts model evidence;
+`python3 ../tools/case_coverage.py --release pilot` requires named production
+coverage for every required pilot case. The corresponding
+suites must also execute successfully. The pilot-readiness workflow runs
+both suites and this release gate on manual dispatch or a `pilot-*` tag.
+
+The native installer and updater precede the disposable-host cutover
+rehearsal. Essential seller commands then precede the public-pilot gate:
+setup, prices, reservation and withdrawal, global/per-space pause and
+diagnostics. The pilot ships this store with the Python controller and
+runner. Open catalog, bulk import and archiving follow the pilot; the
+remaining controller, runner, model and tooling ports then remove Python.
+The Python node/test-purchase track runs in parallel. Its store ownership
+lock and real two-process H12 tests are now implemented locally.
+
+## Current implementation
+
+`node src/main.ts <config.json>` is the raw runtime entrypoint. Version 1
+configuration is regtest-only; version 2 binds explicit `main` or `regtest`
+installation and wallet identity, ownership and recovery references. Existing
+wallets and distinct injected role-token files are required. New stores start
+paused. `../deploy/typescript-regtest.example.json` is a legacy developer
+example; installed operators use the native profile's generated configuration.
+Separate loopback ports serve buyers, operators and subs pending routes.
+`node src/seller.ts <config.json> ...` uses the authenticated operator API for
+seller setup and repeatable policy changes. Runtime polling observes payments
+and deadlines but never broadcasts refunds. Live status supplies the runner's
+network/block checks; shutdown closes the Effect scope and ownership.
+`../deploy/OPERATIONS.md` describes the installed wrappers. Native installation,
+updates, Infisical retrieval and the Alchemy existing-host driver are implemented;
+the raw entrypoint does not replace their maintenance/recovery choreography.
+
+`src/refunds/` holds production fee policy, strict records and reservation
+accounting, separately from `model/refunds.ts`. `src/bitcoin/refunds.ts`
+builds and validates a first signed refund without broadcasting. The
+application journals credit before signing, snapshots the buyer fee ceiling
+at quote, excludes historical payment scripts from refund destinations and
+retains signed attempts through restart. Order and merchant fee inputs and
+change have explicit provenance. Installation requires explicit refund
+policy and merchant fee-pool destinations; there are no deployment defaults
+or automatic wallet-funding heuristics. These prototype application settings
+must match their journal on restart; a future journaled operator command
+will update policy for new quotes. No general migration layer was added.
+
+The buyer JSON route accepts a refund destination, and views expose fee
+ceilings, balances and sanitized group summaries. Preparation and sending
+now have a strict operator HTTP/attended-runner boundary in
+`../docs/spec/ATTENDED-REFUNDS.md`. Preparation retries recover the existing
+outstanding group. TypeScript commands require explicit cause and reviewed
+transaction/group confirmation; `refund-status` re-reads the current
+receipt. No raw transaction is exported. Runtime polling never sends.
+The first-attempt
+sender journals uncertain intent before sending and checks live permission
+immediately before the Core send RPC. Startup observes refunds before
+returning a ready application; explicit reconciliation retries only absent,
+previously attempted signed transactions. Reads never send. Settled charges
+move from reserved to refunded, and losing settlement reopens the same
+reservation. Admission subtracts only settled refunds. Conflicting spends
+keep their reservations and a sticky rebuild guard, without an independent
+replacement. Group and intent acknowledgments are reported separately.
+
+All attempts remain journaled. A group's reservation is its historical
+maximum, and settlement counts only the member that actually pays. Fee
+bumps retain the parent's inputs; fresh families require a currently settled
+conflict and exclusivity evidence against every older member. Core binds
+ancestor bytes to transaction IDs before signing and broadcasting. Unknown
+or mixed-ownership recovery funding pauses the obligation rather than
+authorizing an independent payment. Only the latest previously attempted
+member is retried per group. Views expose per-member positions, group
+maximum and settled charges, without raw transactions or proofs.
+
+The direct-ancestor funding planner is deliberately conservative. Unconverted
+checkouts use K21's cancel-first flow. Retained payment-destination repeats
+produce the durable H11/T3 warning. Final same-payload recovery acceptance
+remains separate. Core qualification now
+includes application sends, a lost reply and store restart, settlement
+changes and deep reorg/re-mining, as well as proven change funding. These
+use fresh isolated regtest wallets and do not pass public-pilot acceptance.
+
+Three pure state machines and the store-wide request and quote rules were
+ported from `service/ledger.py` as baseline-equivalence checks. The pilot
+application's changed admission and hold rules live in `src/application/`.
+The baseline reducers remain tested during the transition:
 
 - `src/order.ts`, the order and name-hold machine of a fixed-price sale:
   hold, extension, conversion, late payment, quote, cancellation and the
@@ -40,33 +225,141 @@ incident machines also return effects (alerts, authorizations, sends with
 the exact transaction, rebroadcasts). None reads a clock, chain or
 database or performs an effect.
 
-## Not yet ported
+## Durable runtime component
 
-Domain rules of `service/ledger.py` still to port, each with its home:
+`src/storage/` now provides Effect-scoped SQLite persistence, a transactional
+outbox, immutable journal objects, acknowledgment receipts, exclusive Linux
+ownership and atomic/resumable journal-only restore. Production cases
+Z1–Z9 and H12 exercise real SQLite, process death, Effect interruption,
+journal outages, corruption and Python-created snapshots. The runner reads
+this storage schema's acknowledged position for coordinated snapshots.
+`../docs/spec/STORAGE-SPEC.md` defines the exact boundary and limitations.
 
-1. What the buyer is shown: an address and a cancellation only once the
-   journal acknowledged them (`instructions_given`, `order_view`), and a
-   certificate only for a ready or fulfilled order (`deliver_certificate`).
-2. The registry callbacks (`pending_for`, `subs_ack`, `subs_committed`).
-3. Restore from the journal (`restore_from_journal`), which always comes
-   back with sales paused.
+The storage component's records are generic JSON. The application now adds
+domain validation and quote/cancellation instruction gates. Real chain
+observation and exclusive family sends are qualified. Cancellation clocks,
+first-known broadcasts, permanent missed-target incidents, durable alerts
+and recorded losses now persist through restart. Existing clocks can be
+ticked during a Core outage through operator inspection and runtime polling,
+without signing or sending. Converted/issuing excess clocks now admit
+the inclusive estimated fee-plus-546 minimum and retain unknown-assessment
+notices, earlier observation times and existing deadlines through failures.
+Unconverted refunds use cancel-first, and controller HTTP/restore behavior has
+cross-component production coverage. Restored metadata requires reconciliation
+before the application can reopen admission. The native version 2 profile uses
+one encrypted POSIX/SSH recovery backend for both journals and snapshots with
+no local fallback. Direct legacy fixtures retain file mode; a directory on the
+seller host alone does not qualify host-loss recovery. No object-store adapter
+is claimed.
 
-Then the store layer around the machines (SQLite transactions, the
-journal, the HTTP API), and the controller, whose batch machine needs the
-interrupted-broadcast recovery decided in the specification first.
+## Remaining qualification and deferred work
 
-It has no runtime dependencies. Its only development dependency is the
-compiler, pinned to TypeScript 7.0.2 (the native compiler) in
-`package-lock.json`. Node 24 runs the TypeScript directly:
+Source coverage is complete for the required pilot cases. Final acceptance
+requires the same signed payload's real-native browser sale/refund and
+operator recovery evidence, plus the identified owner client's phone gate.
+The installed version 2 VM result uses actual systemd, TLS, secret retrieval and
+SSH with recorded upstream RPC facts; it is not a native-chain purchase.
 
-    cd ts
+Unknown sends, unproven supersession and unsupported tree repair retain paused,
+attended recovery states. Automatic rollback construction and tree repair are
+not supplied by a passing source coverage check. Porting the Python controller,
+runner and tooling follows the pilot; their shipped guards remain mandatory.
+
+`src/application/` now has strict records, serialized Effect commands,
+public request validation, journal-gated addresses/cancellations and
+pilot hold/pay-first evaluation. `CHECKOUT-SPEC.md` defines the HTTP subset,
+the real SQLite/HTTP tests with simulated node adapters and its limitations.
+A 200-step application trace agrees with the independent pilot model on
+the supported sales rules. K20 fixes the model's per-hold conversion
+exemption; K4 also checks creation order independent of quote call order.
+Full recovery remains unverified wherever only a restart was tested.
+
+`src/bitcoin/` supplies loopback cookie-authenticated RPC, exact BTC parsing
+and complete wallet receipt observations. `../docs/spec/CORE-SPEC.md`
+defines readiness, stable-read guards and limitations. `npm run test:core`
+qualifies real Core 31.2 in isolation, separately from the default test
+suite's RPC stand-in. It retains artifacts under `regtest/.run/` and needs
+the pinned binary from `../regtest/fetch-bitcoin.sh`, plus unshare and ip.
+Hosted CI uses `test:core:ci` for privileged namespace creation followed by
+an immediate drop to the original unprivileged UID/GID.
+The application passes every historical payment destination to the adapter.
+It also qualifies signing/sending, uncertain replies, store restart,
+settlement/reorg accounting, proven change funding, fee bumps and direct
+conflict-dependent families. Either an older or newer saved member may
+win after a reorg; the ledger counts the group once.
+Complete stack acceptance remains.
+
+Unsigned Core template measurement now returns a coherent size/fee estimate
+without signing, funding, locking inputs or allocating addresses. It can
+measure spent wallet receipts but does not authorize spending them. Output
+values are placeholders; only shape is measured. Actual refund signing
+still measures and validates the final transaction.
+
+The canonical excess estimate measures receipt metadata and P2TR change
+shapes and allows one potential merchant fee input. It does not depend on
+spendable fee coins or allocate addresses. Actual signing still enforces
+funding, fee caps and the measured minimum. Unknown assessments are durable
+operator notices rather than claims that excess is too small.
+
+The first release closes an unconverted checkout before returning a partial
+payment. Its old address and financial history stay with that refund-only
+order. A new checkout has its own address; old payments cannot qualify it.
+Continuing the same checkout after a partial withdrawal is deferred.
+
+An authenticated operator inspection listener now exposes status, alerts,
+order summaries and explicit observation on a separate loopback port.
+Credentials are injected as an Effect and reevaluated without disk caching.
+Atomic multi-member entry, fresh payment and recipient binding checks,
+live per-order journal confirmation and frozen pending selection now use
+the same application queue. The operator order-list HTTP shape contains
+IDs as the Python runner expects; summaries remain on individual routes.
+A separate subs credential/listener serves only the acknowledged pending
+set. The actual Python runner/client and controller send gate are tested
+over HTTP with a recording subs stand-in. No real commitment send is
+claimed by that test. Eligibility proofs and quotas remain unimplemented.
+
+The runner explicitly selects `store.implementation: "typescript"` for
+the bound-entry protocol. Its entry ID is journaled before store contact.
+Lost responses recover that same entry; attempted commitment sends remain
+uncertain and are never repeated. An older controller database adopts its
+newer journal identity, conservatively treating a newer issuing intent as
+uncertain. The former anonymous issuing HTTP route is absent.
+
+Safe bound-entry release/rebuild, commitment observation and certificate
+acceptance now have their own protocol specifications. Certificate bytes
+are reconstructible local cache; their binding and invalidation are journaled.
+Bound delivery callbacks now retain first delivery and fulfilled ownership
+across certificate loss, with explicit recovery incidents.
+Complete final same-payload native/browser and buyer/operator acceptance before
+activation. The controller port follows the first pilot and must preserve the
+specified interrupted-broadcast recovery; the Python controller ships initially.
+
+The runtime dependency is Effect 4.1.4. Development dependencies are
+TypeScript 7.0.2 and full Node types, pinned in `package-lock.json`.
+`.node-version` and CI pin Node 24.14.0; Linux util-linux `/usr/bin/flock`
+is required. Node's SQLite API is marked active development, so runtime
+upgrades need qualification through these tests. The JavaScript runtime needs
+no native npm addon. Native export tools and their tests have the separate
+pinned Rust build below.
+
+The default suite includes unconditional native-package VM/SSH fixtures.
+Follow `../.github/workflows/model.yml` for Docker, QEMU, OpenSSH and image
+verification prerequisites. From this directory:
+
     npm ci --ignore-scripts
+    node tools/build-native-export.ts --fetch
     npm run check
     npm test
 
+The TypeScript/Effect builder uses Rust 1.94.1 and checks the entire generated
+Cargo lock digest before fetching. Dependency changes require reviewing that
+digest alongside the lock. It builds offline, remaps local paths and retains
+the native artifact manifest consumed by the runtime and package assembler.
+
 CI runs the same (`.github/workflows/model.yml`, job `typescript`).
-`test/node.d.ts` declares the few Node APIs the tests use, until the
-package takes `@types/node`.
+Production storage tests invoke Python only for temporary interoperability
+checks with the controller and the baseline ownership lock; the storage
+runtime itself never invokes Python.
 
 ## What the tests show
 

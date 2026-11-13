@@ -1,0 +1,39 @@
+{
+  "profile": "existing-native-linux-x86_64-systemd255",
+  "installation": "installation",
+  "network": "mainnet",
+  "publicOrigin": "https://store.example.invalid",
+  "tlsCAFile": "/etc/ssl/certs/ca-certificates.crt",
+  "core": {
+    "url": "http://127.0.0.1:8332",
+    "cookiePath": "/srv/native/core/.cookie",
+    "wallet": "payment",
+    "genesis": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+    "descriptorHash": "<read-only-existing-wallet-fingerprint>"
+  },
+  "spaced": {
+    "url": "http://127.0.0.1:7224",
+    "cookiePath": "/srv/native/spaced/.cookie",
+    "operatorWallet": "operator",
+    "space": "<explicit-canonical-space>"
+  },
+  "proverUrl": "http://127.0.0.1:18111",
+  "relayUrl": "<explicit-relay-origin>",
+  "ports": {"buyer": 18951, "operator": 18952, "registry": 18949, "subs": 7777, "https": 443},
+  "limits": {"windowSeconds": "<operator-input>", "maximumRequests": "<operator-input>", "maximumOrders": "<operator-input-at-most-10000>"},
+  "minimumFeeRateSatVb": "<operator-input>",
+  "maximumFeeRateSatVb": "<operator-input>",
+  "riskBudgetSats": "<operator-input>",
+  "refundPolicy": {
+    "minimumRate": "<operator-input>", "maximumRate": "<operator-input>", "fallbackRate": "<operator-input>",
+    "buyerFeeCeiling": "<operator-input>", "confirmationTarget": "<operator-input>",
+    "maximumFee": "<operator-input>", "maximumRefund": "<operator-input>"
+  },
+  "merchantDestinations": [],
+  "recovery": {"host": "recovery.example.invalid", "port": 22, "user": "recovery", "knownHostsFile": "/etc/subspace-store/recovery-known-hosts"},
+  "secrets": {
+    "endpoint": "https://app.infisical.com", "projectId": "<scoped-project-id>", "environment": "<scoped-environment>",
+    "path": "<installation-secret-path>", "caFile": "/etc/ssl/certs/ca-certificates.crt"
+  },
+  "certificateTTLSeconds": "<operator-input>"
+}

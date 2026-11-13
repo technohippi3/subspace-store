@@ -114,7 +114,8 @@ reference model assumes a disconnected commitment returns to the mempool and
 is mined again (L1 then L2), and the regtest run disagreed at that step.
 Part of this may be specific to `invalidateblock`. A natural reorg to a
 competing chain normally re-adds disconnected transactions, and that was not
-tested. The gap behind it is real either way. Nothing in `subs`, the `spaced`
+tested. Bitcoin Core 31.2 did the same on 2026-11-11
+(`core31-all-20261111T052854Z-1dcace`). The gap behind it is real either way. Nothing in `subs`, the `spaced`
 wallet or the controller design would rebroadcast the commitment.
 `/broadcast` is rightly forbidden once a send may have happened. MODEL-PLAN
 allows "rebroadcasting the same signed bytes", but the controller doesn't

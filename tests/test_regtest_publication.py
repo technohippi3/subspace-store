@@ -17,6 +17,8 @@ import tempfile
 import unittest
 
 from controller.core import Controller
+from controller.journal import Journal
+from controller.preparation_history import require_idle
 from regtest.harness import compare
 from regtest.harness.publication import SCHEMA, Publisher
 
@@ -76,6 +78,17 @@ class FakeController:
         self.commitments = {R1: H1}
         self.live = R1
         self.alerts = []
+        self.journal = Journal(workdir / "controller-journal", "controller")
+
+    def require_restored(self):
+        # This chain-only fixture has no recovery transaction. Its preparation
+        # history is real and controllable; it provides no process-lock evidence.
+        require_idle(self.journal)
+
+    def require_postsend(self, bid):
+        # This chain-only fake retains its original idle guard. Actual sent
+        # ownership behavior is covered by the controller/process fixtures.
+        self.require_restored()
 
     def batch(self, bid):
         return {"space": SPACE, "root": R1, "txid": "made-up-txid", "mined_height": H1}

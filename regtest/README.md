@@ -33,7 +33,12 @@ wallets are made fresh for each run inside `.run/`.
 
 - `pins.env`: the pinned upstream versions and the Bitcoin Core checksum.
 - `fetch.sh`: clones and builds the pins into `.cache/` (not committed).
+- `fetch-bitcoin.sh`: fetches only the checksum-pinned Core binaries. The
+  TypeScript payment adapter's isolated `npm run test:core` uses them without
+  building the complete issuance stack; `../docs/spec/CORE-SPEC.md` gives its scope.
 - `in-netns.sh`: runs a command in the isolated namespace.
+- `in-netns-ci.sh`: creates the hosted-CI test network namespace with sudo,
+  then runs Node/Core as the original unprivileged UID/GID.
 - `run-id.sh`: makes a fresh run id. Run ids are never reused, and the
   harness never deletes a run directory.
 - `start.sh [prefix]`: starts a stack in the namespace and opens a shell
@@ -41,7 +46,30 @@ wallets are made fresh for each run inside `.run/`.
   processes.
 - `run-first-purchase.sh [prefix]`: the first purchase end to end on a
   fresh network, then stop. This is the milestone script.
-- `run-all.sh [prefix]`: every scenario in order. CPU proving makes it
+- `run-typescript-sale.sh [prefix]`: a standalone TypeScript JSON-API sale
+  through the shipped runner, real Spaces/libveritas and a local relay,
+  including store crashes/restarts and application/controller/subs restore.
+  It requires Node 24.14 or newer, pinned dependencies installed under `ts/`,
+  the fetched stack, verifier and combined U1(b)/relay-seed subs build.
+  Build them with `fetch.sh`, `build-combined.sh` and
+  `cargo build --locked --release` from `verifier/` first. The scenario
+  itself downloads nothing. It uses the bootstrap harness only to set up
+  fresh chain fixtures; no purchase uses the Python registry. Its scope
+  includes buyer cancellation and an attended runner refund received by
+  the buyer, with exact transaction confirmation and restart checks. It
+  restores fresh application/controller/subs paths and issues again, while
+  Core and wallets stay live. It excludes browser checkout, buyer-client
+  import and whole-host loss.
+- `run-typescript-recovery.sh [prefix]`: the same actual TypeScript sale
+  and attended refund with a separate surviving network node, buyer/miner
+  wallets and relay. It replaces every seller data path, including Core
+  and Spaces, restores the original onboarding wallets, then runs journal/
+  subs/controller recovery and issues again. It tests payment during the
+  outage, an unpaid historical invoice, credential rebinding and avoidance
+  of historical address reuse. Build the same dependencies as the sale
+  scenario first. Only known mined history is covered; this is not the
+  full multi-space in-flight operator gate or packaged deployment.
+- `run-all.sh [prefix]`: every numbered scenario in order. CPU proving makes it
   slow.
 - `run-continued.sh [pinned|u1b]`: the first purchase, the second
   commitment and the restore, then another batch on the same space
@@ -68,6 +96,13 @@ wallets are made fresh for each run inside `.run/`.
   upstream patches (`.cache/bin/subs-combined`), and scenarios 1 to 6 in
   one run: recovery after a restore, continued issuance, publication and
   verified delivery.
+- `build-private.sh`: the same pin with U1(b), explicit relay seeds and
+  `upstream/subs-loopback.patch`, built as `.cache/bin/subs-private` in
+  its own worktree. This build binds its API only to `127.0.0.1` (R7).
+  The pinned and earlier patched binaries stay unchanged. The harness
+  still runs in the isolated namespace, even with this build. It needs
+  the dependencies fetched by `fetch.sh`; regtest publication also needs
+  `certrelay` from `build-relay.sh`. See `upstream/LOOPBACK.md` for checks.
 - `run-service.sh [prefix]`: the store service (`service/`) as its own
   process in place of the harness registry, killed and restarted along the
   way: a purchase through its API to verified delivery (scenario 7) and a

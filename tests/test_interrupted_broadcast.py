@@ -31,6 +31,23 @@ class Stopped(BaseException):
 
 
 class InterruptedBroadcast(unittest.TestCase):
+    def test_A26_a_previously_acknowledged_intent_does_not_bypass_a_live_journal_outage(self):
+        c = self.controller()
+        self.issuing(c, "b1")
+        c.capture_bytes = lambda bid: None
+        c._save("b1", intent=1, delegate_in="made-up-delegate:0", fee_rate=1)
+        self.journal.set_down(True)
+        with self.assertRaises(Refused):
+            c._send("b1")
+        self.assertEqual(c.batch("b1")["attempted"], 0)
+        self.assertEqual(self.broadcasts, [])
+        self.journal.set_down(False)
+        c._send("b1")
+        self.assertEqual(len(self.broadcasts), 1)
+        with self.assertRaises(Refused):
+            c._send("b1")
+        self.assertEqual(len(self.broadcasts), 1)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -40,6 +57,9 @@ class InterruptedBroadcast(unittest.TestCase):
         self.w.spaced.answers.update({"getdelegation": lambda space: "made-up-num",
                                       "getnum": lambda num: {"txid": "made-up-delegate", "n": 0}})
         self.w.store.add("o1", "one@a", "issuing")
+        from tests.native_facts import local_pipeline
+        self.w.pipelines["@a"] = local_pipeline(ROOT_B1)
+        self.w.handles["@a"] = {"one": ROOT_B1}
         self.w.subs_running = True
         self.broadcasts = []
         self.answer = lambda: json.dumps({"txid": GOOD_TXID}).encode()
@@ -59,11 +79,13 @@ class InterruptedBroadcast(unittest.TestCase):
             def get(self, path, **kw):
                 return reads.get(path, **kw)
 
-        return Controller(self.tmp / db, journal or self.journal, self.w.store,
-                          Clients(writes or Writes, lambda: reads, lambda: self.w.spaced,
-                                  lambda: self.w.btc),
-                          self.w, self.tmp / "verifier", self.tmp / "certs", "made-up-wallet",
-                          Capabilities(attach_txid=True), ready_timeout=1)
+        c = Controller(self.tmp / db, journal or self.journal, self.w.store,
+                       Clients(writes or Writes, lambda: reads, lambda: self.w.spaced,
+                               lambda: self.w.btc),
+                       self.w, self.tmp / "verifier", self.tmp / "certs", "made-up-wallet",
+                       Capabilities(attach_txid=True), ready_timeout=1)
+        self.addCleanup(c.close)
+        return c
 
     @staticmethod
     def insert(c, row):
@@ -180,6 +202,7 @@ class InterruptedBroadcast(unittest.TestCase):
         # The next process opens the same database while the journal is down:
         # the batch is uncertain here, alerted, and not yet acknowledged.
         self.journal.set_down(True)
+        c.close()
         c2 = self.controller()
         self.assertEqual(c2.batch("b1")["state"], "broadcast_uncertain")
         self.assertIn("interrupted", c2.batch("b1")["answer"])
@@ -187,9 +210,11 @@ class InterruptedBroadcast(unittest.TestCase):
         # With the journal back, the next opening acknowledges it, without
         # another alert or a send.
         self.journal.set_down(False)
+        c2.close()
         c3 = self.controller()
         self.assertUncertain(c3, "b1", sends=1)
         # Opening it again changes nothing more.
+        c3.close()
         self.controller()
         self.assertEqual(self.journaled("b1").count("broadcast_uncertain"), 1)
 
@@ -206,10 +231,14 @@ class InterruptedBroadcast(unittest.TestCase):
         # alert can't be written, so neither is the state.
         c.db.execute("create trigger stop before insert on alerts "
                      "begin select raise(abort, 'stopped'); end")
+        c.close()
         with self.assertRaises(sqlite3.Error):
             self.controller()
-        self.assertEqual((c.batch("b1")["state"], c.alerts()), ("issuing", []))
-        c.db.execute("drop trigger stop")
+        with sqlite3.connect(self.tmp / "controller.db") as db:
+            self.assertEqual(db.execute("select state from batches where bid = 'b1'").fetchone(),
+                             ("issuing",))
+            self.assertEqual(db.execute("select * from alerts").fetchall(), [])
+            db.execute("drop trigger stop")
         # A stop after it commits, before the journal entry: the state and
         # its alert are here, and the next opening journals them.
         append = self.journal.append
@@ -222,7 +251,9 @@ class InterruptedBroadcast(unittest.TestCase):
         with self.assertRaises(Stopped):
             self.controller()
         self.journal.append = append
-        self.assertEqual(c.batch("b1")["state"], "broadcast_uncertain")
+        with sqlite3.connect(self.tmp / "controller.db") as db:
+            self.assertEqual(db.execute("select state from batches where bid = 'b1'").fetchone(),
+                             ("broadcast_uncertain",))
         self.assertEqual(self.journaled("b1")[-1], "issuing")
         self.assertUncertain(self.controller(), "b1", sends=1)
 
@@ -238,6 +269,7 @@ class InterruptedBroadcast(unittest.TestCase):
                   row2, dict(row2, state="broadcast", txid="cd" * 32, raw="02made-up-2",
                              attempted=1)):
             self.journal.append("batch", batch=b)
+        c.close()
         c2 = self.controller()
         self.assertIsNone(c2.recovery_state())
         for bid, txid, raw in (("b1", GOOD_TXID, "02made-up"), ("b2", "cd" * 32, "02made-up-2")):
@@ -249,6 +281,7 @@ class InterruptedBroadcast(unittest.TestCase):
                 c2.resume(bid)
         self.assertEqual(self.broadcasts, [])
         # Opened again, nothing more changes.
+        c2.close()
         self.assertEqual(len(self.controller().alerts()), 2)
 
     def test_A21_a_stale_row_waits_for_the_replay(self):
@@ -269,6 +302,7 @@ class InterruptedBroadcast(unittest.TestCase):
                   batch_row("b2", "@b", ["o2"], "checkpointed", ROOT_B2)):
             journal.append("batch", batch=b)
         before = journal.position()
+        c0.close()
         c1 = self.controller("partial.db", journal)
         self.assertEqual(c1.recovery_state(), "required")
         for bid in ("b1", "b3"):

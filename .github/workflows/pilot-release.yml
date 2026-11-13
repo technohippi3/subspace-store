@@ -1,0 +1,51 @@
+name: Pilot release readiness
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['pilot-*']
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ts/.node-version
+      - name: Install native package integration prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils genisoimage openssh-client gpgv ubuntu-cloudimage-keyring
+          docker info > /dev/null
+      - name: Install pinned native compiler
+        run: rustup toolchain install 1.94.1 --profile minimal
+      - name: Install pinned TypeScript dependencies
+        working-directory: ts
+        run: npm ci --ignore-scripts
+      - name: Fetch exact native crates and build the owned exporter offline
+        run: node ts/tools/build-native-export.ts --fetch
+      - name: Python baseline and shipped controller tests
+        run: python3 -m unittest discover -s tests -t .
+      - name: Type check the model and production code
+        working-directory: ts
+        run: npm run check
+      - name: Execute TypeScript model and production tests
+        working-directory: ts
+        run: npm test
+      - name: Fetch the checksum-pinned Bitcoin Core binary
+        run: regtest/fetch-bitcoin.sh
+      - name: Qualify payment observations against real Core in isolation
+        working-directory: ts
+        run: npm run test:core:ci
+      - name: Require production coverage for the pilot
+        run: python3 tools/case_coverage.py --release pilot

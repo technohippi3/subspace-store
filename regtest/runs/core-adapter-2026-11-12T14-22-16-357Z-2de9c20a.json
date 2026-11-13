@@ -1,0 +1,11 @@
+{
+  "network": "regtest",
+  "core": "31.2.0",
+  "run": "core-adapter-2026-11-12T14-22-16-357Z-2de9c20a",
+  "result": "invalid-source-freeze",
+  "failed_check": "standalone-runtime-startup",
+  "observed": "runtime child exited 1 before ready; no application database, lock or journal entries",
+  "stderr_retained": false,
+  "context": "an overlapping incomplete module integration changed runtime sources during qualification; its bytes were preserved and the unrelated changes removed before a complete rerun",
+  "qualification_claim": false
+}

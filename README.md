@@ -1,120 +1,123 @@
 # subspace-store
 
-An open-source kit that anyone holding a top-level Spaces name can run to sell
-names under it, with their own prices, eligibility rules, allowlists and Dutch
-auctions. Buyers pay in on-chain Bitcoin and keep their names in their own
-client. Nacho is the first client being tested.
+A self-hosted store for fixed-price names under a seller's top-level Spaces
+name. Buyers submit a recipient request, pay on-chain Bitcoin and receive a
+certificate for a name controlled by their own key. Checkout needs no account.
 
-"subspace-store" is a working title.
+The first public pilot is one space with explicit listings, attended hot-wallet
+refunds and a durable review pause after ten distinct conversions. Dutch
+auctions, proof eligibility, open catalog, bulk import and space archiving are
+deferred. The operator chooses prices, admission limits, fees and the risk
+budget. The specification in [docs/spec/](docs/spec/) is authoritative.
 
-## Status
+## Current release candidate
 
-Pre-alpha. The MVP sells names at fixed prices. Dutch auctions are
-specified but deferred until after the MVP. The first launch targets one
-public space, fixed-price Bitcoin sales and Nacho as the first buyer
-client, without ZK eligibility (workspace_owner, 2026-11-08); it doesn't
-authorize mainnet transactions or opening sales.
+The pilot store is TypeScript with Effect and explicit state machines. The
+Python controller and attended runner ship with it during the transition;
+the older Python store remains the owner-only behavioral baseline. The
+[port plan](docs/spec/PORT-PLAN.md) records that boundary and the later removal
+of Python.
 
-There is a reviewed specification, a reference model of the fixed-price
-rules, and a regtest harness that drives the pinned `subs`, `spaced` and
-Bitcoin Core on a local regtest network. On regtest the harness has issued
-names through to a certificate verified with libveritas and marked ready:
-an initial commitment, later commitments with real proofs, a host restore
-and a lost broadcast response. After a restore it issued another batch,
-with a candidate upstream change to `subs` (U1(b)). It published
-certificates to a relay running inside the test network and confirmed
-each delivery with a verified lookup through that relay, so orders reached
-"fulfilled". With the harness acting as the client, it signed records for a
-delivered handle, sent them through that relay and verified them in the
-relay's answers. A set signed with the wrong key was dropped.
+The pilot production gate requires executable coverage for every applicable
+case. Source tests cover the shipped store/controller combination, recovery,
+seller operations, browser transport and native packaging. Isolated regtest
+runs also exercise real Core, Spaces, subs, libveritas and a local relay; their
+scope and limitations are in [regtest/REPORT.md](regtest/REPORT.md). Source
+coverage and those historical runs do not establish final package acceptance.
 
-That is regtest evidence, with two small patches to `subs` kept in
-`regtest/upstream/`. It isn't a buyer's purchase. No buyer's client has
-imported a certificate, nothing has touched the public relay network, and
-the harness's registry and controller are test code.
+The installed version 2 VM fixture exercises actual systemd 255, HTTPS,
+Infisical retrieval, encrypted SSH, update and service recovery with recorded
+upstream RPC facts. A candidate also requires separate real-native and browser
+receipts against its exact signed payload. The candidate acceptance index binds
+those results to its source and artifact hashes. Development candidate
+signatures use disposable test keys. The supported host profile is Ubuntu 24.04 x86_64 with systemd 255; it requires existing ready
+Core/spaced wallets and explicit prover and relay endpoints. See
+[deploy/NATIVE-PACKAGE.md](deploy/NATIVE-PACKAGE.md) for the package boundary and
+[deploy/OPERATIONS.md](deploy/OPERATIONS.md) for its commands.
 
-The first milestone of the store service is in `service/`: durable orders,
-quotes, recipient locking, holds and reservations, payment accounting,
-cancellation and refund obligations, behind an HTTP API with no-account
-checkout. On regtest, one purchase went through its API to verified
-delivery while the service was killed and restarted four times, and a
-cancellation refund was paid to the buyer by a real refund transaction.
-`docs/SERVICE.md` records its choices and what it doesn't do yet.
+Verified native SCRT and libveritas Message exports and certificate-only QR
+links exist. The inspected Android Nacho 0.1.1 build 18 still uses a legacy
+JSON manual-import path; its bundled native decoder is not connected to that
+screen. Client import compatibility is a known blocker. Phone import, record
+signing, transfer and independent recovery acceptance remain open.
+The [device handoff](docs/NACHO-TEST.md), [buyer gate](docs/BUYER-GATE.md) and
+[native export contract](docs/spec/NATIVE-EXPORT.md) describe the required
+evidence. Browser QR checks are not phone import evidence.
 
-The service can rebuild its own database from its off-host journal alone
-after a host loss, shown over a simulated chain and beside the model, not
-yet on regtest. It gives out a payment address, and reports a cancellation
-final, only once its off-host journal has acknowledged the order, so a host
-loss can't strand a payment or undo a cancellation it called final.
+Paid sales remain closed. Same-payload native/browser and buyer/operator
+acceptance, explicit commercial settings and the workspace_owner's activation
+authorization are required before opening the first pilot. This repository
+authorizes no production deployment, mainnet transaction or wallet action.
 
-The buyer's checkout pages and the operator's attended runner exist too,
-on regtest only. In run `checkout-20261109T141954Z-1d9c65` a buyer used
-only the pages. The steps were: request, BIP21 invoice, payment, and a
-certificate downloaded from the order page and verified with libveritas
-(`regtest/REPORT.md` records all three checkout runs, the first a failure).
-The runner carried the order through issuance and delivery. A second
-order was cancelled and refunded through the same pages and runner. The
-runner builds the controller (`controller/`) from a host configuration,
-without the regtest harness, which runs the same controller through an
-adapter; it still runs on regtest only. `deploy/` holds credential-free
-examples of the host configuration and service units, not yet used.
+## Code and entrypoints
 
-The operator gate's recovery was rehearsed on regtest (scenario 11). With
-batches in flight on four spaces and a refund broadcast, the host was
-lost whole, its own bitcoind included, and a fresh host was brought up
-from the off-host recovery set alone: the journals, the latest
-coordinated snapshot and the two wallets' onboarding backups. The runner
-reconciled it, every check held (no name issued twice, no refund paid
-twice, no reservation lost, each restored tree root agreeing with the
-chain), and it issued again to fulfilled. That is regtest evidence, with
-`subs` patched for U1(b); it isn't the gate passed. There is no
-installer. Nothing here is fit for selling
-names, and paid sales stay closed until the buyer and operator acceptance
-gates in the specification pass. The service runs on regtest only.
-`regtest/REPORT.md` says what has and hasn't been exercised.
+[ts/src/](ts/src/) owns the pilot store: application records and serialized
+commands, SQLite and acknowledged journals, Core observations/refunds, browser
+checkout, seller operations and runtime ownership. `ts/src/main.ts` is the raw
+runtime/maintenance entrypoint; `ts/src/seller.ts` uses the authenticated
+operator API. Version 1 configuration is regtest-only. Version 2 binds an
+explicit network and wallet identity and starts paused. Installed operators
+use the generated configuration and native wrapper commands, rather than the
+legacy example files.
 
-A passing model test shows that the specified rules are consistent on a
-simulated chain. It is not evidence that real Bitcoin transactions, the
-upstream Spaces software or buyers behave that way.
+[controller/](controller/) owns issuance intents, bound batches, broadcasts,
+commitment/certificate verification and coordinated snapshots.
+[runner/](runner/) is the attended command boundary over the TypeScript store
+and native services. The runner selects `store.implementation: "typescript"`
+explicitly; it does not fall back to the Python store. Runtime polling and
+status reads never authorize an unattended refund send.
 
-## Layout
+[deploy/](deploy/) owns signed assembly, installation/update/recovery, systemd
+ownership, scoped secret retrieval, HTTPS, the encrypted recovery client and
+restricted remote helper. Alchemy drives the same standalone installer over
+pinned SSH. It does not provision a host or create wallets.
+[native/export/](native/export/) builds the pinned native exporter;
+[regtest/verifier/](regtest/verifier/) builds the libveritas verifier.
 
-- `docs/spec/`: the specification (`PAYMENT-SPEC.md`, `CONTROLLER-DESIGN.md`,
-  `MODEL-PLAN.md`, `ELIGIBILITY.md`) and where it came from (`PROVENANCE.md`).
-- `model/`: the reference model, in plain Python with no dependencies.
-  `chain.py` simulates a Bitcoin chain with real spends, conflicts and
-  reorgs. `store.py` holds the fixed-price payment, reservation and refund
-  rules. `controller.py` simulates batch issuance: the binding check,
-  `issuing`, uncertain broadcasts, supersession, finality and its loss, and
-  the off-host journal. `sim.py` journals every call, and simulates outages
-  of the two off-host journals, together or independently, and host loss.
-- `service/`: the store service, standard-library Python and SQLite.
-  `ledger.py` holds the fixed-price rules, written separately from the
-  model; `bitcoin.py` reads Bitcoin Core and builds refunds; `app.py` is the
-  HTTP API. Run it with `python3 -m service <config.json>` (regtest only).
-- `tests/`: the named specification cases, one test per case identifier.
-  Every fixed-price MVP case has one. There are also seeded generated
-  sequences with invariant, replay and cut-and-resume checks, and the
-  service run beside the model on those sequences (`test_service_twin.py`).
-- `docs/BUYER-GATE.md`: the plan for the buyer acceptance gate with Nacho.
-  `buyer-gate/operator.sh` runs its test operator: the pinned `spaced` and
-  `subs` on mainnet in their own unprivileged namespaces, with outbound
-  access only. It holds no credentials and signs nothing.
-- `tools/case_coverage.py`: reports which named cases have tests.
-  `tools/check_request.py` checks the format of a public recipient request,
-  such as a Nacho export, as `POST /requests` does before reading any state.
-  `tools/replay_timing.py` times the store's replay from its journal on a
-  generated journal of a given size, labelled generated.
+[ts/model/](ts/model/) is the independent pilot model.
+[ts/test/production/](ts/test/production/) checks shipped components and their
+boundaries. [model/](model/), [service/](service/) and [tests/](tests/) retain the
+Python baseline and its recorded safety amendments; Python baseline tests do
+not substitute for TypeScript store evidence. [regtest/](regtest/) contains the
+pinned native harness, upstream patches and run reports.
 
-## Running the checks
+## Development checks
 
-With Python 3.10 or later, from the repository root:
+Run tooling from this checkout. Use Node 24.14.0, Python 3.12 and Rust 1.94.1.
+The default TypeScript suite also executes native-package fixtures: it needs
+Linux `flock`, a working Docker daemon, QEMU, `genisoimage`, OpenSSH, `gpgv` and
+the Ubuntu cloud image keyring. CI's exact prerequisites and pinned native
+build preparation are in [.github/workflows/model.yml](.github/workflows/model.yml).
+The guest and build inputs are fetched and verified during preparation.
 
-    python3 -m unittest discover -s tests -t .
-    python3 tools/case_coverage.py --check
+From the repository root:
 
-`SUBSPACE_MODEL_RUNS` and `SUBSPACE_MODEL_STEPS` lengthen the generated runs.
+```sh
+python3 -m unittest discover -s tests -t .
+python3 tools/case_coverage.py --check
+```
+
+Then, from `ts/`:
+
+```sh
+npm ci --ignore-scripts
+node tools/build-native-export.ts --fetch
+npm run check
+npm test
+```
+
+The exporter builder is TypeScript with Effect. It checks the complete pinned
+Cargo lock before fetching, builds offline with remapped paths and records the
+same native artifact manifest. From the repository root, after installing the
+TypeScript dependencies, its direct command is
+`node ts/tools/build-native-export.ts --fetch`.
+
+`python3 tools/case_coverage.py --release pilot` is the production discovery
+gate; the corresponding suites must execute successfully as well. The
+[pilot readiness workflow](.github/workflows/pilot-release.yml) also runs the
+isolated Core qualification. A model pass, named-test discovery or simulated
+RPC result alone is not real-chain, installed-package or buyer acceptance.
 
 ## Licence
 
-Apache License 2.0. See `LICENSE`.
+Apache License 2.0. See [LICENSE](LICENSE).

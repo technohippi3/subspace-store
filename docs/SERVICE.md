@@ -259,3 +259,16 @@ These are this milestone's choices, recorded so that they can be changed.
 - The pilot's operating needs: a hold-admission policy, bounded wallet
   funding, and a way to pause sales and handle alerts (the proposed finish
   line's third demonstration).
+
+## Process ownership safety amendment (H12)
+
+The Python baseline now takes a lifetime lock for its canonical database
+path before database/journal initialization, startup reconciliation or a
+restore. CLI journal construction is deferred until ownership is acquired.
+A competing start or restore exits with a store-busy diagnostic; it cannot
+read or modify the database or journal. Normal close, direct connection
+close, failed startup and process death release ownership. The lock file
+stays in place, including after a refused empty start or restore. H12 uses
+real processes, not the simulated model. Payment behavior remains the
+baseline; the controller and direct-refund maintenance requirements remain
+separate.

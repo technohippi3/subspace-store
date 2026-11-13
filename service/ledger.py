@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Optional
 
 from .journal import JournalDown
+from .locking import Ownership, OwnedConnection
 
 # Depth thresholds, in conventional confirmations (PAYMENT-SPEC.md, "Terms").
 CONFIRMED, BATCHABLE, SETTLED = 1, 3, 6
@@ -258,12 +259,27 @@ def _has_store(path):
 
 
 class Ledger:
-    def __init__(self, db_path, chain, journal, policy=None, clock=time.time):
+    def __init__(self, db_path, chain, journal, policy=None, clock=time.time, private_purchase=None):
+        ownership = Ownership(db_path)
+        try:
+            self._open(db_path, chain, journal, policy, clock, private_purchase, ownership)
+        except BaseException:
+            if hasattr(self, "db"):
+                self.db.close()
+            ownership.close()
+            raise
+
+    def _open(self, db_path, chain, journal, policy, clock, private_purchase, ownership):
+        # CLI callers defer construction too: even journal mkdir/read waits
+        # until the process owns the store.
+        journal = journal() if callable(journal) else journal
         if journal.entries() and not _has_store(Path(db_path)):
             raise RestoreRequired(
                 f"no store database at {db_path}, but the off-host journal has entries: "
                 "restore it first (python3 -m service restore <config>)")
-        self.db = sqlite3.connect(str(db_path), isolation_level=None, check_same_thread=False)
+        self.db = sqlite3.connect(
+            str(db_path), isolation_level=None, check_same_thread=False,
+            factory=lambda *a, **kw: OwnedConnection(*a, ownership=ownership, **kw))
         self.db.row_factory = sqlite3.Row
         self.db.execute("pragma journal_mode = wal")
         self.db.execute("pragma synchronous = full")
@@ -286,6 +302,12 @@ class Ledger:
         self.policy = policy or Policy()
         self.clock = clock
         self._depth = 0
+        from .private_purchase import Allowance
+        try:
+            self.private_purchase = Allowance(self, private_purchase)
+        except BaseException:
+            self.db.close()
+            raise
         self.audit_recipients()
 
     def close(self):
@@ -505,6 +527,7 @@ class Ledger:
             raise Invalid("invalid handle")
         if not isinstance(price, int) or price <= 0:
             raise Refused("invalid price")
+        self.private_purchase.price(name, price)
         with self.tx():
             if self.db.execute("select 1 from names where name = ?", (name,)).fetchone():
                 self._set_name(name, price=price)
@@ -514,6 +537,7 @@ class Ledger:
         self.flush_journal()
 
     def set_price(self, name, price):
+        self.private_purchase.price(name, price)
         with self.tx():
             self._name(name)
             self._set_name(name, price=price)
@@ -536,6 +560,7 @@ class Ledger:
             raise Invalid("script_pubkey must be a 34-byte P2TR script with a valid key")
         token = secrets.token_urlsafe(24)
         with self.tx():
+            self.private_purchase.request(handle, recipient_spk)
             self._name(handle)
             ours = self.db.execute("select 1 from orders where dest_script = ?",
                                    (recipient_spk,)).fetchone()
@@ -643,6 +668,10 @@ class Ledger:
         checks as a first quote."""
         self.observe()
         o = self._order(oid)
+        self.private_purchase.check(o)
+        if self.private_purchase.config and o["dest_script"] is not None:
+            self._recipient_quotable(o)
+            return self._quote(oid)
         if o["status"] == "quoted" and self._name(o["name"])["hold_order"] == oid:
             self._recipient_quotable(o)
             return self._quote(oid)
@@ -663,6 +692,7 @@ class Ledger:
                 raise Refused("taken for now")
             if self.sales_paused():
                 raise SalesPaused("sales are paused")
+            self.private_purchase.consume(self._order(oid))
             self._put_setting("exposure_alerted", "0", journaled=False)
             if skipped:
                 # The payment wallet is behind the journal: the owner is told.
@@ -700,7 +730,8 @@ class Ledger:
         """Whether the order's payment address may be shown: its latest
         acknowledged entry already carries it, which every status after
         `requested` does."""
-        return o["journaled_status"] not in (None, "requested")
+        return (o["journaled_status"] not in (None, "requested")
+                and self.private_purchase.acknowledged(o["oid"]))
 
     def _quote(self, oid):
         o = self._order(oid)
@@ -1414,6 +1445,14 @@ def _database_files(path):
 
 
 def restore_from_journal(db_path, journal):
+    ownership = Ownership(db_path)
+    try:
+        return _restore_from_journal(db_path, journal() if callable(journal) else journal)
+    finally:
+        ownership.close()
+
+
+def _restore_from_journal(db_path, journal):
     """Rebuild the store's database from the off-host journal alone, into a
     path where no database exists. Builds beside the target and moves the
     result into place only once complete. Returns the record counts."""

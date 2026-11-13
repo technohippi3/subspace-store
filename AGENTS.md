@@ -17,10 +17,30 @@ than it does. In particular:
 
 ## Specification and model
 
-- `docs/spec/` is authoritative. Change the specification and the model in
-  the same commit when a rule changes.
-- Every named case in a specification table gets a test called
-  `test_<ID>_<description>`. `tools/case_coverage.py` reports the gaps.
+- `docs/spec/` is authoritative. The Python owner-only test follows the
+  behavioral baseline at `66db98c7bea395e7521039418d0ce6307ab67222`, as
+  defined in `docs/spec/PORT-PLAN.md`. Do not silently backport public-pilot
+  rules to it. Record any subsequent safety fix and its tests explicitly.
+- Change a rule's specification and its governing model in the same commit.
+  Python baseline changes use `model/`; new public-pilot rules use the
+  independent TypeScript model under `ts/model/`. That model must
+  exist before those rule changes land. Do not reuse production reducers
+  inside it. A port-plan entry alone does not change either implementation.
+  Runtime-only lifecycle rules, such as process ownership, land with their
+  specification and integration tests; a simulated lock is not evidence
+  that operating-system ownership works.
+- Every new named case lands with its passing executable test. Python uses
+  `test_<ID>_<description>`; TypeScript uses the literal name
+  `test("<ID>: <description>", ...)` with an unconditional callback. Put
+  TypeScript model tests in `ts/test/model/` and store production tests in
+  `ts/test/production/`. The coverage checker rejects unknown IDs and skipped
+  named cases. Do not add temporary case exemptions.
+- Keep baseline, TypeScript model and TypeScript production coverage
+  distinct. `python3 tools/case_coverage.py --release pilot` must pass with
+  the corresponding executed suites before a public pilot release. It
+  intentionally fails while the TS runtime has no production case coverage.
+  `--check` is the development gate, not pilot release evidence. Applicability
+  and baseline supersessions are defined in `docs/spec/PILOT-SPEC.md`.
 - A case without a test is a requirement, not a verified rule.
 - Label model results as model results. Never report them as integration,
   regtest, mainnet or buyer-acceptance evidence.

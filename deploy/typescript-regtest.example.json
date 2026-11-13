@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "network": "regtest",
+  "database": "/srv/subspace-store/store/store.db",
+  "journalDirectory": "/mnt/offhost/subspace-store/typescript-journal",
+  "listen": { "buyer": 18951, "operator": 18952, "subs": 18949 },
+  "core": {
+    "url": "http://127.0.0.1:18443/",
+    "cookiePath": "/srv/subspace-store/bitcoind/regtest/.cookie",
+    "wallet": "store"
+  },
+  "credentials": {
+    "operator": "/run/credentials/subspace-store/operator-token",
+    "subs": "/run/credentials/subspace-store/subs-token"
+  },
+  "riskBudgetSats": 100000,
+  "refundPolicy": {
+    "minimumRate": 1000,
+    "maximumRate": 100000,
+    "fallbackRate": 2000,
+    "buyerFeeCeiling": 300,
+    "confirmationTarget": 6,
+    "maximumFee": 10000,
+    "maximumRefund": 100000
+  },
+  "merchantDestinations": [],
+  "pollMilliseconds": 2000
+}

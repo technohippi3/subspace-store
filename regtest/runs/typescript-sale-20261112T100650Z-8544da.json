@@ -1,0 +1,483 @@
+{
+ "meta": {
+  "label": "regtest",
+  "scope": "real Spaces-stack sale and attended cancellation refund; JSON buyer, no buyer client or host-loss gate",
+  "comparison_source": "fixed_spec",
+  "core": "Bitcoin Core daemon version v31.2.0 bitcoind",
+  "source_files": {
+   "controller/__init__.py": "903ce9cbb60880e76ffbf88beb8052a5c48df89c66faba14aeb48a3034e5db46",
+   "controller/certificates.py": "65c69e165c3cba73e736044ebce313deab41774ee438bca3ee13aa52fc7f4b9b",
+   "controller/commitments.py": "e75fb09ec80446dab05a109e8cd025db796ab54455878855b675d55c3c1f1e1e",
+   "controller/core.py": "f2cc0447092a495cc0364e2dbcb0993d545dca06d8449d2833f3ed8b4564d4c5",
+   "controller/errors.py": "7729d4d1f2584b93622e1108fa1bf3c02a27b32734f29d57a8314c7e769fab7d",
+   "controller/host.py": "cca62d082d682c64c434398640143ce1d3e0656e2419f93532c33896ee7f3227",
+   "controller/issuance.py": "735614e553d1e02d61b8a86178c3de7b7df0c2ea0abed5a2f21b529cb5001d54",
+   "controller/journal.py": "5c2321710fb74aaf7c04b11ce142bb856cdcea337f7f2bb859719ba8091bed43",
+   "controller/locking.py": "b848b13ba275360884cbf09908ae9bcbb46a1e8e12d8870dad351dcec13525eb",
+   "controller/publication.py": "28265953b8a525bb9ee0384d9076bfddbcdac4d1c513fa7dfa62ef5f94985b25",
+   "controller/publication_bound.py": "2c55b2ad4f62e41a1f2f2da11c4f7704ed7b3f78cb730f36020cc93bbb3ae09b",
+   "controller/rebuild.py": "3306452cd0e71b6a3ad3dc2a569317e2b5aabd391dd15a0f214784a5cb5d5ec4",
+   "controller/rpc.py": "59fd568876cc68bc9468619e89d95c6abeed488231572fbe17ff6f7ac374b21e",
+   "controller/supersessions.py": "6c02b0b1fa277b83556c470e69faffeaac91225c0e8a3b40598748c4a507c170",
+   "regtest/harness/report.py": "f6aed64c97f38b49a78a2b207c2508ba5701c3d30ede5ead24b3ee91942da605",
+   "regtest/harness/typescript_refund.py": "b776c8357ba431c0fe055ab04c3082702104561a61acb730eaceccca19621f2d",
+   "regtest/harness/typescript_sale.py": "0ae91a3be8eb04c546db09cf47cae319fd0843d18947203d58cd81bba67d4075",
+   "runner/__init__.py": "10644b8d62c0009bfc3e6987260f24a2596d2bc8f58aa3a054ef7e0f839105e5",
+   "runner/__main__.py": "13a1a5b340cdcfc1902b62be90e508c7c71886000d5bf087e7854aadf09fb35e",
+   "runner/certificates.py": "cb1e97b154bd793d272682d2705bfee135f5c913362da379b460e201b422675d",
+   "runner/cli.py": "18bd5889be07d9eaa89b4c8c5ea5a1ed406ce62fe85a14220cc827e1bf15d469",
+   "runner/commitments.py": "4a48c85406ddd3caff956a557ba0845cde31dd07fdb2536ba28a71f42203624d",
+   "runner/deliveries.py": "9e72361f9bd9142f4bf5dcf306c97dbd01c7e43099aff13aa7ed5d271f3d7fba",
+   "runner/refunds.py": "9bc09b78fd83885ae8189f5c3017f6edb9e7f0d9b3edfa8a5a9f47e1a1477ffc",
+   "runner/store.py": "f6b163ff2a70ffccca8c26a9fcc55eca252e705dee412a3313cba73dddce30a4",
+   "runner/supersessions.py": "779d8012ee998f066fbc3f46927e404551f8bbe96c0b3a58841db65eb9b8dde1",
+   "ts/src/admission.ts": "65d274cb2ee64641fc458f29a0502c2ce44cac78c479bef459f2d18d86d9c7a8",
+   "ts/src/application/assessments.ts": "09b370f90a1a01df03398faf05bd9a879fe129f31aa2c383e3b2ba68604b55e0",
+   "ts/src/application/authenticated-http.ts": "205663367370e64521a8aad08d442ee1b9a5c3afa50837bf32660dd05b5996e1",
+   "ts/src/application/bound-entries.ts": "77769efa1acf62232eca4b163d0e871d0e95fea8460bb4a5c2101ff0b100cef9",
+   "ts/src/application/bound-records.ts": "e2e710e249db912ea5fd98554049b25406759a0371d120c4d04fb611009b35ab",
+   "ts/src/application/catalog-http.ts": "f6a5885bb410726878c8eae19fa6858e1090b6e1c40d3a4870387d9cffbf767a",
+   "ts/src/application/certificate-cache.ts": "cc420b4301f03a4a570d1f375359e58b56a32dc10909943456044bab0daf0a52",
+   "ts/src/application/certificate-http.ts": "d5ff3084d0a67647524d023123c7fcb478a06eb687c83a12542d0e3cfd028bd3",
+   "ts/src/application/certificate-records.ts": "12e89ab14770fc2333ec13d78733fa7332aa5a80a1410c567c070ccd54f1cc43",
+   "ts/src/application/certificates.ts": "3d452442f380e0b60fb9172c752593d8a9cff0afc93252244fe2031426ca0e0e",
+   "ts/src/application/commitment-records.ts": "1650655adfafb57a05c1014e68a636d76ccae77a2aad4e44b0fef5c9cec2f00e",
+   "ts/src/application/commitments.ts": "34e30c96331ffec8013ee35e68582ee64fe6a59c631f7fddf30ea7aa1db46356",
+   "ts/src/application/deliveries.ts": "51b0ffa3edaffe866bd1911c82280c350f38925763e672e914ebc03da1e3a6b1",
+   "ts/src/application/delivery-http.ts": "05edcbcd2d2deb6a59c767af4731469c4b57699d495f8eadea73c18c060c38f8",
+   "ts/src/application/delivery-records.ts": "ff9a2b8e7770526a1b21df3961648403c1743e886d9cf98121764ac65afb6af7",
+   "ts/src/application/entry.ts": "26807d55be954a6cfe9b92effe804e177dd2ad2e353a4df4b590b81a4ba29ffb",
+   "ts/src/application/http.ts": "c5f04aaba4706dc0b1dd1e710dc9e7648c10f978b1c2e2f955ff68adc5c1bd9d",
+   "ts/src/application/monitor.ts": "5aba74aeadcc8c692e840ebd98a293eedb39476427d750e1b85895e3e70869d8",
+   "ts/src/application/operator-http.ts": "03347dc459f341516ff7a56990337a0879442bf80978eec89819f2d85985445d",
+   "ts/src/application/pending-http.ts": "8cd0b89fbf629272935bfff87fbfdb91701dd2cfe8caa63b02338387e475378c",
+   "ts/src/application/records.ts": "78d545f10190cd4cc19cf0bf426a20525d6aa7ff8b64a1302dd040b5544336a3",
+   "ts/src/application/refund-http.ts": "eceb07730de094c4cff3139be1e90fbe30f0b9f220a1fbacdcc61f0d856daeb9",
+   "ts/src/application/refund-receipt.ts": "c9631a41dc072be68e099d73013f865b4eb5c712d6dabe2423026f9df525aafb",
+   "ts/src/application/registry.ts": "91b29f04427bcc30ba24530b12f6b3bf6dc1b6b2478df1484429068a7039f147",
+   "ts/src/application/sales.ts": "10ef86822e4f7fec491e7435b49f244878feb34057b334528bdd69507999a2c5",
+   "ts/src/application/store.ts": "5c48587a3ceadce958eb1f0842116cdf5160a39f5f9ad64fa3b5d1592d26ba7f",
+   "ts/src/application/supersession-http.ts": "006313521de7bd5cbb4353e06d71e9656d00f2ee903f5b0d0636c5b95a0d72c1",
+   "ts/src/application/supersession-records.ts": "76348f1cf6f2fd88b347d5686e9e5ff541c028279764988d9dd4eec352253077",
+   "ts/src/application/supersessions.ts": "e98512760d3971e2ce884f933d284c64e5202064884829663da7400ae36627af",
+   "ts/src/bitcoin/core.ts": "9aec8bd7f33982b2df7de63fa463e0a83ee27ce459a15ef062e9af9828868119",
+   "ts/src/bitcoin/excess-fee.ts": "d4a935465e22a97568e004e95e27f3b7565cb7f7b79886bc7277c3faf23dfc8e",
+   "ts/src/bitcoin/exclusivity.ts": "e92827192a6f71286999b9a3338001458c8be22e4946413afc39d46ba589ca89",
+   "ts/src/bitcoin/rebuild-funding.ts": "3d25a61e14ce2346c1fcdb7d08ae81e387f4ba13381db707f527debf6e556715",
+   "ts/src/bitcoin/refund-estimate.ts": "0cfe2a66516d8c804a2169670cf58138801ef3bd3ad429472e6220e2378080ac",
+   "ts/src/bitcoin/refund-sender.ts": "c43c024487aea742813e8f74b48672ad1a5a8b1c00ce878675214f42e939db60",
+   "ts/src/bitcoin/refunds.ts": "9fb2512bba7c820ebcab8c11ab7745fe63979bde2cbeed1c8f07e381574e0646",
+   "ts/src/bitcoin/rpc.ts": "b9ad3f81e2e8f138593750e5f921738eb8899448f3d438338676942037a1ee0d",
+   "ts/src/bitcoin/supersession.ts": "0bd4fe035fb9461a8c71c47b478830b55b0ddea03cab30889fda45af8dcf6575",
+   "ts/src/bitcoin/validation.ts": "542694e560832fac7719621a8d690f9de1609ad82e635d586a84fb12fd623ae0",
+   "ts/src/funds.ts": "c703d5d3d9f6d2cdf34de813f7c546f4550e9fa81c8465da1f41d7f046ea01ae",
+   "ts/src/incident.ts": "8df727627d7f043968d4dae0af18d6d9b9af3b75cb60061dacb8b10d63aeb051",
+   "ts/src/main.ts": "25afecbca606ec82080e0e21c3dc686697bc5228f12ae4baf3e6fdf5d9628e64",
+   "ts/src/order.ts": "fdddb78c4046122c0eec587ced3c92534974e109d9d2c45f439759ae2af85f70",
+   "ts/src/recipient.ts": "0c6b0084e69f11d2c087beb2d88640c66ff17a75fe7bfefda91252b821193919",
+   "ts/src/refunds/attempts.ts": "d28319774819485136f16b9479f49adf2eee116b2281b3ab1e32d1df85398f44",
+   "ts/src/refunds/book.ts": "9023af566c4978d910bd776cb3a9038dc2002f4eeb17a82a751c6f8ff8556d2a",
+   "ts/src/refunds/families.ts": "93e8179d988cad4285257fbda538e3e5ca367735a86f0a78e0c353fe80a62d0c",
+   "ts/src/refunds/observations.ts": "995ba9cb1b389db1ec5f182b63f5bc4e65c0f85bdbaeca3eebb512c0f20d7394",
+   "ts/src/refunds/policy.ts": "06ae15356688f8eef52dc6a32153a3f2632080b75486346231aad2e7e90319bf",
+   "ts/src/refunds/records.ts": "1e7cc14102da6bec499cf2da8a45e1a49abd42cc360236066da89bb5261130cd",
+   "ts/src/refunds/types.ts": "ebeef8313e0b5cdabd431902543f9f4c0ac66dd849262eb0b2a61aca5774478a",
+   "ts/src/runtime/config.ts": "d6a0de204d208983cc436212cdc30cc6876708a0d92de5c4f00de4719bd525d8",
+   "ts/src/runtime/credentials.ts": "0f14ac2cc563975f485e4ac1f618d591289f6a79d500bf9ade74daa95f62996e",
+   "ts/src/runtime/server.ts": "9e8325adce804ce7028bb56cbf9c64a93b2deebac2bffe4e06cd0403ad9ff301",
+   "ts/src/storage/codec.ts": "9886388ad56cebc8f0c9cd1e807c5d2cbb9be1c082897550748b7a0b8f61ea45",
+   "ts/src/storage/journal.ts": "5293a7b6b0164d67097dbf68698e943469df8bbfa8cdfdd07ecbf5e08e787056",
+   "ts/src/storage/ownership.ts": "357873584f3e283a5aa5c51225f437088916f9146ab47108097f6e72349e2799",
+   "ts/src/storage/store.ts": "a20382a5a39a712cafc32541d3f0d2b38051ee40a313c8b1440d42e7eb9ffcb2",
+   "ts/src/view.ts": "204ccb816bdfd4b023603dd9a15ac452ef5edbfc05f8bb92ce36c1ec6257a769"
+  }
+ },
+ "verdict": "pass",
+ "steps": [
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "new store starts paused with live Core network",
+   "regtest": {
+    "paused": true,
+    "network": "regtest"
+   },
+   "expected": {
+    "paused": true,
+    "network": "regtest"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478028.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "journaled listing",
+   "regtest": {
+    "handle": "one@test10000",
+    "price_sats": 10000,
+    "acknowledged": true
+   },
+   "expected": {
+    "handle": "one@test10000",
+    "price_sats": 10000,
+    "acknowledged": true
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478028.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "explicit admission enable",
+   "regtest": {
+    "paused": false,
+    "acknowledged": true
+   },
+   "expected": {
+    "paused": false,
+    "acknowledged": true
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478028.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "buyer quote is acknowledged",
+   "regtest": {
+    "status": "quoted",
+    "price": 10000,
+    "acknowledged": true
+   },
+   "expected": {
+    "status": "quoted",
+    "price": 10000,
+    "acknowledged": true
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478028.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "background observation converts payment after crash/restart",
+   "regtest": "converted",
+   "expected": "converted",
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478030.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "real subs proof and coordinated snapshot",
+   "regtest": {
+    "state": "checkpointed",
+    "members": [
+     "o1"
+    ]
+   },
+   "expected": {
+    "state": "checkpointed",
+    "members": [
+     "o1"
+    ]
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478031.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "missing send confirmation retains converted sale",
+   "regtest": "converted",
+   "expected": "converted",
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478031.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "confirmed original commitment send",
+   "regtest": "broadcast",
+   "expected": "broadcast",
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478032.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "real libveritas certificate accepted by TypeScript",
+   "regtest": {
+    "verified": true,
+    "delivered": true
+   },
+   "expected": {
+    "verified": true,
+    "delivered": true
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478041.6
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "download independently verifies exact sovereign recipient",
+   "regtest": {
+    "exit": 0,
+    "verified": true,
+    "script": true,
+    "sovereignty": "sovereign"
+   },
+   "expected": {
+    "exit": 0,
+    "verified": true,
+    "script": true,
+    "sovereignty": "sovereign"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478042.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "publication seed is the isolated local relay",
+   "regtest": "http://127.0.0.1:18950",
+   "expected": "http://127.0.0.1:18950",
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478042.4
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "real relay query verifies delivery",
+   "regtest": {
+    "confirmed": true,
+    "outstanding": []
+   },
+   "expected": {
+    "confirmed": true,
+    "outstanding": []
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478043.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript process, shipped runner and real Spaces/relay sale",
+   "case": null,
+   "step": "fulfilled sale and first receipt survive process crash",
+   "regtest": {
+    "status": "fulfilled",
+    "same_receipt": true,
+    "same_certificate": true
+   },
+   "expected": {
+    "status": "fulfilled",
+    "same_receipt": true,
+    "same_certificate": true
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478044.0
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "buyer cancellation before issuance is journaled",
+   "regtest": "final",
+   "expected": "final",
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478044.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "refund refuses before six confirmations",
+   "regtest": [],
+   "expected": [],
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478045.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "attended preparation does not send",
+   "regtest": "built",
+   "expected": "built",
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478047.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "repeated preparation returns the same signed group",
+   "regtest": {
+    "gid": "g-9eaccbb8-72fd-4cb2-bb9f-6afc544a6dac",
+    "txid": "6a54a646556b1536ccd818510f6471994bf2f5c4ac0c595851082bf44e9bdfc4"
+   },
+   "expected": {
+    "gid": "g-9eaccbb8-72fd-4cb2-bb9f-6afc544a6dac",
+    "txid": "6a54a646556b1536ccd818510f6471994bf2f5c4ac0c595851082bf44e9bdfc4"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478047.8
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "refund-status recovers the prepared receipt",
+   "regtest": "6a54a646556b1536ccd818510f6471994bf2f5c4ac0c595851082bf44e9bdfc4",
+   "expected": "6a54a646556b1536ccd818510f6471994bf2f5c4ac0c595851082bf44e9bdfc4",
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478048.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "prepared refund remains unsent after process crash",
+   "regtest": false,
+   "expected": false,
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478048.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "missing group or transaction confirmation sends nothing",
+   "regtest": false,
+   "expected": false,
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478049.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "explicit reviewed transaction reaches the mempool",
+   "regtest": {
+    "status": "mempool",
+    "txid": "6a54a646556b1536ccd818510f6471994bf2f5c4ac0c595851082bf44e9bdfc4"
+   },
+   "expected": {
+    "status": "mempool",
+    "txid": "6a54a646556b1536ccd818510f6471994bf2f5c4ac0c595851082bf44e9bdfc4"
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478049.7
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "retry after process crash observes the same refund",
+   "regtest": {
+    "txid": "6a54a646556b1536ccd818510f6471994bf2f5c4ac0c595851082bf44e9bdfc4",
+    "intents": 1
+   },
+   "expected": {
+    "txid": "6a54a646556b1536ccd818510f6471994bf2f5c4ac0c595851082bf44e9bdfc4",
+    "intents": 1
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478051.2
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "settled refund is received by the buyer",
+   "regtest": {
+    "status": "settled",
+    "refunded": 10000,
+    "received": 9778,
+    "reserved": 0
+   },
+   "expected": {
+    "status": "settled",
+    "refunded": 10000,
+    "received": 9778,
+    "reserved": 0
+   },
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478052.5
+  },
+  {
+   "label": "regtest",
+   "scenario": "TypeScript buyer cancellation and attended runner refund",
+   "case": null,
+   "step": "settled history survives process crash",
+   "regtest": "settled",
+   "expected": "settled",
+   "match": true,
+   "note": "",
+   "kind": "required",
+   "t": 1794478053.9
+  }
+ ],
+ "findings": []
+}

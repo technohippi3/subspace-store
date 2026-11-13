@@ -276,6 +276,26 @@ document carrying base64 certificates, is a candidate format for the import
 in M8, not the verifier's input. Which formats Nacho accepts is still open
 (client question 2).
 
+Current format note, 2026-11-12. The store's supported native export profiles
+are `certificate.spacecert` (SCRT CertificateChain v1) and
+`certificate.spacemsg` (libveritas 0.4.4 Message); the original
+`certificate.message` download remains. The export JSON manifest is metadata,
+not a mobile import certificate. The historical public Nacho decoder at
+`32a1d438438de959ab7ce2b83d789d48057d373d` expects a different JSON schema and
+is incompatible with these native artifacts. Neither that schema nor the
+base64 JSON from `/certs/:handle` has a reviewed conversion for the
+workspace_owner's installed client. Inspection on 2026-11-13 identifies
+Android Nacho 0.1.1, versionCode 18. Its waiting-request file picker requests
+JSON, and installed-bundle inspection traces both manual import paths through
+the legacy JSON parser. Bundled native SCRT support is not connected to that
+screen's import and persistence path. This is a compatibility blocker, not
+an accepted certificate. [NACHO-TEST.md](NACHO-TEST.md) records the inspection
+limits, unavailable client fix and potential existing-build relay discovery
+route, and describes the device handoff. Relay discovery remains unproved on
+the phone and cannot substitute for the separate file/QR acceptance;
+all gate steps, transaction-plan requirements and authorizations below remain
+in force.
+
 M6 (operator). Publish both handles with one explicit call to
 `/spaces/:space/publish`, by label, and read back each handle's
 `publish_status`; both must be `final`, not `temp`. Then look both up on a

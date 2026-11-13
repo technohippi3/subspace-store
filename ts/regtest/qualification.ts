@@ -1,0 +1,73 @@
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync, readdirSync, lstatSync } from "node:fs";
+import { join } from "node:path";
+
+export function productionSources(repository:string, directory="ts/src"):string[] {
+  const files:string[]=[];
+  let parent=repository;
+  for(const part of directory.split("/")) {parent=join(parent,part);if(lstatSync(parent).isSymbolicLink())throw Error("production source symlink refused");}
+  for(const entry of readdirSync(join(repository,directory),{withFileTypes:true})) {
+    const file=directory+"/"+entry.name;
+    // Do not follow a symlink into an unrelated tree or silently hash it.
+    if(entry.isSymbolicLink()) throw Error("production source symlink refused");
+    if(entry.isDirectory()) files.push(...productionSources(repository,file));
+    else if(entry.isFile() && /\.(?:ts|mjs)$/.test(entry.name)) files.push(file);
+  }
+  return files.sort();
+}
+export function qualification(repository: string, root: string, name: string) {
+  const selected = ["ts/src/runtime/installation-fence.ts", "controller/installation_fence.py", "ts/src/bitcoin/identity.ts", "ts/src/bitcoin/observe-identity.ts", "ts/src/bitcoin/rpc.ts", "ts/src/bitcoin/core.ts", "ts/src/bitcoin/validation.ts", "ts/src/bitcoin/refunds.ts",
+    "ts/src/refunds/policy.ts", "ts/src/refunds/records.ts", "ts/src/refunds/types.ts", "ts/src/refunds/book.ts",
+    "ts/src/application/store.ts", "ts/src/application/sales.ts", "ts/src/application/records.ts", "ts/regtest/core.test.ts", "ts/test/production/application-fixture.ts",
+    "ts/src/bitcoin/refund-sender.ts", "ts/src/refunds/observations.ts", "ts/src/storage/journal.ts",
+    "ts/src/refunds/families.ts", "ts/src/refunds/attempts.ts", "ts/src/bitcoin/exclusivity.ts", "ts/src/bitcoin/rebuild-funding.ts", "ts/src/application/monitor.ts",
+    "ts/src/bitcoin/refund-estimate.ts", "ts/src/bitcoin/excess-fee.ts", "ts/src/application/assessments.ts",
+    "ts/src/application/http.ts", "ts/src/application/operator-http.ts", "ts/src/application/authenticated-http.ts",
+    "ts/src/application/pending-http.ts", "ts/src/application/entry.ts", "ts/src/application/registry.ts",
+    "ts/src/application/bound-entries.ts", "ts/src/application/bound-records.ts", "ts/regtest/entry-lifecycle.ts",
+    "ts/src/application/commitments.ts", "ts/src/application/commitment-records.ts", "ts/regtest/commitments.ts",
+    "ts/src/application/certificate-cache.ts", "ts/src/application/certificate-records.ts", "ts/src/application/certificates.ts",
+    "ts/src/application/certificate-http.ts", "ts/regtest/certificates.ts", "ts/regtest/qualification.ts",
+    "ts/src/application/deliveries.ts", "ts/src/application/delivery-records.ts", "ts/src/application/delivery-http.ts", "ts/regtest/fulfillment.ts",
+    "ts/src/main.ts", "ts/src/runtime/config.ts", "ts/src/runtime/credentials.ts", "ts/src/runtime/server.ts",
+    "ts/src/application/catalog-http.ts", "ts/regtest/runtime.ts",
+    "ts/src/application/refund-http.ts", "ts/src/application/refund-receipt.ts",
+    "ts/src/application/supersessions.ts", "ts/src/application/supersession-records.ts", "ts/src/application/supersession-http.ts",
+    "ts/src/bitcoin/supersession.ts", "ts/regtest/supersessions.ts",
+    "ts/src/storage/store.ts", "ts/src/application/recovery.ts", "ts/src/application/persistence.ts",
+    "ts/src/runtime/recovery.ts", "ts/regtest/recovery.ts", "ts/src/application/reconciliation.ts",
+    "ts/src/application/reconciliation-records.ts", "ts/src/runtime/reconciliation.ts"];
+  const files=[...new Set([...selected,...productionSources(repository)])].sort();
+  writeFileSync(join(root, "qualification.json"), JSON.stringify({ network: "regtest", core: "31.2.0", run: name,
+    files: Object.fromEntries(files.map(path => [path, createHash("sha256").update(readFileSync(join(repository, path))).digest("hex")])),
+    checks: ["installation-genesis-and-public-descriptor-identity", "identity-stable-across-keypool-advance", "identity-mismatch-blocks-address-allocation", "payment", "conversion", "reorg", "spent-receipt", "descriptor-recovery-without-address-book",
+      "replacement", "mempool-entry-time-preserved", "mempool-entry-height-reconstructed", "missing-mempool-without-rebroadcast",
+      "refund-preparation-with-capped-buyer-fee", "refund-from-proven-order-change", "application-refund-send",
+      "lost-refund-reply-and-store-restart", "refund-settlement-6-5-6", "deep-refund-reorg-and-remining",
+      "refund-fee-bump-retains-inputs-and-buyer-output", "older-family-member-can-win-after-reorg", "rebuild-depends-on-settled-conflict",
+      "conflict-ancestor-loss-invalidates-rebuild", "cancellation-deadline-after-earlier-excess-refund",
+      "unsigned-fee-assessment-preserves-wallet-state", "unsigned-size-bounds-real-keypath-spend", "unsigned-fee-assessment-of-spent-receipt",
+      "excess-deadline-before-preparation-and-distinct-cancellation", "excess-deadline-with-fee-coins-locked",
+      "authenticated-operator-inspection-with-core", "cancelled-partial-invoice-stays-refund-only",
+      "fresh-checkout-separates-late-old-payments", "registry-entry-acknowledgment-with-core",
+      "registry-frozen-pending-acknowledgment", "registry-issuing-recheck-after-reorg", "bound-entry-idempotent-retry",
+      "bound-entry-root-mismatch-refused", "bound-entry-restart-retains-binding", "bound-entry-closure-releases-once",
+      "bound-entry-late-create-stays-closed", "bound-entry-arm-granted-once", "bound-entry-armed-close-refused",
+      "bound-entry-lifecycle-restart", "commitment-depth-150-149-150", "commitment-anchor-gate-separate",
+      "commitment-stale-tip-and-revision-refused", "commitment-report-restart", "certificate-cache-readiness-with-core",
+      "certificate-ancestor-survives-extension", "certificate-reorg-withholds-cache",
+      "certificate-new-verification-after-reorg", "certificate-restart-cache-continuity", "fulfilled-stickiness-core-reorg",
+      "fulfilled-reverification-retains-first-receipt", "recovery-resolution-keeps-accounting", "fulfillment-restart-history",
+      "no-certificate-on-fulfilled-checkpoint-loss", "standalone-runtime-live-network-status", "standalone-runtime-background-conversion",
+      "standalone-runtime-real-core-restart", "standalone-runtime-explicit-journaled-admission",
+      "attended-refund-six-block-guard", "attended-refund-preparation-retry", "attended-refund-no-automatic-send-on-restart",
+      "attended-refund-explicit-transaction-send", "attended-refund-repeated-send-is-observation",
+      "attended-refund-capped-fee-and-merchant-remainder", "attended-refund-real-buyer-receipt-and-settled-restart",
+      "attended-refund-late-cancelled-invoice-credit", "attended-refund-merchant-cause-full-principal",
+      "supersession-real-signed-delegate-conflict", "supersession-six-deep-core-proof", "supersession-restart-preserves-release",
+      "supersession-checkpoint-loss-relocks-paid-order", "supersession-reversal-preserves-cancellation",
+      "supersession-old-retry-never-reactivates", "supersession-restart-preserves-revocation",
+      "application-journal-only-restore-command", "application-restore-unknown-unobserved-payment",
+      "application-recovery-discovers-downtime-payment", "application-recovery-rereads-settled-refunds",
+      "application-recovery-retains-controller-quarantine", "application-recovery-wallet-and-mempool-unchanged"] }, null, 2), { mode: 0o600 });
+}

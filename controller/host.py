@@ -8,7 +8,8 @@ is `deploy/runner.example.json`; `docs/SERVICE.md` describes it.
 
     {
       "network": "regtest",
-      "store": {"url", "operator_token_file", "db", "journal_dir"},
+      "store": {"url", "operator_token_file", "db", "journal_dir",
+                "implementation": "python" | "typescript" (optional)},
       "controller": {"dir", "journal_dir", "journal_name", "operator_wallet",
                      "snapshot_dir" (optional)},
       "bitcoind": {"url", "cookie_file"},
@@ -32,14 +33,20 @@ U1(b) route (`controller.core.Capabilities`). Nothing probes for it: the
 operator states it, and the controller refuses the attach when it is false.
 
 Which networks may run is the runner's decision, not this module's.
+The implementation defaults to the Python owner-only baseline. The
+TypeScript pilot requires an explicit selection; no server is probed to
+guess the protocol, and an error never chooses another one.
 """
 
+import os
 import subprocess
 import urllib.parse
 from pathlib import Path
 
+from .installation_fence import configured as installation_fence, attach as attach_fence
 from .core import Capabilities, Clients, Controller
 from .journal import Journal
+from .recovery_backend import configured as recovery_backend, reference as backend_reference, RemoteJournal
 from .publication import Publisher
 from .rpc import Http, JsonRpc
 
@@ -145,7 +152,16 @@ def check(config):
             continue
         if not _value_ok(kind, section[path[-1]]):
             raise ConfigError(f"{'.'.join(path)} must be {WHAT[kind]}")
+    if "recovery_backend" in config:
+        try:
+            backend_reference(config["recovery_backend"])
+        except ValueError as e:
+            raise ConfigError(str(e)) from e
+        if config.get("version") != 2 or config["store"].get("implementation") != "typescript" or not Path(config["controller"].get("snapshot_dir", "")).is_absolute():
+            raise ConfigError("recovery_backend requires version 2, the TypeScript store and an explicit absolute controller.snapshot_dir")
     capabilities(config)
+    if config["store"].get("implementation", "python") not in ("python", "typescript"):
+        raise ConfigError("store.implementation must be python or typescript")
 
 
 def clients(config):
@@ -169,19 +185,35 @@ def capabilities(config):
 def build(config, registry, cwd=None):
     """The controller and its publisher, for the store client `registry`."""
     check(config)
-    cc = _need(config, "controller")
-    host = Path(_need(config, "controller", "dir"))
-    host.mkdir(parents=True, exist_ok=True)
-    journal = Journal(_need(config, "controller", "journal_dir"), cc.get("journal_name", "runner"))
-    s = _need(config, "subs")
-    subs = CommandSubs(_need(config, "subs", "data_dir"), _need(config, "subs", "stop_command"),
-                       _need(config, "subs", "start_command"), s.get("command_timeout", 300),
-                       cwd=cwd)
-    controller = Controller(host / "controller.db", journal, registry, clients(config), subs,
-                            Path(_need(config, "verifier")), host / "certs",
-                            _need(config, "controller", "operator_wallet"), capabilities(config),
-                            snapshot_dir=cc.get("snapshot_dir"),
-                            ready_timeout=s.get("ready_timeout", 120))
-    publisher = Publisher(controller, registry, journal, host / "publication.db",
-                          controller.subs, _need(config, "relay", "url"))
-    return controller, publisher
+    # Only the fixed read-only recovery view permits the installed recovery
+    # marker. A caller-supplied flag or similarly named store is insufficient.
+    from runner.recovery_bridge import RecoveryStore
+    fence = installation_fence(config, recovery=type(registry) is RecoveryStore)
+    try:
+        cc = _need(config, "controller")
+        host = Path(_need(config, "controller", "dir"))
+        host.mkdir(parents=True, exist_ok=True)
+        backend = recovery_backend(config)
+        journal = RemoteJournal(backend) if backend else Journal(_need(config, "controller", "journal_dir"), cc.get("journal_name", "runner"))
+        s = _need(config, "subs")
+        subs = CommandSubs(_need(config, "subs", "data_dir"), _need(config, "subs", "stop_command"),
+                           _need(config, "subs", "start_command"), s.get("command_timeout", 300),
+                           cwd=cwd)
+        controller = Controller(host / "controller.db", journal, registry, clients(config), subs,
+                                Path(_need(config, "verifier")), host / "certs",
+                                _need(config, "controller", "operator_wallet"), capabilities(config),
+                                snapshot_dir=cc.get("snapshot_dir"),
+                                ready_timeout=s.get("ready_timeout", 120))
+        controller.recovery_backend = backend
+        attach_fence(controller, fence)
+        fence = None
+        try:
+            publisher = Publisher(controller, registry, journal, host / "publication.db",
+                                  controller.subs, _need(config, "relay", "url"))
+        except BaseException:
+            controller.close()
+            raise
+        return controller, publisher
+    finally:
+        if fence is not None:
+            os.close(fence)

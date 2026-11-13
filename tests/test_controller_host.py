@@ -94,6 +94,9 @@ class FakeSubs:
 
         class Client:
             def get(self, path, **kw):
+                if path.endswith("/pipeline"):
+                    from tests.native_facts import local_pipeline
+                    return local_pipeline("a" * 64)
                 if path == "/status":
                     if not subs.running:
                         raise urllib.error.URLError(ConnectionRefusedError(111, "refused"))
@@ -144,8 +147,9 @@ class Snapshot(unittest.TestCase):
                             FakeRegistry(self.tmp), Clients(fake, fake, None, None), self.subs,
                             self.tmp / "verifier", self.tmp / "certs", "made-up-wallet",
                             ready_timeout=1)
-        self.c.db.execute("insert into batches(bid, space, members, digest, state) "
-                          "values ('b1', '@space', '[]', 'made-up-digest', 'proved')")
+        self.addCleanup(self.c.close)
+        self.c.db.execute("insert into batches(bid, space, members, digest, state, root) "
+                          "values ('b1', '@space', '[]', 'made-up-digest', 'proved', ?)", ("a" * 64,))
 
     def test_A7_a_snapshot_never_copies_a_running_subs_nor_resumes_before_it_answers(self):
         # After the stop, an answer of any kind, even an HTTP error, shows
@@ -190,6 +194,7 @@ class Capability(unittest.TestCase):
                                    Journal(tmp / "offhost", f"runner-{caps.attach_txid}"),
                                    FakeRegistry(tmp), Clients(subs.client, subs.client, None, None),
                                    subs, tmp / "verifier", tmp / "certs", "made-up-wallet", caps)
+                    self.addCleanup(c.close)
                     c.db.execute("insert into batches(bid, space, members, digest, state, txid) "
                                  "values ('b1', '@space', '[]', 'made-up-digest', 'final', "
                                  "'made-up-txid')")
@@ -296,6 +301,7 @@ class Networks(unittest.TestCase):
             path = Path(d) / "runner.json"
             path.write_text(json.dumps({"network": "regtest"}))
             built = stand.runner()
+            built.close = lambda: None  # this fixture owns no database
             original = cli.build
             cli.build = lambda config, ask=None: built
             try:

@@ -160,7 +160,10 @@ class World:
                     root = world.handles.get(parts[2], {}).get(parts[4], "absent")
                     if root == "absent":
                         raise HttpError("GET", path, 404, "not found")
-                    return {"name": parts[4], "commitment_root": root}
+                    return {"name": parts[4], "commitment_root": root,
+                            "commitment_idx": 0 if root else None,
+                            "status": "committed" if root else "staged", "parked": False,
+                            "publish_status": None, "script_pubkey": "5120" + "ef" * 32}
                 raise AssertionError(path)
 
             def post(self, path, body=None, **kw):
@@ -251,10 +254,12 @@ class Recovery(unittest.TestCase):
 
     def controller(self, caps=Capabilities(attach_txid=True), name="controller.db"):
         client = self.w.subs_client
-        return Controller(self.tmp / name, self.journal, self.w.store,
-                          Clients(client, client, lambda: self.w.spaced, lambda: self.w.btc),
-                          self.w, self.tmp / "verifier", self.tmp / "certs", "made-up-wallet",
-                          caps, snapshot_dir=self.snapshots, ready_timeout=1)
+        c = Controller(self.tmp / name, self.journal, self.w.store,
+                       Clients(client, client, lambda: self.w.spaced, lambda: self.w.btc),
+                       self.w, self.tmp / "verifier", self.tmp / "certs", "made-up-wallet",
+                       caps, snapshot_dir=self.snapshots, ready_timeout=1)
+        self.addCleanup(c.close)
+        return c
 
     def runner(self, c, ask=None):
         r = Runner(self.w.store, c, ask=ask)
@@ -363,6 +368,7 @@ class Recovery(unittest.TestCase):
             self.assertNotIn("start", self.w.log)
             # Nothing replayed: a restore required stays required.
             self.assertEqual(c.recovery_state(), state)
+            c.close()
             return str(e.exception)
 
         def holds_batches(c):
@@ -543,6 +549,8 @@ class Recovery(unittest.TestCase):
     def run_main(self, c, *argv):
         """The runner's command line over this controller and store."""
         r = self.runner(c)
+        # This CLI fixture borrows a controller that the test still owns.
+        r.close = lambda: None
         path = self.tmp / "runner.json"
         path.write_text(json.dumps({"network": "regtest"}))
         original = cli.build

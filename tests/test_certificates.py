@@ -103,6 +103,7 @@ class Certify(unittest.TestCase):
                             self.w, Clients(self.w.subs, self.w.subs, lambda: self.w.spaced,
                                             lambda: self.w.btc),
                             None, verifier, self.tmp / "certs", "made-up-wallet")
+        self.addCleanup(self.c.close)
         self.c.db.execute("insert into batches(bid, space, members, digest, state, root, "
                           "mined_height, txid) values ('b1', ?, '[\"o1\"]', 'made-up-digest', "
                           "'final', ?, ?, 'made-up-txid')", (SPACE, R1, H1))

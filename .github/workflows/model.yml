@@ -16,30 +16,68 @@ jobs:
         python: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Named cases and generated sequences (model only)
+      - name: Python model, service and controller tests
         run: python3 -m unittest discover -s tests -t .
-      - name: Every fixed-price MVP case has a model test
+      - name: Every fixed-price MVP case has development evidence
         run: python3 tools/case_coverage.py --check
 
   typescript:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: ts
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version-file: ts/.node-version
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install native package integration prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils genisoimage openssh-client gpgv ubuntu-cloudimage-keyring
+          docker info > /dev/null
+      - name: Install pinned native compiler
+        run: rustup toolchain install 1.94.1 --profile minimal
       - name: Install the compiler pinned in package-lock.json
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Fetch exact native crates and build the owned exporter offline
+        run: node ts/tools/build-native-export.ts --fetch
+        working-directory: .
       - name: Type check the port, tests included
         run: npm run check
-      - name: Order machine tests, and the Python ledger's vectors replayed
+      - name: TypeScript models, application and native package integration
         run: npm test
+
+  core-regtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ts/.node-version
+      - name: Fetch the checksum-pinned Bitcoin Core binary
+        run: regtest/fetch-bitcoin.sh
+      - name: Install pinned TypeScript dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: ts
+      - name: Qualify Core in an isolated loopback-only namespace
+        run: npm run test:core:ci
+        working-directory: ts
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: core-regtest-qualification
+          path: regtest/.run/**/qualification.json
+          include-hidden-files: true
+          if-no-files-found: error

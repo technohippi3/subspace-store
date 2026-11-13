@@ -26,14 +26,8 @@ checkout() { # repo dir rev
   echo "checked out $dir at $got"
 }
 
-# Bitcoin Core, verified against the pinned SHA-256.
-if [ ! -x "$BIN/bitcoind" ]; then
-  tarball="$CACHE/dl/$BITCOIN_TARBALL"
-  [ -f "$tarball" ] || curl -fsSL "$BITCOIN_URL" -o "$tarball"
-  echo "$BITCOIN_SHA256  $tarball" | sha256sum -c -
-  tar -xzf "$tarball" -C "$CACHE/dl"
-  cp "$CACHE/dl/bitcoin-$BITCOIN_VERSION/bin/bitcoind" "$CACHE/dl/bitcoin-$BITCOIN_VERSION/bin/bitcoin-cli" "$BIN/"
-fi
+# The same checksum-qualified fetch is used by the standalone TS Core tests.
+"$HERE/fetch-bitcoin.sh"
 
 # spaced and space-cli at the pinned tag.
 checkout "$SPACES_REPO" "$SRC/spaces" "$SPACES_COMMIT"

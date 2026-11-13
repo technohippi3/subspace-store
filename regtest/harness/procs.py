@@ -60,11 +60,26 @@ def subs_bin():
     return Path(os.environ.get("SUBSPACE_SUBS_BIN") or BIN / "subs")
 
 
+def bitcoind_bin():
+    """The pinned Bitcoin Core, or another build named by
+    SUBSPACE_BITCOIND_BIN, such as a maintained release being checked
+    before an upgrade of the pin. A run records which, and its version."""
+    import os
+    return Path(os.environ.get("SUBSPACE_BITCOIND_BIN") or BIN / "bitcoind")
+
+
+def bitcoind_version():
+    import subprocess
+    out = subprocess.run([str(bitcoind_bin()), "-version"], capture_output=True, text=True,
+                         timeout=30).stdout
+    return out.splitlines()[0] if out else None
+
+
 def subs_capabilities():
     """What the subs build this run uses can do beyond the pinned commit
     (`controller.core.Capabilities`). The U1(b) route is in the builds of
-    `build-u1b.sh` and `build-combined.sh` only."""
-    return {"attach_txid": subs_bin().name in ("subs-u1b", "subs-combined")}
+    `build-u1b.sh`, `build-combined.sh` and `build-private.sh`."""
+    return {"attach_txid": subs_bin().name in ("subs-u1b", "subs-combined", "subs-private")}
 
 
 class Stack:
@@ -206,7 +221,7 @@ class Stack:
         if self.running("bitcoind"):
             return
         self._spawn("bitcoind", [
-            str(BIN / "bitcoind"), f"-datadir={self.btc_dir}", "-regtest",
+            str(bitcoind_bin()), f"-datadir={self.btc_dir}", "-regtest",
             "-txindex=1", "-listen=0", "-dnsseed=0", "-fixedseeds=0",
             "-rpcbind=127.0.0.1", "-rpcallowip=127.0.0.1",
             f"-rpcport={PORTS['bitcoind']}", "-fallbackfee=0.0001",

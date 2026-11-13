@@ -1,6 +1,8 @@
 # Subspace store issuance controller design (draft 10, 2026-11-10)
 
-Status: draft design. Nothing is built. Payment, reservation, cancellation
+Status: reviewed design with a Python implementation and regtest evidence.
+Public-pilot acceptance and TypeScript store integration are incomplete.
+Payment, reservation, cancellation
 and refund rules are in `PAYMENT-SPEC.md`, including the depth arithmetic
 used here. This file covers how the controller drives `subs`, what it
 journals and snapshots, and how it is restored. Draft 2 replaces the assumed
@@ -39,6 +41,18 @@ takes the journal's copy (A22).
 
 ## Pinned upstream versions
 
+Runtime amendment, 2026-11-13: `CONTROLLER-PREPARATION.md` defines the
+bounded freeze/stage/local-commit implementation and active Python safety
+repairs. Pending set/clear, sync and parking have durable global ownership
+and one-request intent/completion barriers. Unknown requests require
+reconciliation instead of plausible-readback retries. Acknowledged
+`commit_local_intent` permits only one same-invocation local commit;
+preexisting intent and native-ahead state refuse automatic retry/adoption.
+Rootless first retirement validates the same native head/member facts and
+known-unsent evidence before creating a child. The prior payment rules and
+historical journals remain intact. Proving/checkpoint/runtime selection
+are not ported by this increment.
+
 - `subs` at `4dcc9237af3a807497d4b1532729842ee5dcdb68`;
 - `spaces` v0.5.0 (`spaced`, `space-cli`), released 2026-09-21. `subs` at
   that commit builds against the `spaces` crates 0.4.2, and git `16fb1f5`
@@ -47,7 +61,8 @@ takes the journal's copy (A22).
 - `libveritas` 0.4.4, the version `subs` locks and verifies with. The
   earlier pin, `61281f1`, is the v0.4.5 release merge, which `subs` doesn't
   build (R2);
-- Bitcoin Core 26.0, for the regtest harness;
+- Bitcoin Core 31.2, for the regtest harness and the store's node, since
+  2026-11-11; 26.0 before (`regtest/pins.env`, `regtest/REPORT.md`);
 - the RISC Zero toolchain that `subs` pins in its `Cargo.lock` and
   `rust-toolchain.toml`;
 - `yuki`, at a version still to be chosen.
@@ -267,7 +282,14 @@ The registry owns orders, payments, refunds and eligibility, in SQLite. Its
 `/pending` returns exactly the frozen batch's members, and nothing else.
 
 The controller is the only caller of `subs`' write endpoints and of the
-`spaced` operator wallet. It holds a single-writer lock in its database.
+`spaced` operator wallet. Before opening or migrating its database or
+reconciling interrupted sends, it takes an exclusive, nonblocking process
+lock beside that database. It holds the lock until the database closes,
+including every RPC wait. A second runner command, including `status`,
+refuses immediately with `controller busy` and changes nothing (A23).
+Startup reconciliation therefore runs only after the previous owner has
+closed or died. The operating system releases ownership on process death;
+the lock file stays in place and must not be deleted to force entry.
 
 That lock doesn't stop `subs` itself. `subs` still writes through its proving
 loop and through anything that reaches its UI or API, and `spaced` writes its
@@ -568,7 +590,8 @@ On a throwaway space, with U1 in place:
    `committed_local`, `checkpointed`, `issuing` with the broadcast answer
    withheld, and `broadcast`. Open one refund family in each refund funding
    method the launch uses: a broadcast hot-wallet refund, an exported PSBT,
-   or both. The method is undecided (PAYMENT-SPEC.md, open points).
+   or both. For the pilot it is attended hot-wallet refunds (PAYMENT-SPEC.md,
+   pilot decisions of 2026-11-10).
 2. Destroy the host. Restore the snapshot and journal onto a fresh host.
 3. Reconcile as above. No name may be issued twice, no refund may pay twice,
    no reservation may disappear, and the restored tree's root must match the
@@ -619,3 +642,31 @@ Still open:
 A separate signer (open decision 2), Lightning, and any mainnet execution.
 Running anything on mainnet needs a concrete plan and the owner's explicit
 authorization.
+
+## Bound rebuild and missing-byte incidents
+
+B5's consecutive binding-failure count is an acknowledged, versioned
+controller-journal record. Retrying the same failed batch, including after
+process death, cannot count it twice. The third failed batch retires without
+a successor and records an operator alert. New freeze or issuance waits
+until a later block. A successful fresh binding check resets the count;
+a late retry of an old paused batch can never create a successor. Explicit
+operator rollback is not a binding failure. Unsupported counter history
+refuses startup.
+
+Runtime amendment, 2026-11-13: both the active Python controller and the
+TypeScript kernel dedupe a failed batch against every valid historical
+`last_bid`, not only the newest row. A lost acknowledgment after guard
+publication, followed by another batch's failure or a successful reset,
+cannot count that same immutable batch ID again. Existing histories are
+retained; prior counts or pauses are not rewritten retroactively. New issue
+resets after fresh binding and delegate validation; resuming an existing
+intent preserves intervening failures and does not clear a pause. The
+focused Python `test_B5_guard_ack_loss_and_intervening_failures_or_reset_never_count_one_parent_twice`
+and TypeScript controller rebuild-policy tests exercise this repair.
+
+For L8, refusing an unknown commitment transaction also records a local
+recovery pause and one operator alert before any confirmation prompt.
+Journal acknowledgment is retried without duplicating the alert. Members
+remain issuing and non-cancellable. The refusal constructs or broadcasts
+nothing; absence from a mempool does not prove that no transaction escaped.

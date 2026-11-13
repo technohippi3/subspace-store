@@ -24,12 +24,14 @@ module's. On regtest the harness runs `subs` seeded with a local relay only
 """
 
 import json
+import hashlib
 import sqlite3
 import subprocess
 import urllib.parse
 
 from .core import ANCHOR_FINALITY, FINAL_D, Refused, label
 from .rpc import Http, HttpError
+from .publication_bound import BoundPublication
 
 CHUNK = 100  # CONTROLLER-DESIGN.md step 3, well under subs' cap of 1,000
 
@@ -42,7 +44,7 @@ create table if not exists publication (
 """
 
 
-class Publisher:
+class Publisher(BoundPublication):
     def __init__(self, controller, registry, journal, db_path, subs, relay_url):
         """`subs` is the client for writes to subs, as the controller's;
         `relay_url` the relay that delivery is confirmed through."""
@@ -67,6 +69,7 @@ class Publisher:
     def enroll(self, bid):
         """Add the batch's members whose certificate verified at d >= 150
         (status "ready") to its outstanding set."""
+        self.c.require_postsend(bid)
         b = self.c.batch(bid)
         added = []
         for m in b["members"]:
@@ -122,11 +125,14 @@ class Publisher:
         """One `/publish` call for an explicit chunk, after the live check.
         Returns what happened; the chunk's handles stay outstanding unless
         their publish_status reads "final"."""
+        self.c.require_postsend(bid)
         b = self.c.batch(bid)
         if not chunk:
             return {"called": False, "why": "empty chunk: never call /publish with an empty list"}
         if len(chunk) > CHUNK:
             raise Refused(f"chunk of {len(chunk)} is over {CHUNK}")
+        if getattr(self.reg, "bound_entries", False):
+            self._bound_publish_guard(bid, chunk)
         live = self.live_check(bid)
         if not live["ok"]:
             return {"called": False, "why": "live commitment check failed", "live": live}
@@ -163,8 +169,10 @@ class Publisher:
                               capture_output=True, text=True)
         (msg_path.parent / (msg_path.name.replace(".message.bin", "") + ".libveritas.json")
          ).write_text(proc.stdout + proc.stderr)
-        return json.loads(proc.stdout) if proc.stdout.strip().startswith("{") else \
-            {"verified": False, "error": proc.stderr[-500:]}
+        result = json.loads(proc.stdout) if proc.stdout.strip().startswith("{") else {"verified": False, "error": proc.stderr[-500:]}
+        if getattr(self.reg, "bound_entries", False) and (proc.returncode != 0 or result.get("verified") is not True):
+            result["verified"] = False
+        return result
 
     def root_gate(self, space, root, height):
         """The certificate's own root, the one the relay's answer carries:
@@ -218,7 +226,10 @@ class Publisher:
             # root (L6, R11), not a mismatch; confirm_delivery waits on it.
             "sovereign_or_pending": bool(zone and zone["sovereignty"] in ("sovereign", "pending")),
         }
+        if getattr(self.reg, "bound_entries", False):
+            checks["verified"] = res.get("verified") is True
         return {"handle": handle, "ok": all(checks.values()), "checks": checks,
+                "proof_hash": hashlib.sha256(msg).hexdigest(),
                 "sovereignty": zone["sovereignty"] if zone else None,
                 "root_gate": gate,
                 "root_is_the_batchs": root == b["root"],
@@ -233,6 +244,9 @@ class Publisher:
         handle sovereign, marks the order fulfilled. A matching answer whose
         root isn't final and covered yet, or that libveritas still answers
         "pending", is waiting, not a failure: nothing is alerted."""
+        self.c.require_postsend(bid)
+        if getattr(self.reg, "bound_entries", False):
+            return self._bound_confirm_delivery(bid, oid)
         row = self.row(bid, oid)
         if row is None or row["state"] not in ("published", "delivered"):
             return {"confirmed": False, "why": "not published"}

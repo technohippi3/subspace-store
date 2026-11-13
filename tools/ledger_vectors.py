@@ -56,6 +56,7 @@ RESTART_EVERY = 17  # as tests/test_service_twin.py
 
 # Every Python source the vectors depend on.
 SOURCES = ("tools/ledger_vectors.py", "service/ledger.py", "service/journal.py",
+           "service/private_purchase.py",
            "tests/service_twin.py", "tests/test_generated.py", "model/chain.py",
            "model/controller.py", "model/sim.py", "model/store.py")
 
