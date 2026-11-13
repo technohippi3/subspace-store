@@ -48,14 +48,24 @@ in a rollback whitelist, even if its SQLite DDL is unchanged.
 Controller-journal epoch 3 adds the mandatory abort-protocol framing boundary.
 The first 2-to-3 update also requires the separately reviewed bootstrap
 transition in `OPERATIONS.md`; replacing a payload does not replace bootstrap
-code. Maintenance checkpoints use the verified target's pure controller decoder
-and retain complete-prefix and latest-database agreement checks after abort.
+code. Maintenance checkpoints use the separately reviewed bootstrap's data
+parser, without executing a payload decoder, and retain complete-prefix and
+latest-database agreement checks after abort.
 
 `native/installer.py` is the one manual install/update entrypoint. The Alchemy
 resource invokes that same entrypoint with the same manifest, signature and
 archive. Bootstrap installer files and the trusted release public key are
 provisioned through an independently reviewed path before the first SSH
 installation; the downloaded release cannot replace that trust decision.
+
+Fresh staging, cached reuse, installed status and attended recovery check the complete signed
+inventory, required directories, exact file modes and protected ownership.
+Extra files or directories, import caches, links, special files and writable
+release paths refuse. The installer-owned `.verified-manifest.json` is the
+only additional metadata file and cannot be supplied by a payload manifest.
+Lifecycle children and generated services disable Python bytecode writes.
+These checks depend on trusted root custody of the bootstrap and release
+ancestors; they do not constrain a hostile root operator.
 
 The installer serializes its own operations, checks dependencies and fresh
 credentials while the prior service remains available, pauses admission,

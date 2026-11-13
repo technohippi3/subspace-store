@@ -36,14 +36,34 @@ no exception to that rule.
 
 Both current file/remote journal readers and file and remote store-reconciliation
 confirmation understand mandatory records. The installed maintenance checkpoint
-reader was missed in the initial amendment. The checkpoint repair now loads the
-pure decoder from the staged, signature-verified target package, without importing
-the controller or initializing its database. It validates every framed record
+reader was missed in the initial amendment. The checkpoint uses its separately
+reviewed bootstrap's data parser. It never imports or executes a decoder from
+the staged payload or initializes the controller database. It validates every framed record
 while retaining digest, contiguous-sequence, stable bounded-prefix and latest
 database agreement checks. Unknown protocols refuse before publishing a snapshot.
 Sequence numbers and checkpoint positions count the framed record. There is
 no JSON-only mirror fallback. A diagnostic reader knowing the frame may show
 history; an effect-bearing old controller remains excluded.
+
+## Authenticated release custody
+
+Fresh staging and reuse of an existing release enforce the complete signed file
+set and its necessary directories. The only unsigned metadata file is the
+installer-owned `.verified-manifest.json`; payload manifests cannot reserve that
+path. Additional files, bytecode caches and empty directories refuse, as do
+missing files, modified bytes, executable-mode changes, symlinks, hardlinks,
+special files and writable or foreign-owned release paths. Installed status and
+attended recovery enforce the same inventory before calling payload code. The release
+and its ancestors must retain trusted ownership and exclude untrusted writers;
+a root-owned sticky ancestor may protect an owned child outside the release.
+This does not protect against a hostile root operator replacing trusted code.
+
+Bootstrap imports, lifecycle subprocesses and generated systemd units disable
+Python bytecode writes so ordinary execution cannot add unsigned import caches.
+An existing unexpected cache refuses rather than being deleted or blessed.
+Checkpoint framing is a data-format contract owned by the bootstrap, independent
+of filesystem changes to any payload decoder. Its parser must reject unsupported
+mandatory versions and features with the same framing rules as the controllers.
 
 ## Package compatibility
 

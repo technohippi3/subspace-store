@@ -9,7 +9,6 @@ import tempfile
 import socket
 import urllib.parse
 import base64
-import runpy
 
 from common import atomic_json, command, json_file, paths, require, sync_directory
 from release import digest_file
@@ -81,13 +80,25 @@ def store_prefix(connection, config, release):
         require(page["entries"], "checkpoint-journal-prefix-incomplete")
 
 
+def controller_record(raw):
+    """Bootstrap-owned data reader; never import or execute payload code."""
+    framed = raw.startswith('SSCJ3 ')
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, 'checkpoint-controller-protocol-duplicate')
+            result[key] = value
+        return result
+    row = json.loads(raw[6:] if framed else raw, object_pairs_hook=unique if framed else None)
+    if framed or isinstance(row, dict) and row.get('kind') == 'controller_protocol':
+        require(framed and isinstance(row, dict) and set(row) == {'seq','kind','version','requires'} and
+                row['kind'] == 'controller_protocol' and type(row['seq']) is int and row['seq'] >= 1 and
+                type(row['version']) is int and row['version'] == 3 and row['requires'] == ['preparation_abort_v1'],
+                'checkpoint-controller-protocol-unsupported')
+    return row
+
+
 def controller_prefix(connection, config, release):
-    # stage() already verified this target's complete signed inventory. Load
-    # its pure codec without importing the controller or creating bytecode.
-    # Bootstrap code must not assume the application is on sys.path.
-    decoder = Path(release) / 'app/controller/journal_protocol.py'
-    require(decoder.is_file() and not decoder.is_symlink(), 'checkpoint-controller-codec-unavailable')
-    decode_record = runpy.run_path(str(decoder))['decode_record']
     connection.row_factory = sqlite3.Row
     rows = connection.execute('select * from batches').fetchall()
     local = {}
@@ -107,7 +118,7 @@ def controller_prefix(connection, config, release):
             require(after < head and page_size <= 16 * 1024 * 1024 and size <= 512 * 1024 * 1024 and
                 type(item['sequence']) is int and item['sequence'] == after + 1 and
                 hashlib.sha256(raw).hexdigest() == item['sha256'], 'checkpoint-controller-journal-bytes-mismatch')
-            entry = decode_record(raw.decode('utf-8'))
+            entry = controller_record(raw.decode('utf-8'))
             require(isinstance(entry, dict) and type(entry.get('seq')) is int and entry['seq'] == after + 1 and
                 isinstance(entry.get('kind'), str), 'checkpoint-controller-journal-sequence-mismatch')
             if entry['kind'] == 'batch':

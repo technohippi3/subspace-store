@@ -71,6 +71,7 @@ def prepare(config, release):
         fetch_lines = ["[Unit]", "Description=Fetch installation runtime credentials", "After=network-online.target", "Wants=network-online.target",
             "[Service]", "Type=oneshot", "User=subspace-secrets", "Group=subspace-secrets", "UMask=0077", "TimeoutStartSec=30",
             "RuntimeDirectory=" + runtime_directory, "RuntimeDirectoryMode=0700", "RuntimeDirectoryPreserve=yes",
+            "Environment=PYTHONDONTWRITEBYTECODE=1",
             "PrivateTmp=yes", "ProtectSystem=strict", "ProtectHome=yes", "NoNewPrivileges=yes", "ReadWritePaths=" + str(secret_root),
             "ExecStart=/usr/bin/python3 " + str(release / "native/fetch-secrets.py") + " --config " + config["secretsConfig"] + " --role " + role]
         if secrets["source"] == "infisical":
@@ -87,6 +88,7 @@ def prepare(config, release):
         name = "subspace-" + config["installation"] + "-" + role + ".service"
         lines = ["[Unit]", "Description=Native installation " + role, "Requires=" + fetch_name, "After=" + fetch_name,
             "[Service]", "Type=simple", "User=" + service["user"], "Group=" + service["group"], "UMask=0077",
+            "Environment=PYTHONDONTWRITEBYTECODE=1",
             "ExecStart=/usr/bin/python3 " + config["currentPath"] + "/native/service-launch.py --config " + config["_file"] + " " + role,
             "Restart=on-failure", "RestartPreventExitStatus=75", "RestartSec=2", "TimeoutStopSec=30", "KillMode=control-group",
             "PrivateTmp=yes", "ProtectSystem=strict", "ProtectHome=yes", "NoNewPrivileges=yes", "PrivateMounts=yes",

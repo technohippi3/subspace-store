@@ -251,7 +251,7 @@ class PackageTests(unittest.TestCase):
         original_exec=host.exec
         def launch_checkpoint():
             script="import os; os.chdir('/opt/subspace-store/current/app'); os.execv('/usr/bin/python3',['/usr/bin/python3','-m','runner','/etc/subspace-store/installation.json'])"
-            outcome.append(original_exec('/usr/bin/python3','-c',script,success=False,timeout=90))
+            outcome.append(original_exec('/usr/bin/env','PYTHONDONTWRITEBYTECODE=1','/usr/bin/python3','-c',script,success=False,timeout=90))
         thread=threading.Thread(target=launch_checkpoint);thread.start()
         try:
             deadline=time.monotonic()+15
@@ -265,6 +265,9 @@ class PackageTests(unittest.TestCase):
         finally:thread.join(timeout=95)
         self.assertFalse(thread.is_alive());self.assertEqual(outcome[0].returncode,0,outcome[0].stderr.decode())
         self.assertEqual(json.loads(outcome[0].stdout)['controller_journal'],0)
+        caches = json.loads(host.exec('python3', '-B', '-c',
+            "import json,pathlib; print(json.dumps([str(p) for p in pathlib.Path('/opt/subspace-store/releases/fixture-v1').rglob('*') if p.name == '__pycache__' or p.suffix == '.pyc']))").stdout)
+        self.assertEqual(caches, [], 'ordinary installed execution added unsigned import caches')
         # The pinned engine adopts the same verified manual artifact. Removing
         # or destroying its state preserves the host and its complete history.
         self.alchemy("deploy")
@@ -284,6 +287,17 @@ class PackageTests(unittest.TestCase):
             helperSha256=hashlib.sha256((DRAFT / "client/systemd-credential.mjs").read_bytes()).hexdigest())
         (DRAFT / "evidence/O151-systemd255-credential-positive.json").write_text(json.dumps(positive, sort_keys=True) + "\n")
         self.assertEqual(self.installer("fixture-v1")[0]["unchanged"], True)
+        # Cached idempotence must reject unsigned importable content before
+        # preflight, service changes or checkpoint publication.
+        unsigned = '/opt/subspace-store/releases/fixture-v1/native/unsigned.py'
+        host.put(unsigned, 'raise RuntimeError("unsigned cache content")\n')
+        rejected, code = self.installer('fixture-v1', success=False)
+        self.assertEqual(code, 2)
+        self.assertEqual(rejected['code'], 'installed-release-file-set-differs')
+        self.assertEqual(self.installer()[0]['release'], 'fixture-v1')
+        self.assertFalse(self.installer()[0]['ready'])
+        host.exec('rm', unsigned)
+        self.assertTrue(self.installer('fixture-v1')[0]['unchanged'])
         self.sql("update fixture_settings set blocker='active_hold'")
         reboot = self.reboot_with_secret_outage()
         blocked, code = self.installer("fixture-v2", success=False)
@@ -325,6 +339,7 @@ class PackageTests(unittest.TestCase):
             "productionDomainQualification": False, "fresh": first, "updated": updated, "failed": failed, "rolledBack": rolled,
             "historyPreserved": True, "reviewCountPreserved": True, "infisicalUnavailableStartRefused": True,
             "alchemyVersion": "2.0.0-beta.86", "alchemySameArtifact": True, "alchemyRemovalAndDestroyPreserveData": True,
+            "unsignedCachedContentRefused": True,
             "actualRebootSecretRestoration": reboot,
             "ordinaryActualControllerSnapshotRemoteAck": True, "competingSubsRestartRefusedDuringCopy": True,
             "installerSha256": hashlib.sha256((DRAFT / "native/installer.py").read_bytes()).hexdigest()}, sort_keys=True) + "\n")

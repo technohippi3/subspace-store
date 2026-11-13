@@ -107,6 +107,16 @@ sudo python3 "$bootstrap_installer" --config "$installation_config" apply \
 After this succeeds, apply with the same inputs and bootstrap path. Downgrading
 to a schema-2 package remains prohibited, including before the first abort.
 
+Cached releases and attended recovery now require the complete authenticated
+file set. Unexpected code, bytecode caches, empty directories, links or unsafe
+permissions refuse before payload execution. The installer does not delete
+these additions or repair their permissions. Preserve the suspect cache for
+inspection and restage the authenticated artifact through attended maintenance;
+do not edit its manifest or receipt to bless it. For direct root invocation of
+payload Python outside the installer and managed services, use
+`sudo env PYTHONDONTWRITEBYTECODE=1 python3` so child Python processes inherit
+the same rule. The shipped lifecycle and service commands already set it.
+
 Treat an upstream restart or cookie rotation as attended maintenance. Pause
 admission and inspect reported blockers before a planned restart. Once Core,
 spaced and both selected wallets are current at the same tip, verify both new

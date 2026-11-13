@@ -97,7 +97,8 @@ def command(arguments, *, input=None, maximum=4 * 1024 * 1024, timeout=30, cwd=N
         try:
             process = subprocess.run(arguments, input=input, stdout=output,
                                      stderr=subprocess.DEVNULL, timeout=timeout,
-                                     cwd=cwd, preexec_fn=limits, check=False)
+                                     cwd=cwd, preexec_fn=limits, check=False,
+                                     env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
         except (OSError, subprocess.TimeoutExpired):
             raise Refused("command-unavailable") from None
         require(process.returncode == 0, "command-refused")

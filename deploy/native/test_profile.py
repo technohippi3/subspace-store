@@ -5,14 +5,13 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
 from common import Refused, config
 from profile import generate, PROFILE
 from maintenance_view import maintenance_view
-from checkpoint import controller_prefix
+from checkpoint import controller_prefix, controller_record
 from installer import resume_admission
 from units import shared_lock
 
@@ -94,9 +93,7 @@ class ProfileTests(unittest.TestCase):
             directory=store_file.parent
         self.assertFalse(directory.exists())
     def test_controller_checkpoint_validates_decrypted_prefix_and_latest_database_state(self):
-        release=self.root/'release';codec=release/'app/controller/journal_protocol.py';codec.parent.mkdir(parents=True)
-        repository=Path(os.environ.get('SUBSPACE_PACKAGE_APPLICATION_SOURCE') or Path(__file__).resolve().parent.parent.parent)
-        shutil.copyfile(repository/'controller/journal_protocol.py',codec)
+        release=self.root/'release'
         db=sqlite3.connect(':memory:');self.addCleanup(db.close);db.execute('create table batches(bid text,members text,state text)')
         db.execute('insert into batches values(?,?,?)',('b1','[]','proved'))
         value={'seq':1,'kind':'batch','batch':{'bid':'b1','members':[],'state':'proved'}};raw=json.dumps(value).encode()
@@ -128,6 +125,35 @@ class ProfileTests(unittest.TestCase):
         db.execute("update batches set state='checkpointed'")
         with patch('checkpoint.recovery',return_value=page):
             with self.assertRaises(Refused):controller_prefix(db,{},release)
+    def test_controller_checkpoint_never_executes_a_payload_codec(self):
+        release=self.root/'release';codec=release/'app/controller/journal_protocol.py';codec.parent.mkdir(parents=True)
+        marker=self.root/'payload-executed'
+        codec.write_text('from pathlib import Path\nPath('+repr(str(marker))+').touch()\nraise RuntimeError("payload codec ran")\n')
+        db=sqlite3.connect(':memory:');self.addCleanup(db.close);db.execute('create table batches(bid text,members text)')
+        with patch('checkpoint.recovery',return_value={'head':0,'entries':[]}):
+            self.assertEqual(controller_prefix(db,{},release),0)
+        self.assertFalse(marker.exists())
+    def test_bootstrap_and_controller_agree_on_mandatory_protocol_data(self):
+        repository=Path(os.environ.get('SUBSPACE_PACKAGE_APPLICATION_SOURCE') or Path(__file__).resolve().parents[2])
+        spec=importlib.util.spec_from_file_location('application_protocol',repository/'controller/journal_protocol.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        protocol={'seq':1,'kind':'controller_protocol','version':3,'requires':['preparation_abort_v1']}
+        valid=[json.dumps({'seq':1,'kind':'diagnostic'}),'SSCJ3 '+json.dumps(protocol)]
+        invalid=[json.dumps(protocol),'SSCJ3 []','SSCJ3 '+json.dumps(dict(protocol,seq=True)),
+            'SSCJ3 '+json.dumps(dict(protocol,version=4)), 'SSCJ3 '+json.dumps(dict(protocol,requires=['unknown'])),
+            'SSCJ3 '+json.dumps(dict(protocol,extra=True)), 'SSCJ3 '+json.dumps(protocol)[:-1]+',"version":3}']
+        for raw in valid:self.assertEqual(controller_record(raw),module.decode_record(raw))
+        for raw in invalid:
+            with self.subTest(raw=raw):
+                with self.assertRaises((Refused,ValueError)):controller_record(raw)
+                with self.assertRaises(ValueError):module.decode_record(raw)
+    def test_release_inventory_refuses_a_foreign_owned_signed_file(self):
+        from release import verify_installed_release
+        release=self.root/'release';release.mkdir();file=release/'application.txt';file.write_bytes(b'fixture');file.chmod(0o644)
+        manifest={'files':{'application.txt':{'size':7,'sha256':hashlib.sha256(b'fixture').hexdigest(),'executable':False}}}
+        verify_installed_release(release,manifest)
+        os.chown(file,65534,65534)
+        with self.assertRaises(Refused):verify_installed_release(release,manifest)
     def test_subs_configuration_disables_auto_publish_before_native_exec_and_preserves_other_values(self):
         spec=importlib.util.spec_from_file_location('subs_start',Path(__file__).with_name('subs-start.py'));module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         runtime=self.root/'store.json';runtime.write_text(json.dumps({'listen':{'subs':18949}}));runtime.chmod(0o644)

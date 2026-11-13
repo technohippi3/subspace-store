@@ -77,13 +77,12 @@ def reset_failed_secrets(value,selected):
             command(['/usr/bin/systemctl','reset-failed',name])
 
 def recover(value,confirm,attended=False):
-    from installer import capabilities, current_receipt, fetch_runtime, live_ready
-    from release import digest_file, SCHEMAS
+    from installer import capabilities, current_receipt, fetch_runtime, live_ready, installed_release
+    from release import SCHEMAS
     capabilities(value);require(confirm==value['installation'],'explicit-installation-confirmation-required')
     state=paths(value);receipt=current_receipt(value);require(receipt is not None,'installed-release-required')
-    release=Path(value['currentPath']).resolve(strict=True);manifest=json_file(release/'.verified-manifest.json',16*1024*1024)
-    require(manifest['_digest']==receipt['manifestDigest'] and manifest['schemas']==SCHEMAS,'verified-recovery-release-required')
-    for path,item in manifest['files'].items():require(not (release/path).is_symlink() and digest_file(release/path)==item['sha256'],'installed-release-modified')
+    require(receipt['schemas']==SCHEMAS,'verified-recovery-release-required')
+    release=installed_release(value,receipt)
     updater=os.open(state['lock'].parent/'updater.lock',os.O_RDWR|os.O_NOFOLLOW)
     prepared=False
     try:

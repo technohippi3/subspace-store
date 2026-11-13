@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from common import Refused, public_directory
-from release import build, extract, verify, SCHEMAS
+from release import build, extract, verify, SCHEMAS, INSTALLED_MANIFEST
 
 
 class ReleaseTests(unittest.TestCase):
@@ -46,6 +46,91 @@ class ReleaseTests(unittest.TestCase):
         extract(directory / "fixture-v1.tar.gz", destination, verified)
         self.assertEqual((destination / "application.txt").read_text(), "fixture application")
         self.assertEqual(manifest["schemas"], SCHEMAS)
+
+    def test_cached_stage_rejects_unsigned_codec_before_any_payload_execution(self):
+        import installer
+        directory, _ = self.make()
+        manifest = self.validate(directory)
+        value = {"releaseDirectory": str(self.root / "releases")}
+        artifact = directory / "fixture-v1.tar.gz"
+        target = installer.stage(value, manifest, artifact)
+        self.assertEqual(installer.stage(value, manifest, artifact), target)
+        codec = target / "app/controller/journal_protocol.py"
+        codec.parent.mkdir(parents=True)
+        marker = self.root / "unsigned-code-executed"
+        codec.write_text("from pathlib import Path\nPath(" + repr(str(marker)) + ").touch()\n")
+        with self.assertRaises(Refused):
+            installer.stage(value, manifest, artifact)
+        self.assertFalse(marker.exists())
+
+    def test_status_rejects_unsigned_content_before_calling_payload_readiness(self):
+        import installer
+        directory, _ = self.make(); manifest = self.validate(directory)
+        value = {'releaseDirectory': str(self.root / 'releases'), 'baseDirectory': str(self.root / 'state'),
+                 'currentPath': str(self.root / 'current')}
+        target = installer.stage(value, manifest, directory / 'fixture-v1.tar.gz')
+        Path(value['currentPath']).symlink_to(target)
+        (target / 'unsigned.py').write_text('raise RuntimeError()')
+        receipt = {'release':manifest['release'],'manifestDigest':manifest['_digest'],'schemas':manifest['schemas']}
+        with patch.object(installer,'current_receipt',return_value=receipt), patch.object(installer,'lifecycle') as execute, \
+                patch.object(installer,'maintenance') as maintenance:
+            result = installer.status(value)
+        self.assertFalse(result['ready']);self.assertTrue(result['paused'])
+        execute.assert_not_called();maintenance.assert_not_called()
+
+    def test_cached_stage_rejects_import_caches_missing_bytes_links_and_unsafe_permissions(self):
+        import installer
+        nested = self.source / 'app'
+        nested.mkdir(); (nested / 'module.py').write_text('value = 1\n')
+        directory, _ = self.make()
+        manifest = self.validate(directory)
+        artifact = directory / 'fixture-v1.tar.gz'
+        for fault in ('extra-file', 'bytecode', 'extra-directory', 'missing', 'changed', 'executable',
+                      'writable-file', 'writable-directory', 'symlink-file', 'symlink-directory', 'hardlink', 'fifo'):
+            with self.subTest(fault=fault):
+                value = {'releaseDirectory': str(self.root / fault)}
+                target = installer.stage(value, manifest, artifact)
+                file = target / 'application.txt'
+                if fault == 'extra-file': (target / 'unsigned.py').write_text('raise RuntimeError()')
+                elif fault == 'bytecode':
+                    cache = target / 'app/__pycache__'; cache.mkdir(); (cache / 'module.cpython-312.pyc').write_bytes(b'unsigned')
+                elif fault == 'extra-directory': (target / 'unsigned').mkdir()
+                elif fault == 'missing': file.unlink()
+                elif fault == 'changed': file.write_text('changed application')
+                elif fault == 'executable': file.chmod(0o755)
+                elif fault == 'writable-file': file.chmod(0o666)
+                elif fault == 'writable-directory': (target / 'app').chmod(0o777)
+                elif fault == 'symlink-directory':
+                    outside = self.root / 'outside-app'; (target / 'app').rename(outside); (target / 'app').symlink_to(outside)
+                else:
+                    outside = self.root / ('outside-' + fault); file.rename(outside)
+                    if fault == 'symlink-file': file.symlink_to(outside)
+                    elif fault == 'hardlink': os.link(outside, file)
+                    elif fault == 'fifo': os.mkfifo(file)
+                with self.assertRaises((Refused, OSError)):
+                    installer.stage(value, manifest, artifact)
+
+    def test_release_cache_rejects_writable_or_symlinked_ancestors(self):
+        import installer
+        directory, _ = self.make()
+        manifest = self.validate(directory); artifact = directory / 'fixture-v1.tar.gz'
+        real = self.root / 'real'; real.mkdir()
+        link = self.root / 'link'; link.symlink_to(real)
+        for parent in (link / 'releases', real / 'releases'):
+            if parent.parent == real: real.chmod(0o777)
+            with self.assertRaises(Refused):
+                installer.stage({'releaseDirectory': str(parent)}, manifest, artifact)
+            self.assertFalse((real / 'releases').exists())
+
+    def test_installer_metadata_cannot_be_a_signed_payload_file(self):
+        directory, manifest = self.make()
+        manifest['files'][INSTALLED_MANIFEST] = dict(manifest['files']['application.txt'])
+        self.resign(directory, manifest)
+        with self.assertRaisesRegex(Refused, 'reserved-release-path'):
+            self.validate(directory)
+        (self.source / INSTALLED_MANIFEST).write_text('{}')
+        with self.assertRaisesRegex(Refused, 'reserved-release-path'):
+            self.make('reserved')
 
     def test_signed_legacy_journal_release_cannot_be_verified_as_a_current_release(self):
         directory, manifest = self.make()

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """One attended native installer; Alchemy invokes this same entrypoint."""
+import sys
+sys.dont_write_bytecode = True
+
 import argparse
 import fcntl
 import json
@@ -15,7 +18,7 @@ from common import Refused, atomic_json, command, config, json_file, paths, publ
 from checkpoint import checkpoint, recovery
 from fence import acquire
 from host import lifecycle, maintenance, pause, unknown_invoice_count
-from release import digest_file, extract, verify
+from release import extract, protected_release_path, verify, verify_installed_release
 from units import control, prepare, stopped, unit
 
 
@@ -33,17 +36,19 @@ def capabilities(value):
 
 def stage(value, manifest, artifact):
     parent = Path(value["releaseDirectory"])
+    protected_release_path(parent, missing=True)
     public_directory(parent, parents=True, exist_ok=True)
+    protected_release_path(parent)
     target = parent / manifest["release"]
-    if target.exists():
+    if os.path.lexists(target):
         require(target.is_dir() and not target.is_symlink() and
                 json_file(target / ".verified-manifest.json", 16 * 1024 * 1024).get("_digest") == manifest["_digest"], "release-id-reused")
-        for name, entry in manifest["files"].items():
-            require(not (target / name).is_symlink() and digest_file(target / name) == entry["sha256"], "installed-release-modified")
+        verify_installed_release(target, manifest)
         return target
     temporary = parent / (".stage-" + next(tempfile._get_candidate_names()))
     extract(artifact, temporary, manifest)
     atomic_json(temporary / ".verified-manifest.json", manifest)
+    verify_installed_release(temporary, manifest)
     os.rename(temporary, target)
     sync_directory(parent)
     return target
@@ -52,6 +57,16 @@ def stage(value, manifest, artifact):
 def current_receipt(value):
     file = paths(value)["receipt"]
     return json_file(file) if file.exists() else None
+
+
+def installed_release(value, receipt):
+    protected_release_path(Path(value['currentPath']).parent)
+    target = Path(value['currentPath']).resolve(strict=True)
+    manifest = json_file(target / '.verified-manifest.json', 16 * 1024 * 1024)
+    require(manifest['_digest'] == receipt['manifestDigest'] and manifest['schemas'] == receipt['schemas'] and
+            manifest['release'] == receipt['release'], 'verified-installed-release-required')
+    verify_installed_release(target, manifest)
+    return target
 
 
 def select(value, target):
@@ -93,8 +108,9 @@ def status(value):
     if receipt is None:
         return {"ok": True, "ready": False, "paused": True, "release": None, "diagnostic": "not-installed"}
     try:
+        release = installed_release(value, receipt)
         report = maintenance(value)
-        proof=lifecycle(value, Path(value["currentPath"]).resolve(), "controllerReadiness")
+        proof=lifecycle(value, release, "controllerReadiness")
         return {"ok": True, "ready": report["acknowledged"] and report["chain"] is not None and
                 not [b for b in report["blockers"] if b["kind"] != "admission_open"],
                 "paused": report["paused"], "release": receipt["release"], "manifestDigest": receipt["manifestDigest"],

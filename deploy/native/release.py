@@ -14,6 +14,7 @@ from source_provenance import validate_payload
 from common import ID, Refused, command, json_file, public_directory, require, sync_directory
 
 MAX_ARTIFACT = 4 * 1024**3
+INSTALLED_MANIFEST = ".verified-manifest.json"
 # Semantic versions are part of the rollback fence, independently of SQLite DDL.
 SCHEMAS = {"store": 1, "controller": 1, "storeJournal": 2, "controllerJournal": 3,
            "applicationRecords": 2, "controllerRecords": 2, "recoveryEnvelope": 1}
@@ -31,6 +32,72 @@ def safe_path(value):
     require(isinstance(value, str) and 1 <= len(value) <= 4096 and
             not value.startswith("/") and all(p and p not in (".", "..")
             and re.fullmatch(r"[a-zA-Z0-9_.@+,:=-]+", p) for p in value.split("/")), "unsafe-release-path")
+
+
+def protected_release_path(path, *, missing=False):
+    """No untrusted writer may replace a release or one of its ancestors."""
+    path = Path(path)
+    require(path.is_absolute(), "unsafe-release-directory")
+    for directory in (path, *path.parents):
+        if missing and not os.path.lexists(directory):
+            continue
+        info = directory.lstat()
+        # A root-owned sticky ancestor such as /tmp protects our owned child.
+        sticky_ancestor = directory != path and info.st_uid == 0 and info.st_mode & stat.S_ISVTX
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid in (0, os.geteuid()) and
+                (not info.st_mode & 0o022 or sticky_ancestor), "unsafe-release-directory")
+
+
+def verify_installed_release(destination, manifest):
+    """Revalidate the closed inventory, including imports and bytecode caches."""
+    destination = Path(destination)
+    protected_release_path(destination)
+    expected = set(manifest["files"])
+    require(INSTALLED_MANIFEST not in expected, "reserved-release-path")
+    directories = {""}
+    for name in expected:
+        safe_path(name)
+        directories.update(p.as_posix() for p in Path(name).parents if p != Path("."))
+    seen = set()
+    for parent, children, files in os.walk(destination, followlinks=False):
+        relative = Path(parent).relative_to(destination).as_posix()
+        require(relative == "." or relative in directories, "installed-release-file-set-differs")
+        for name in children:
+            path = Path(parent) / name
+            info = path.lstat()
+            require(path.relative_to(destination).as_posix() in directories and
+                    stat.S_ISDIR(info.st_mode) and info.st_uid in (0, os.geteuid()) and
+                    not info.st_mode & 0o022, "unsafe-release-directory")
+        for name in files:
+            path = Path(parent) / name
+            relative = path.relative_to(destination).as_posix()
+            require(relative in expected or relative == INSTALLED_MANIFEST, "installed-release-file-set-differs")
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                info = os.fstat(fd)
+                require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and
+                        info.st_uid in (0, os.geteuid()) and not info.st_mode & 0o022,
+                        "unsafe-release-file")
+                if relative == INSTALLED_MANIFEST:
+                    require(info.st_size <= 16 * 1024 * 1024 and not info.st_mode & 0o111, "unsafe-release-file")
+                    continue
+                entry = manifest["files"][relative]
+                require(info.st_size == entry["size"] and stat.S_IMODE(info.st_mode) ==
+                        (0o755 if entry["executable"] else 0o644), "installed-release-modified")
+                digest = hashlib.sha256()
+                with os.fdopen(fd, "rb", closefd=False) as file:
+                    remaining = entry["size"]
+                    while remaining:
+                        data = file.read(min(1024 * 1024, remaining))
+                        require(data, "installed-release-modified")
+                        digest.update(data)
+                        remaining -= len(data)
+                    require(not file.read(1), "installed-release-modified")
+                require(digest.hexdigest() == entry["sha256"], "installed-release-modified")
+                seen.add(relative)
+            finally:
+                os.close(fd)
+    require(seen == expected, "installed-release-file-set-differs")
 
 
 def verify(manifest_path, signature, artifact, trust_key):
@@ -65,6 +132,7 @@ def verify(manifest_path, signature, artifact, trust_key):
             0 < item["size"] <= MAX_ARTIFACT and Path(artifact).stat().st_size == item["size"] and
             digest_file(artifact) == item["sha256"], "artifact-digest-mismatch")
     require(isinstance(manifest["files"], dict) and 1 <= len(manifest["files"]) <= 100000)
+    require(INSTALLED_MANIFEST not in manifest["files"], "reserved-release-path")
     for path, entry in manifest["files"].items():
         safe_path(path)
         require(set(entry) == {"sha256", "size", "executable"} and
@@ -123,6 +191,7 @@ def build(source, output, release, source_commit, signing_key, upgrade_from, rol
                 continue
             relative = path.relative_to(source).as_posix()
             safe_path(relative)
+            require(relative != INSTALLED_MANIFEST, "reserved-release-path")
             require(path.is_file() and path.stat().st_nlink == 1 and
                     not any(p in (".git", ".alchemy", ".env", "__pycache__") for p in path.relative_to(source).parts) and
                     path.suffix not in (".pem", ".key", ".db", ".sqlite", ".cookie", ".cred"), "private-release-input")
