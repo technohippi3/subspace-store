@@ -18,6 +18,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
+    "@spacesprotocol/libveritas": "0.4.4",
     "effect": "4.1.4"
   }
 }

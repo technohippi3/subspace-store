@@ -228,3 +228,7 @@ described in `CONTROLLER-PREPARATION.md`; their generated roots are not
 native cryptographic evidence.
 They do not establish real Spaces sends, native-byte validity, installed
 package acceptance, whole-host recovery or a production controller switch.
+
+The first bounded offline verifier adapter is specified in
+[CONTROLLER-VERIFIER.md](CONTROLLER-VERIFIER.md). It supplies read-only facts and
+saved-fixture comparison, with no runtime selection or Python removal.
