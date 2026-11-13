@@ -23,12 +23,13 @@ await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
   const controller = yield* BoundController.open({ database: join(root, "controller.db"),
     makeJournal: () => new Journal(join(root, "controller-journal")) }, {
     registry: { failing: (b, issuing) => registry.failing(b, issuing), lookup: b => registry.lookup(b),
+      close: b => registry.close(b), order: (b, id) => registry.order(b, id),
       enter: b => registry.enter(b).pipe(Effect.tap(() => Effect.sync(() => { if (mode === "stop-after-entry") process.exit(9); }))),
       arm: b => Effect.gen(function* () {
         if (mode === "stop-before-arm") process.exit(9);
         const answer = yield* registry.arm(b); if (mode === "stop-after-arm") process.exit(9); return answer;
       }) },
-    delegate: () => Effect.succeed(delegate), broadcast: () => Effect.sync(() => {
+    height: () => Effect.succeed(10), delegate: () => Effect.succeed(delegate), broadcast: () => Effect.sync(() => {
       const path = join(root, "controller-sends.jsonl"); appendFileSync(path, JSON.stringify({ txid }) + "\n");
       const fd = openSync(path, "r"); try { fsyncSync(fd); } finally { closeSync(fd); }
       if (mode === "stop-after-send") process.exit(9);

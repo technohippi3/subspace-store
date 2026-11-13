@@ -87,6 +87,10 @@ class Rebuild:
             if not self._journal(bid):
                 raise Refused("updated rebuild membership not acknowledged")
             b = self.batch(bid)
+        # An older controller can have forgotten the original entry identity.
+        # Closing its new absent ID does not unlock a foreign live entry.
+        for member in b["members"]:
+            self._release_order(b, member)
         if failed:
             self.subs.post(f"/spaces/{b['space']}/park", {
                 "handles": [_label(self.registry.order(m)["name"]) for m in failed], "parked": True})
@@ -96,11 +100,17 @@ class Rebuild:
                 raise Refused("parked rebuild membership differs; successor not created")
         return self._complete_bound_rebuild(b, failed)
 
+    def _release_order(self, b, member):
+        order = self.registry.order(member)
+        if not isinstance(order, dict) or order.get("status") not in ("requested", "quoted", "unpaid", "converted", "cancelled", "refund_due"):
+            raise Refused("foreign issuance or unknown order status; native release withheld")
+        return order
+
     def _rollback_bound_root(self, b):
         def read():
             out = []
             for member in b["members"]:
-                order = self.registry.order(member)
+                order = self._release_order(b, member)
                 info = self.handle(b["space"], _label(order["name"]))
                 if info["script_pubkey"] != order["recipient_spk"]:
                     raise Refused("rebuild recipient differs; local rollback refused")
@@ -109,6 +119,9 @@ class Rebuild:
         roots = read()
         if all(root == b["root"] for root in roots):
             self.journal.append("entry_rollback_intent", bid=b["bid"], root=b["root"], entry_key=b["entry_key"])
+            # The journal append may yield to another entry's advancement.
+            for member in b["members"]:
+                self._release_order(b, member)
             self.subs.post(f"/spaces/{b['space']}/rollback-local")
             roots = read()
         if any(root is not None for root in roots):
@@ -117,6 +130,8 @@ class Rebuild:
     def _complete_bound_rebuild(self, b, failed):
         """Parent retirement and its sole successor are one local transaction.
         A crash before the journal is repaired by retrying, not by rollback."""
+        for member in b["members"]:
+            self._release_order(b, member)
         keep = sorted(m for m in b["members"] if m not in failed)
         paused = self._paused_rebuild(b["bid"])
         child = f"b{self.db.execute('select count(*) from batches').fetchone()[0] + 1}" if keep and not paused else None

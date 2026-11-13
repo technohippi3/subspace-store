@@ -50,8 +50,9 @@ export function kernel(root: string, origin = "http://127.0.0.1:1") {
   const registry = new HttpRegistry(origin, Effect.succeed(credential));
   const ports: ControllerPorts = {
     registry: { failing: (b, issuing) => registry.failing(b, issuing), lookup: b => registry.lookup(b), enter: b => registry.enter(b),
+      close: b => registry.close(b), order: (b, id) => registry.order(b, id),
       arm: b => Effect.gen(function* () { calls.beforeArm?.(); const answer = yield* registry.arm(b); calls.afterArm?.(); return answer; }) },
-    delegate: () => Effect.succeed(delegate), broadcast: () => Effect.gen(function* () {
+    height: () => Effect.succeed(10), delegate: () => Effect.succeed(delegate), broadcast: () => Effect.gen(function* () {
       calls.broadcasts++; if (calls.broadcastError) return yield* Effect.fail(new ControllerError({ code: "unavailable", message: "simulated lost broadcast response" }));
       return calls.answer;
     }), capture: () => Effect.sync(() => { calls.captures++; return { txid, raw: "010203", ancestors: [["e".repeat(64), "040506"]] }; }),

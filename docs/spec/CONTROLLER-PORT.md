@@ -1,16 +1,18 @@
-# TypeScript controller entry and restart kernel
+# TypeScript controller entry, release and restart kernel
 
 The development controller under `ts/src/controller/` composes Effect with
 the existing controller batch states. Its bounded input is a preexisting
 checkpointed batch with a bound root and exact sorted member IDs. It ports
-the entry and first-attempt rules in `ENTRY-RECOVERY.md`, the arm boundary
-in `ENTRY-RELEASE.md`, and interrupted-answer rules A20–A22. It adds no
-payment rule or independent-model change.
+the entry and first-attempt rules in `ENTRY-RECOVERY.md`, bound known-unsent
+release/rebuild in `ENTRY-RELEASE.md`, B5's durable throttle and
+interrupted-answer rules A20–A22. Safe precommit retirement is also supported;
+preparing or proving a batch is not. It adds no payment rule or independent
+model change.
 
 The shipped Python controller and attended runner remain selected. This
 library has no command entrypoint, polling loop, native service setup or
-deployment selection. It cannot freeze, stage, prove, checkpoint, close or
-rebuild a batch. It supplies neither commitment readback/rebroadcast nor
+deployment selection. It cannot freeze, stage, prove or checkpoint a batch.
+It supplies neither commitment readback/rebroadcast nor
 finality, certificate, publication, supersession, snapshot or whole-host
 reconciliation. Those ports and their real-native/package acceptance are
 required before the controller can replace Python. Full Python removal
@@ -34,7 +36,8 @@ checkpoint digest and does not reconstruct or prove the frozen tree.
 
 The controller retains the existing Python JSONL envelope:
 `{"seq":1,"kind":"batch","batch":{...}}`. Other sequenced controller
-events are preserved as opaque history. The store's DurableStore envelope
+events are preserved as opaque history, except for the explicitly validated
+versioned rebuild-guard records. The store's DurableStore envelope
 is separate. Complete prefixes require contiguous sequence numbers, valid
 UTF-8, unambiguous JSON and validated batch rows. Previously read bytes
 cannot change or disappear within an instance.
@@ -49,7 +52,9 @@ The remote adapter retains the recovery client's `controller` stream and
 `journal-read`/`journal-append` request and acknowledgment shapes. It checks
 every returned object digest and sequence over the full bounded prefix,
 uses stable exact pending bytes after a lost append response, and confirms
-readback before acknowledging a new batch. A transport outage never selects
+readback before acknowledging a new event. Pending bytes are resolved before
+exposing history for another count, reset or progress decision, including
+when the lost request never reached storage. A transport outage never selects
 a local mirror. Tests exercise the transport callback and Python-produced
 history; they do not qualify an installed remote-backend cutover.
 
@@ -64,9 +69,9 @@ credentials, no redirect following and no request retry or protocol fallback.
 
 An absent entry is created with the same ID only after fresh member checks.
 A recovered open entry must remain acknowledged and batchable. A closed
-entry or failed member returns release required while retaining state; this
-slice does not perform the later close/rebuild protocol. An already armed
-entry becomes uncertain and cannot grant a first send.
+entry uses fresh converted-order checks; an open issuing entry uses the
+issuing recheck. A failed binding enters the known-unsent release protocol.
+An already armed entry becomes uncertain and cannot grant a first send.
 
 Before requesting an arm, the controller verifies its exact live journaled
 issuing intent and the store's exact live bound-entry receipt. The store
@@ -90,6 +95,59 @@ transaction and ancestor bytes cryptographically to their transaction IDs.
 The kernel checks shape and matching claimed identity only; the fixture's
 made-up bytes are no evidence of native transaction verification.
 
+## Known-unsent release and rebuild
+
+Release and release-resume compare local and complete journal history before
+writing progress. Attempted, sent or contradictory transaction evidence
+refuses. Legacy batch rows are normalized before that check, so absent
+nullable migration columns are not mistaken for send evidence. A conflicting
+batch binding refuses; stale progress cannot erase a newer send or intent.
+
+The controller persists and acknowledges `releasing` before exact store
+closure, then persists and acknowledges `rebuilding` before native work.
+Live exact closed-entry confirmation and controller-journal checks immediately
+precede rollback and parking. An armed observation records the exact delegate,
+intent, attempted uncertainty and its alert atomically, including when the
+local row claimed rebuilding. No native action follows an unavailable journal.
+
+Fresh member inspections must carry known statuses outside issuing, ready
+and fulfilled before first retirement, rollback and parking. This also covers
+failed members and the rootless precommit path. Closing a new absent entry
+ID does not prove that another entry no longer owns those orders. An already
+retired parent's completion retry only validates its existing successor;
+that child's later legitimate issuance remains allowed.
+
+Native readback checks every exact recipient script and root. Rollback is
+permitted only for the original complete root; all-null roots skip a rollback
+that already happened. Mixed or foreign roots refuse. A rollback intent is
+acknowledged first. Lost close, rollback or parking replies resume through
+exact readback and idempotent operations. A rootless precommit batch can
+retire only without entry, intent or any unresolved `commit_local_intent`.
+
+After fresh observation the failed set can only grow. Persisted exclusions
+from database and journal are unioned on restart, and rebuilding never
+downgrades to an older releasing row. Failed handles are parked and every
+member's script, null root and parked flag are checked. Parent retirement
+and its sole frozen successor, or its all-failed alert, commit in one SQLite
+transaction. The successor digest uses Python's existing sorted tuple and
+spaced JSON encoding. Completion acknowledges child and parent; a newer or
+conflicting child journal cannot be overwritten by an old parent retry.
+A journaled child absent from the database still requires restore.
+
+B5 counts distinct failed parents in acknowledged `rebuild_guard` history.
+Retries, process death, intervening failures and resets cannot count an old
+parent again. The third failed parent retires without a successor and alerts;
+new issue and the internal send boundary wait for a later observed block.
+A fresh successful issue binding and delegate read reset the global count
+before intent/send. Resuming an existing intent preserves intervening counts
+and cannot clear a pause. Historical paused parents remain childless after
+later blocks and resets. Explicit operator rollback does not add a failure.
+
+The 2026-11-13 runtime repairs in `CONTROLLER-DESIGN.md` and `ENTRY-RELEASE.md`
+also update the active Python controller: all-history failure-ID deduplication
+and fresh all-member status checks before first retirement/native mutations.
+Existing history is retained without retroactively rewriting old counts.
+
 ## Restart and evidence
 
 An intact local issuing row with attempted false can resume after fresh
@@ -105,15 +163,22 @@ false. A later acknowledged sent state is adopted with its bytes and one
 database-behind-journal alert. Conflicting immutable identity or intent
 refuses startup. Startup never contacts native or registry ports or sends.
 
-The `controller-port-*.test.ts` production tests use real SQLite and the
+The `controller-port-*.test.ts` and `controller-rebuild-*.test.ts` production tests use real SQLite and the
 existing TypeScript store's authenticated HTTP listener. They cover A20–A22,
 A24–A26, O16, O19 and the arm-loss portion of O23. Entry reply loss before
-and after forwarding exercises the O15 boundary. Child Node processes exit
-after entry identity, store entry, intent, local attempt, arm and send, then
-restart over the retained files. Separate tests read Python-produced
+and after forwarding exercises the O15 boundary. Release adds O23–O26,
+A27–A31 and B5 composition checks. Child Node processes exit
+after entry identity, store entry, intent, local attempt, arm, send, release
+and closed progress, rollback intent/effect, parking, atomic retirement,
+child/parent acknowledgment, guard acknowledgment and fresh-binding reset,
+then restart over retained files. Separate tests read Python-produced
 SQLite/JSONL and read TypeScript appends using the Python Journal, reject
 malformed histories/schema, and force a SQLite alert failure to prove the
-uncertainty transaction rolls back as a unit.
+uncertainty and retirement transactions roll back as units. A separate Node
+recording recovery command exercises remote mixed-event loss before and
+after persistence. The Python HTTP controller fixture also reproduces the
+forgotten-entry refusal against the actual TypeScript listener. These are
+process/protocol tests, not SSH or native-wallet qualification.
 
 Broadcasts and native capture are recording stand-ins. These checks establish
 source-level controller/store composition and normal-process restart only.

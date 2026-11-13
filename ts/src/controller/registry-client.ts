@@ -1,7 +1,8 @@
 import { Effect } from "effect";
 import { checked, ControllerError, refuse } from "./errors.ts";
 import { entryPayload, outpoint, type Batch } from "./records.ts";
-import type { ArmReceipt, EntryReceipt, Lookup, RegistryPort, Result } from "./ports.ts";
+import type { ArmReceipt, EntryReceipt, Lookup, OrderBinding, RegistryPort, Result } from "./ports.ts";
+import { orderBinding } from "./rebuild-records.ts";
 import { strictJson } from "./json.ts";
 
 function shape(value: unknown, fields: string): asserts value is Record<string, unknown> {
@@ -34,14 +35,15 @@ export class HttpRegistry implements RegistryPort {
         !Number.isSafeInteger(timeout) || timeout < 1 || timeout > 120_000) refuse("invalid controller registry origin", "invalid");
     this.origin = url.origin; this.credential = credential; this.timeout = timeout;
   }
-  private request(path: string, payload: unknown): Result<unknown> {
+  private request(path: string, payload?: unknown): Result<unknown> {
     const self = this;
     return Effect.gen(function* () {
       const credential = yield* self.credential;
       return yield* Effect.tryPromise({ try: async () => {
         if (credential.length < 32 || credential.length > 4096 || /\s/.test(credential)) refuse("invalid controller operator credential", "invalid");
-        const response = await fetch(self.origin + path, { method: "POST", redirect: "error", signal: AbortSignal.timeout(self.timeout),
-          headers: { Authorization: `Bearer ${credential}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        const response = await fetch(self.origin + path, { method: payload === undefined ? "GET" : "POST", redirect: "error", signal: AbortSignal.timeout(self.timeout),
+          headers: { Authorization: `Bearer ${credential}`, "Content-Type": "application/json" },
+          ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) });
         const chunks: Uint8Array[] = []; let size = 0;
         if (response.body) {
           const reader = response.body.getReader();
@@ -79,6 +81,23 @@ export class HttpRegistry implements RegistryPort {
       const payload = yield* checked("arm payload", () => ({ ...entryPayload(b), delegate: b.delegate_in }));
       const raw = yield* self.request("/operator/issuance-entries/arm", payload);
       return yield* checked("validate arm receipt", () => entryReceipt(raw, b, false, true) as ArmReceipt);
+    });
+  }
+  close(b: Batch): Result<EntryReceipt> {
+    const self = this; return Effect.gen(function* () {
+      const payload = yield* checked("close payload", () => entryPayload(b));
+      const raw = yield* self.request("/operator/issuance-entries/close", payload);
+      return yield* checked("validate closure receipt", () => {
+        const value = entryReceipt(raw, b);
+        if (!value.found || value.phase !== "closed") refuse("controller entry was not closed; locks retained"); return value;
+      });
+    });
+  }
+  order(b: Batch, oid: string): Result<OrderBinding> {
+    const self = this; return Effect.gen(function* () {
+      yield* checked("validate requested member", () => { if (!b.members.includes(oid)) refuse("unknown controller member", "invalid"); });
+      const value = yield* self.request(`/operator/orders/${oid}`);
+      return yield* checked("validate order binding", () => orderBinding(value, b, oid));
     });
   }
   failing(b: Batch, issuing: boolean): Result<readonly string[]> {

@@ -55,6 +55,12 @@ export function sameIntent(left: Batch, right: Batch): boolean {
   return sameIdentity(left, right) && !!left.entry_key && left.entry_key === right.entry_key &&
     left.delegate_in === right.delegate_in && left.fee_rate === right.fee_rate && right.intent === 1;
 }
+export function possibleSend(b: Batch): boolean {
+  return sent.includes(b.state) || !!b.attempted || b.txid !== null || b.raw !== null || b.ancestors !== null;
+}
+export function failedMembers(b: Batch): string[] {
+  return b.release_failed === null ? [] : JSON.parse(b.release_failed) as string[];
+}
 export function entryPayload(b: Batch) {
   if (!b.entry_key || !b.root) refuse("controller entry has no bound identity");
   return { entry: b.entry_key, root: b.root, oids: [...b.members] };

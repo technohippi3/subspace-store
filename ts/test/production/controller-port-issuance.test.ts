@@ -104,14 +104,14 @@ test("O23: TypeScript controller loses arm replies conservatively and rechecks b
   }
 });
 
-test("TypeScript controller retains known-unsent locks on failed members and records lost broadcast responses", async (t) => {
+test("TypeScript controller refuses unavailable release adapters and records lost broadcast responses", async (t) => {
   const f = fixture(t);
   await use(f, store => Effect.gen(function* () {
     yield* paidPair(store, f); const listener = yield* serveOperator(store, Effect.succeed(credential));
     yield* Effect.promise(async () => {
       const k = kernel(f.root, listener.url);
       f.node.outputs[0]!.confirmations = 2;
-      await assert.rejects(using(k, controller => controller.issue("b1")), /failed/);
+      await assert.rejects(using(k, controller => controller.issue("b1")), /release ports/);
       assert.equal(local(k.database).entry_key, null); assert.equal(k.calls.broadcasts, 0);
       f.node.outputs[0]!.confirmations = 3; k.calls.broadcastError = true;
       const result = await using(k, controller => controller.issue("b1"));

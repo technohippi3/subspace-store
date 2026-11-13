@@ -29,9 +29,10 @@ class RebuildGuard:
             raise Refused('three rebuilds in a row: paused until the next block')
 
     def _note_failed_rebuild(self,bid):
-        policy=self._rebuild_policy()
-        if policy['last_bid']==bid:
+        rows=self._rebuild_guard_rows()
+        if any(row['last_bid']==bid for row in rows):
             return
+        policy=rows[-1] if rows else dict(count=0,last_bid=None,paused_at=None,paused_bid=None)
         count=policy['count']+1
         self.journal.append('rebuild_guard',version=1,count=count,last_bid=bid,
                             paused_at=self.tip() if count>=3 else None,

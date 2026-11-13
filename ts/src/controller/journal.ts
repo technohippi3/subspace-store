@@ -6,12 +6,14 @@ import { JOURNAL_PAGE_BYTES, JOURNAL_PAGE_ENTRIES, type RecoveryCommand } from "
 import { batch, type Batch } from "./records.ts";
 import { strictJson } from "./json.ts";
 import { refuse } from "./errors.ts";
+import { guardRecord } from "./rebuild-policy.ts";
 
 export interface ControllerEvent { readonly seq: number; readonly kind: string; readonly [key: string]: Json }
 /** Existing Python controller envelope; store DurableStore envelopes are distinct. */
 export interface ControllerJournal {
   entries(): readonly ControllerEvent[];
   append(value: Batch): void;
+  appendEvent(kind: string, data: Readonly<Record<string, Json>>): void;
 }
 const maximumBytes = 512 * 1024 * 1024;
 function utf8(raw: Buffer): string {
@@ -27,6 +29,7 @@ function decode(raw: string, sequence: number): ControllerEvent {
     if (Object.keys(value).sort().join() !== "batch,kind,seq") refuse("invalid controller batch envelope", "invalid");
     batch(value.batch);
   }
+  if (value.kind === "rebuild_guard") guardRecord(value);
   return value as ControllerEvent;
 }
 export function latest(entries: readonly ControllerEvent[]): Map<string, Batch> {
@@ -36,8 +39,9 @@ export function latest(entries: readonly ControllerEvent[]): Map<string, Batch> 
   }
   return result;
 }
-function rawBatch(value: Batch, sequence: number): string {
-  return JSON.stringify({ seq: sequence, kind: "batch", batch: batch(value) });
+function eventData(kind: string, data: Readonly<Record<string, Json>>): Record<string, Json> {
+  if (Object.hasOwn(data, "seq") || Object.hasOwn(data, "kind")) refuse("reserved controller event fields", "invalid");
+  const value = { kind, ...data }; decode(JSON.stringify({ seq: 1, ...value }), 1); return value;
 }
 function digest(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
 
@@ -66,7 +70,10 @@ export class FileControllerJournal implements ControllerJournal {
     this.syncDirectory(); this.prefix = lines; return entries;
   }
   append(value: Batch): void {
-    const before = this.entries(), raw = rawBatch(value, before.length + 1);
+    this.appendEvent("batch", { batch: batch(value) as unknown as Json });
+  }
+  appendEvent(kind: string, data: Readonly<Record<string, Json>>): void {
+    const value = eventData(kind, data), before = this.entries(), raw = JSON.stringify({ seq: before.length + 1, ...value });
     const fd = openSync(this.path, "a", 0o600);
     try { writeFileSync(fd, raw + "\n"); fsyncSync(fd); } finally { closeSync(fd); }
     this.syncDirectory();
@@ -86,6 +93,12 @@ export class RemoteControllerJournal implements ControllerJournal {
   private readonly command: Pick<RecoveryCommand, "request">;
   constructor(command: Pick<RecoveryCommand, "request">) { this.command = command; }
   entries(): readonly ControllerEvent[] {
+    // Policy must never derive its next count/reset from history that excludes
+    // this instance's unresolved exact event (including a loss before forwarding).
+    if (this.pending) this.confirmPending();
+    return this.readEntries();
+  }
+  private readEntries(): readonly ControllerEvent[] {
     const entries: ControllerEvent[] = [], prefix: string[] = []; let after = 0, bytes = 0, head: number | undefined;
     while (true) {
       const page = this.command.request<{ head: number; entries: { sequence: number; sha256: string; data: string }[] }>({
@@ -109,17 +122,26 @@ export class RemoteControllerJournal implements ControllerJournal {
     this.prefix = prefix; return entries;
   }
   append(value: Batch): void {
-    const encoded = JSON.stringify(batch(value));
-    if (this.pending && this.pending.value !== encoded) refuse("previous controller acknowledgment remains unresolved", "unavailable");
-    if (!this.pending) {
-      const sequence = this.entries().length + 1;
-      this.pending = { value: encoded, sequence, raw: rawBatch(value, sequence) };
+    this.appendEvent("batch", { batch: batch(value) as unknown as Json });
+  }
+  appendEvent(kind: string, data: Readonly<Record<string, Json>>): void {
+    const value = eventData(kind, data), encoded = JSON.stringify(value), previous = this.pending;
+    if (previous) {
+      // Resolve an older lost reply with the identical bytes before any different
+      // event. A live read may already expose that event to policy/restart code.
+      this.confirmPending(); if (previous.value === encoded) return;
     }
+    const sequence = this.entries().length + 1;
+    this.pending = { value: encoded, sequence, raw: JSON.stringify({ seq: sequence, ...value }) };
+    this.confirmPending();
+  }
+  private confirmPending(): void {
+    if (!this.pending) return;
     const { sequence, raw } = this.pending, sha256 = digest(raw);
     const response = this.command.request<{ sequence: number; sha256: string }>({
       op: "journal-append", stream: "controller", sequence, sha256, data: Buffer.from(raw).toString("base64") });
     if (!response || typeof response !== "object" || response.sequence !== sequence || response.sha256 !== sha256) refuse("controller journal acknowledgment differs", "unavailable");
-    this.entries();
+    this.readEntries();
     if (this.prefix[sequence - 1] !== raw) refuse("controller journal readback differs", "unavailable");
     this.pending = undefined;
   }

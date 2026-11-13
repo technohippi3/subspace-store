@@ -642,6 +642,17 @@ a late retry of an old paused batch can never create a successor. Explicit
 operator rollback is not a binding failure. Unsupported counter history
 refuses startup.
 
+Runtime amendment, 2026-11-13: both the active Python controller and the
+TypeScript kernel dedupe a failed batch against every valid historical
+`last_bid`, not only the newest row. A lost acknowledgment after guard
+publication, followed by another batch's failure or a successful reset,
+cannot count that same immutable batch ID again. Existing histories are
+retained; prior counts or pauses are not rewritten retroactively. New issue
+resets after fresh binding and delegate validation; resuming an existing
+intent preserves intervening failures and does not clear a pause. The
+focused Python `test_B5_guard_ack_loss_and_intervening_failures_or_reset_never_count_one_parent_twice`
+and TypeScript controller rebuild-policy tests exercise this repair.
+
 For L8, refusing an unknown commitment transaction also records a local
 recovery pause and one operator alert before any confirmation prompt.
 Journal acknowledgment is retried without duplicating the alert. Members

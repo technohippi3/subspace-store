@@ -84,8 +84,9 @@ test("TypeScript controller remote journal preserves pending exact bytes and aut
   } };
   const journal = new RemoteControllerJournal(command), row = checkpoint();
   assert.throws(() => journal.append(row), /lost append reply/);
-  assert.throws(() => journal.append({ ...row, entry_key: "1".repeat(32) }), /unresolved/);
-  journal.append(row); assert.equal(objects.length, 1); assert.deepEqual(latest(journal.entries()).get("b1"), row);
+  const original = objects[0]!.data;
+  journal.appendEvent("rebuild_guard", { version: 1, count: 1, last_bid: "b1", paused_at: null, paused_bid: null });
+  assert.equal(objects[0]!.data, original); assert.equal(objects.length, 2); assert.deepEqual(latest(journal.entries()).get("b1"), row);
   failRead = true; assert.throws(() => journal.entries(), /outage/); failRead = false;
   objects[0]!.sha256 = "0".repeat(64); assert.throws(() => journal.entries(), /digest/);
 });

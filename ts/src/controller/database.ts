@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { ownDatabase } from "../storage/ownership.ts";
-import { batch, type Batch } from "./records.ts";
+import { batch, possibleSend, type Batch } from "./records.ts";
 import { refuse } from "./errors.ts";
 
 const schema = `create table if not exists batches (
@@ -81,9 +81,32 @@ export class BatchDatabase {
     this.active(); this.db.exec("begin immediate");
     try { work(); this.db.exec("commit"); } catch (error) { this.db.exec("rollback"); throw error; }
   }
-  uncertain(bid: string, answer: string, why: string): Batch {
+  completeRebuild(bid: string, failed: readonly string[], digest: string, paused: boolean): string | null {
+    let child: string | null = null;
     this.transaction(() => {
-      this.patch(bid, { state: "broadcast_uncertain", attempted: 1, answer });
+      const parent = this.get(bid), all = this.batches(), keep = parent.members.filter(id => !failed.includes(id));
+      if (possibleSend(parent) || parent.state === "rebuilt" || all.some(b => b.supersedes === bid))
+        refuse("controller parent cannot retire again or after a possible send");
+      if (parent.release_failed !== null && (JSON.parse(parent.release_failed) as string[]).some(id => !failed.includes(id)))
+        refuse("controller failed members cannot shrink during retirement");
+      if (keep.length && !paused) {
+        child = `b${all.length + 1}`;
+        const value = batch({ ...parent, bid: child, members: keep, digest, state: "frozen", prior_root: parent.prior_root,
+          root: null, delegate_in: null, fee_rate: null, txid: null, mined_height: null, intent: 0, attempted: 0,
+          supersedes: bid, answer: null, raw: null, recovery_paused: 0, ancestors: null, entry_key: null, release_failed: null });
+        const row = { ...value, members: JSON.stringify(value.members) }, keys = Object.keys(row) as (keyof typeof row)[];
+        this.db.prepare(`insert into batches(${keys.join(",")}) values(${keys.map(() => "?").join(",")})`).run(...keys.map(key => row[key]));
+      } else if (!keep.length) this.db.prepare("insert into alerts(kind,bid,detail) values('every_member_failed',?,'')").run(bid);
+      if (paused && !this.db.prepare("select n from alerts where kind='rebuilds' and bid=?").get(bid))
+        this.db.prepare("insert into alerts(kind,bid,detail) values('rebuilds',?,'paused until next block')").run(bid);
+      this.patch(bid, { state: "rebuilt", intent: 0, release_failed: JSON.stringify(failed) });
+    });
+    return child;
+  }
+  uncertain(bid: string, answer: string, why: string, armedDelegate?: string): Batch {
+    this.transaction(() => {
+      this.patch(bid, { state: "broadcast_uncertain", attempted: 1, answer,
+        ...(armedDelegate === undefined ? {} : { intent: 1, delegate_in: armedDelegate }) });
       this.db.prepare("insert into alerts(kind,bid,detail) values('broadcast_uncertain',?,?)").run(bid, why);
     }); return this.get(bid);
   }

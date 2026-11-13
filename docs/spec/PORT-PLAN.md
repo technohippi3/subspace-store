@@ -145,13 +145,24 @@ digest. This removes that build tool's Python dependency; the controller,
 runner, reference baseline and remaining tooling still require Python.
 
 The bounded TypeScript/Effect controller kernel now handles a preexisting
-checkpointed batch's bound entry, first-send arm and normal-process restart.
+checkpointed batch's bound entry, first-send arm, known-unsent close/rebuild,
+durable rebuild throttle and normal-process restart, plus safe precommit
+retirement without a preparation implementation.
 It retains Python-shaped SQLite/JSONL history and the existing remote journal
 protocol. `CONTROLLER-PORT.md` defines its scope and stand-in broadcast tests.
-The shipped runner continues to select the Python controller. Close/rebuild,
+The shipped runner continues to select the Python controller. Batch preparation,
 the remaining controller lifecycle, native adapters and full replacement
 qualification still precede removal; this development slice changes no
 pilot activation gate.
+
+The 2026-11-13 runtime amendments repair two discovered gaps in both the
+active Python controller and the TypeScript port. A failed parent is deduped
+against all valid historical rebuild-guard rows, including after another
+failure or reset. First retirement, rollback and parking require fresh known
+non-issued statuses for every member, so forgetting an entry ID cannot erase
+foreign armed ownership. `CONTROLLER-DESIGN.md` and `ENTRY-RELEASE.md` record
+the contracts and focused tests. Prior journals and counts remain unchanged;
+this is not a payment-policy backport or arbitrary-history cutover claim.
 
 ## Work order and gates
 

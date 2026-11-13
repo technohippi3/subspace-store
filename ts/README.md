@@ -7,8 +7,10 @@ coverage. The installer and seller CLI are implemented. Each candidate requires
 same-payload real-native/browser and owner-client acceptance; see the root
 `../README.md` and `../deploy/NATIVE-PACKAGE.md` for the evidence boundary.
 
-The development kernel in `src/controller/` ports bound-entry first attempts
-and normal-process restart for preexisting checkpointed batches. It retains
+The development kernel in `src/controller/` ports bound-entry first attempts,
+known-unsent close/rebuild, the durable rebuild throttle and normal-process
+restart for preexisting checkpointed batches, plus safe precommit retirement.
+It retains
 the Python controller journal protocol and has SQLite/HTTP/crash tests with
 recording native ports. It is not selected by the runner. Its remaining
 lifecycle and native/package qualification are explicit in

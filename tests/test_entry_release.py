@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from controller.core import Clients, Controller, Refused
-from controller.journal import Journal
+from controller.journal import Journal, JournalDown
 from runner.store import Refused as StoreRefused, TypeScriptStore
 from runner.cli import NotConfirmed, Runner
 
@@ -21,6 +21,7 @@ class World:
         self.failed = set()
         self.lost_rollback = False
         self.bound_entries = True
+        self.statuses = {}
         self.info = {f"n{i}": dict(script_pubkey=f"mock-script-{i}", commitment_root="a" * 64, parked=False)
                      for i in (1, 2)}
         self.c = self.open()
@@ -39,7 +40,7 @@ class World:
         self.c = self.open()
 
     def order(self, oid):
-        return dict(name=f"n{oid[1:]}@space", recipient_spk=f"mock-script-{oid[1:]}")
+        return dict(name=f"n{oid[1:]}@space", recipient_spk=f"mock-script-{oid[1:]}", status=self.statuses.get(oid, "converted"))
 
     def observe(self):
         pass
@@ -156,6 +157,64 @@ class EntryRelease(unittest.TestCase):
                 self.assertEqual(json.loads(w.c.batch("b1")["release_failed"]), ["o1", "o2"])
                 self.assertIsNone(w.c.resume("b1"))
                 self.assertEqual(w.rollbacks, 1)
+
+    def test_B5_guard_ack_loss_and_intervening_failures_or_reset_never_count_one_parent_twice(self):
+        w = self.world()
+        w.c.tip = lambda: 10
+        append = w.journal.append
+
+        def lose_guard_reply(kind, **data):
+            result = append(kind, **data)
+            if kind == "rebuild_guard":
+                raise JournalDown("simulated lost guard acknowledgment")
+            return result
+
+        w.journal.append = lose_guard_reply
+        with self.assertRaises(JournalDown):
+            w.c._note_failed_rebuild("b1")
+        w.journal.append = append
+        w.restart()
+        w.c.tip = lambda: 10
+        w.c._note_failed_rebuild("b2")
+        self.assertEqual(w.c._rebuild_policy()["count"], 2)
+        before = w.journal.path.read_bytes()
+        w.c._note_failed_rebuild("b1")
+        self.assertEqual(w.journal.path.read_bytes(), before)
+        w.c._reset_rebuild_guard()
+        w.restart()
+        w.c.tip = lambda: 10
+        w.c._note_failed_rebuild("b1")
+        self.assertEqual(w.c._rebuild_policy()["count"], 0)
+        w.c._note_failed_rebuild("b3")
+        self.assertEqual(w.c._rebuild_policy()["count"], 1)
+        self.assertEqual([row["last_bid"] for row in w.c._rebuild_guard_rows()].count("b1"), 1)
+
+        # Previously inflated history remains evidence; this repair does not
+        # rewrite counts or retroactively remove a recorded pause.
+        append("rebuild_guard", version=1, count=3, last_bid="b1", paused_at=10, paused_bid="b1")
+        retained = w.journal.path.read_bytes()
+        w.c._note_failed_rebuild("b1")
+        self.assertEqual(w.journal.path.read_bytes(), retained)
+        self.assertTrue(w.c._paused_rebuild("b1"))
+
+    def test_O26_forgotten_entry_identity_cannot_roll_back_foreign_issuance_or_unknown_status(self):
+        for rootless, status in ((rootless, status) for rootless in (False, True)
+                                 for status in ("issuing", "ready", "fulfilled", "unknown", None)):
+            with self.subTest(rootless=rootless, status=status):
+                w = self.world()
+                # A close of the new absent ID succeeds, but the foreign entry
+                # still owns its issuing order, just as the real HTTP store does.
+                w.c._save("b1", entry_key=None)
+                if rootless:
+                    w.c._save("b1", root=None, state="frozen")
+                w.statuses["o1"] = status
+                with self.assertRaisesRegex(Refused, "foreign issuance|unknown order"):
+                    w.c.release_unsent("b1", ["o2"])
+                self.assertEqual((w.rollbacks, w.parked), (0, []))
+                self.assertEqual(len(w.c.batches()), 1)
+                self.assertNotEqual(w.c.batch("b1")["state"], "rebuilt")
+                self.assertEqual(w.c.alerts(), [])
+                self.assertEqual(w.info["n1"]["commitment_root"], "a" * 64)
 
     def test_A32_attended_runner_reports_all_failed_issue_and_resumes_release_with_confirmation(self):
         w = self.world()

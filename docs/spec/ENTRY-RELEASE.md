@@ -91,6 +91,22 @@ failed sets monotonically and never downgrades closed progress to an older
 release intent. A journaled successor missing from the local database still
 requires recovery; this component does not qualify whole-host restore.
 
+Runtime amendment, 2026-11-13: a controller restored before entry-ID
+persistence can invent a new ID whose absent-entry close succeeds while
+another armed entry still owns the orders. That receipt must not authorize
+local rollback or retirement. Both the active Python controller and the
+TypeScript kernel freshly inspect every member before first retirement,
+rollback and parking, including dropped members and the rootless precommit
+path. Status must be one of `requested`, `quoted`, `unpaid`, `converted`,
+`cancelled` or `refund_due`; issuing, ready, fulfilled, missing, malformed
+and unknown statuses refuse. Exact recipient/root checks still apply.
+An already retired parent's completion retry may observe its legitimate
+successor's later issuing status; it validates the existing successor
+without repeating retirement or native mutations. This lifecycle repair
+changes no payment rule and does not qualify arbitrary host restoration.
+The Python entry-release tests and real TypeScript HTTP controller fixtures
+cover the forgotten-identity and rootless refusals.
+
 ## HTTP contract and scope
 
 The authenticated routes `/operator/issuance-entries`, `/lookup` and

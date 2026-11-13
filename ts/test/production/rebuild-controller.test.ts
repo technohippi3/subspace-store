@@ -63,3 +63,22 @@ test("O26: a stale controller cannot release an armed entry or obtain another br
     assert.equal((yield* Effect.promise(() => command("continue"))).sends, 1);
   }));
 });
+
+test("Python bound release refuses a foreign armed entry after both controller copies lose its identity", async (t) => {
+  const f = fixture(t);
+  await use(f, store => Effect.gen(function* () {
+    yield* paidPair(store, f); const listener = yield* serveOperator(store, Effect.succeed(credential));
+    const command = controller(f, listener.url);
+    yield* Effect.promise(() => command("prepare"));
+    const db = join(f.root, "controller.db"), journal = join(f.root, "controller-journal", "runner.jsonl");
+    const olderDb = join(f.root, "pre-entry-controller.db"), olderJournal = join(f.root, "pre-entry-controller.jsonl");
+    copyFileSync(db, olderDb); copyFileSync(journal, olderJournal);
+    assert.equal((yield* Effect.promise(() => command("continue"))).sends, 1);
+    copyFileSync(olderDb, db); copyFileSync(olderJournal, journal);
+    const refused = yield* Effect.promise(() => command("rollback"));
+    assert.match(refused.error!, /foreign issuance/); assert.equal(refused.sends, 1); assert.equal(refused.rollbacks, 0);
+    assert.deepEqual(refused.children, []); assert.notEqual(refused.state, "rebuilt");
+    assert.equal((yield* store.inspectionOrder("o1")).status, "issuing");
+    assert.equal((yield* store.inspectionOrder("o2")).status, "issuing");
+  }));
+});
