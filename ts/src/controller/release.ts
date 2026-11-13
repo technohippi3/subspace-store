@@ -10,6 +10,8 @@ import type { RebuildPolicy } from "./rebuild-policy.ts";
 import { appendIfAvailable, settleRestart } from "./restart.ts";
 import { entryReceipt } from "./registry-client.ts";
 import { ISSUED } from "../order.ts";
+import { requirePreparationIdle } from "./preparation-history.ts";
+import { PreparationReadback } from "./preparation-readback.ts";
 
 /** Known-unsent close/rebuild only; a child remains frozen for a later preparer. */
 export class KnownUnsentRelease {
@@ -22,6 +24,7 @@ export class KnownUnsentRelease {
   }
   private ready(bid: string): Result<Batch> {
     return checked("check known-unsent history", () => {
+      requirePreparationIdle(this.journal);
       // An outage refuses before any local progress or stale journal append.
       const entries = this.journal.entries(); this.db.requireRestored(new Set(latest(entries).keys()));
       settleRestart(this.db, this.journal);
@@ -87,8 +90,14 @@ export class KnownUnsentRelease {
             self.journal.entries().some(event => event.kind === "commit_local_intent" && event.bid === bid)))
           refuse("local commit outcome has no confirmed root; reconciliation required");
       });
+      if (!b.root) {
+        const ports = yield* checked("require precommit native readback", () => self.ports.preparation ?? refuse("precommit native readback is not configured", "unavailable"));
+        const readback = new PreparationReadback(ports), bindings = yield* self.bindings(b);
+        yield* readback.head(b); yield* readback.available(b, bindings);
+        if (bindingFailure) yield* self.policy.note(bid);
+        return yield* self.complete(b, requested);
+      }
       if (bindingFailure) yield* self.policy.note(bid);
-      if (!b.root) return yield* self.complete(b, requested);
       b = yield* checked("persist release intent", () => self.db.patch(bid, {
         entry_key: b.entry_key ?? randomUUID().replaceAll("-", ""), state: "releasing", release_failed: JSON.stringify(requested) }));
       return yield* self.resume(b.bid);

@@ -4,7 +4,6 @@ import tempfile
 import unittest
 
 from controller.errors import Refused
-from controller.journal import JournalDown
 from runner.cli import NotConfirmed, Runner
 from runner.store import TypeScriptStore, Refused as ClientRefused
 from tests.test_entry_release import World
@@ -63,7 +62,7 @@ class Supersession(unittest.TestCase):
 
     def test_A48_journal_outage_or_lost_callback_reply_never_advances_controller_without_acknowledged_proof(self):
         w = self.world(); w.journal.set_down(True)
-        with self.assertRaises(JournalDown): w.c.record_supersession("b1","f" * 64)
+        with self.assertRaisesRegex(Refused,"preparation journal unavailable"): w.c.record_supersession("b1","f" * 64)
         self.assertEqual(self.calls,[]); w.journal.set_down(False)
         original = w.accept_supersession
         def lose(*args): original(*args); raise ConnectionError("lost callback reply")
@@ -81,7 +80,7 @@ class Supersession(unittest.TestCase):
         self.assertEqual(sum(a["kind"]=="supersession_reversed" for a in w.c.alerts()),1)
         self.status["conflicted"] = True
         w.journal.set_down(True)
-        with self.assertRaisesRegex(Refused,"not acknowledged"): w.c.watch("b1")
+        with self.assertRaisesRegex(Refused,"preparation journal unavailable"): w.c.watch("b1")
         w.journal.set_down(False)
         with self.assertRaisesRegex(Refused,"manual recovery"): w.c.watch("b1")
         with self.assertRaisesRegex(Refused,"manual recovery"): w.c.rebroadcast_commitment("b1")

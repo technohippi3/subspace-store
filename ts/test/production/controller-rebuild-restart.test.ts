@@ -42,6 +42,10 @@ test("A29: TypeScript precommit release leaves the prior native root intact and 
         const row = { ...local(k.database), state: "staged" as const, root: null, prior_root: "e".repeat(64) };
         put(k.database, row); writeFileSync(k.journal.path, JSON.stringify({ seq: 1, kind: "batch", batch: row }) + "\n");
         const journal = new FileControllerJournal(k.directory);
+        const native = k.native.state(); native.chain = row.prior_root; native.head = row.prior_root; native.txid = "f".repeat(64); native.pending = false;
+        for (const handle of Object.values(native.handles)) handle.commitment_root = null;
+        native.handles.old = { script_pubkey: native.handles.n0!.script_pubkey, commitment_root: "a".repeat(64), parked: false };
+        k.native.save(native);
         if (committed) journal.appendEvent("commit_local_intent", { bid: "b1", space: "@space" });
         const subject = { ...k, config: { database: k.database, makeJournal: () => journal } };
         if (committed) await assert.rejects(using(subject, c => c.releaseUnsent("b1", ["o2"], true)), /no confirmed root/);
@@ -50,7 +54,7 @@ test("A29: TypeScript precommit release leaves the prior native root intact and 
           assert.equal(batches(k.database)[1]!.prior_root, row.prior_root);
         }
         assert.equal(k.native.state().rollbacks, 0); assert.equal(k.native.state().parks, 0);
-        assert.equal(k.native.state().handles.n0!.commitment_root, "a".repeat(64));
+        assert.equal(k.native.state().handles.old!.commitment_root, "a".repeat(64));
         assert.equal(journal.entries().filter(e => e.kind === "entry_rollback_intent").length, 0);
       });
     }));

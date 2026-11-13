@@ -65,6 +65,7 @@ class Issuance:
         return all(self.registry.acknowledged_status(m) == "issuing" for m in b["members"])
 
     def _send(self, bid):
+        self._require_preparation_idle()
         b = self.batch(bid)
         if b["state"] != "issuing" or b["attempted"]:
             raise Refused("the commitment send is not available or was already attempted")
@@ -82,6 +83,11 @@ class Issuance:
             if not permission["granted"] or not permission["acknowledged"] or not self._issuance_acknowledged(self.batch(bid)):
                 self._uncertain(bid, "broadcast permission not exclusively confirmed", "entry arm outcome uncertain")
                 raise Refused("broadcast permission unavailable or already consumed; not sent")
+        try:
+            self._require_preparation_idle()
+        except Exception:
+            self._uncertain(bid, "preparation ownership changed after send permission", "preparation barrier after attempted arm")
+            raise
         try:
             # The body as it came, so that whatever subs answered is kept.
             body = self.subs.post(f"/spaces/{b['space']}/broadcast",

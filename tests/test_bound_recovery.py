@@ -25,7 +25,7 @@ class BoundRecovery(unittest.TestCase):
         self.addCleanup(lambda: w.c.close())
         w.inventory = dict(version=1, store="mock-store", sourceSequence=1, sequence=5,
                            tipHeight=200, tipHash="b" * 64, spaces=["@space"],
-                           orders=[dict(id=f"o{i}", handle=f"n{i}@space", recipient=f"mock-script-{i}", status="issuing") for i in (1, 2)],
+                           orders=[dict(id=f"o{i}", handle=f"n{i}@space", recipient=w.order(f"o{i}")["recipient_spk"], status="issuing") for i in (1, 2)],
                            entries=[dict(entry="1" * 32, root="a" * 64, space="@space", oids=["o1", "o2"],
                                          delegate="d" * 64 + ":0", closed=False, superseded=False,
                                          txid="c" * 64, conflictTxid=None, revision=1)])
@@ -56,6 +56,7 @@ class BoundRecovery(unittest.TestCase):
         peer = SimpleNamespace(call=call)
         w.c.clients.btc = w.c.clients.spaced = lambda: peer
         w.c.clients.subs_read = lambda: Subs()
+        del w.c.onchain_commitment  # Use this fixture's recording RPC, not World's fixed prior-root seam.
         w.c._commitment_observation = lambda b: dict(txid=b["txid"], tipHeight=200, tipHash="b" * 64,
                                                    minedHeight=50, rootHeight=50, anchorHeight=200)
         return w

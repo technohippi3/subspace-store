@@ -7,6 +7,7 @@ import {Effect} from 'effect';
 import {sendingFixture,tipHash} from './refund-sending-fixture.ts';
 import {use,setup,payment} from './application-fixture.ts';
 import {serveOperator} from '../../src/application/operator-http.ts';
+import {servePending} from '../../src/application/pending-http.ts';
 import {credential,faultProxy} from './entry-http-fixture.ts';
 import {ApplicationError} from '../../src/application/records.ts';
 export {Effect,assert};
@@ -27,6 +28,7 @@ export async function within(t,callback,count=2,price=10000){
   }
   f.node.outputs=Array.from({length:count},(_,i)=>({...payment(i+1,price),outpoint:String(i+1).padStart(64,'0')+':0'}));yield*store.observe();
   const listener=yield*serveOperator(store,Effect.succeed(credential));
+  const pending=yield*servePending(store,Effect.succeed(credential));chain.pendingUrl=pending.url;
   const proxy=yield*Effect.promise(()=>faultProxy(t,listener.url));
   const token=join(f.root,'operator-token');writeFileSync(token,credential,{mode:0o600});
   function write(){chain.tipHeight=f.node.tip;writeFileSync(join(f.root,'chain.json'),JSON.stringify(chain));}

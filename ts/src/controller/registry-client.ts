@@ -4,6 +4,8 @@ import { entryPayload, outpoint, type Batch } from "./records.ts";
 import type { ArmReceipt, EntryReceipt, Lookup, OrderBinding, RegistryPort, Result } from "./ports.ts";
 import { orderBinding } from "./rebuild-records.ts";
 import { strictJson } from "./json.ts";
+import { canonicalHandle, validP2tr } from "../recipient.ts";
+import { ORDER_STATUSES, type OrderStatus } from "../order.ts";
 
 function shape(value: unknown, fields: string): asserts value is Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).sort().join() !== fields.split(",").sort().join())
@@ -98,6 +100,52 @@ export class HttpRegistry implements RegistryPort {
       yield* checked("validate requested member", () => { if (!b.members.includes(oid)) refuse("unknown controller member", "invalid"); });
       const value = yield* self.request(`/operator/orders/${oid}`);
       return yield* checked("validate order binding", () => orderBinding(value, b, oid));
+    });
+  }
+  inspect(oid: string): Result<OrderBinding> {
+    const self = this; return Effect.gen(function* () {
+      yield* checked("validate inspected order", () => { if (!/^o[1-9][0-9]{0,15}$/.test(oid)) refuse("invalid preparation order", "invalid"); });
+      const raw = yield* self.request(`/operator/orders/${oid}`);
+      return yield* checked("validate preparation order", () => {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) refuse("invalid preparation order response", "invalid");
+        const row = raw as Record<string, unknown>;
+        if (row.oid !== oid || !canonicalHandle(row.name) || !validP2tr(row.recipient_spk) || !ORDER_STATUSES.includes(row.status as OrderStatus))
+          refuse("invalid preparation order binding", "invalid");
+        return { oid, name: row.name, recipient_spk: row.recipient_spk, status: row.status as OrderStatus };
+      });
+    });
+  }
+  converted(): Result<readonly string[]> {
+    const self = this; return Effect.gen(function* () {
+      const observed = yield* self.request("/operator/observe", {});
+      yield* checked("validate preparation observation", () => { shape(observed, "observed"); if (observed.observed !== true) refuse("preparation observation unavailable"); });
+      const raw = yield* self.request("/operator/orders?status=converted");
+      return yield* checked("validate converted preparation list", () => {
+        shape(raw, "orders");
+        if (!Array.isArray(raw.orders) || raw.orders.length > 10_000 || raw.orders.some(id => typeof id !== "string" || !/^o[1-9][0-9]{0,15}$/.test(id)) ||
+            new Set(raw.orders).size !== raw.orders.length) refuse("invalid converted order list", "invalid");
+        return [...raw.orders] as string[];
+      });
+    });
+  }
+  batchable(oid: string): Result<boolean> {
+    const self = this; return Effect.gen(function* () {
+      yield* checked("validate preparation member", () => { if (!/^o[1-9][0-9]{0,15}$/.test(oid)) refuse("invalid preparation member", "invalid"); });
+      const raw = yield* self.request(`/operator/orders/${oid}/batch-entry`, {});
+      return yield* checked("validate batchable preparation member", () => {
+        shape(raw, "batch_entry,issuing_recheck");
+        if (typeof raw.batch_entry !== "boolean" || typeof raw.issuing_recheck !== "boolean") refuse("invalid preparation member receipt", "invalid");
+        return raw.batch_entry;
+      });
+    });
+  }
+  pending(oids: readonly string[]): Result<boolean> {
+    const self = this; return Effect.gen(function* () {
+      const raw = yield* self.request("/operator/pending", { oids });
+      return yield* checked("confirm pending preparation receipt", () => {
+        shape(raw, "acknowledged"); if (typeof raw.acknowledged !== "boolean") refuse("invalid pending preparation receipt", "invalid");
+        return raw.acknowledged;
+      });
     });
   }
   failing(b: Batch, issuing: boolean): Result<readonly string[]> {

@@ -81,6 +81,21 @@ export class BatchDatabase {
     this.active(); this.db.exec("begin immediate");
     try { work(); this.db.exec("commit"); } catch (error) { this.db.exec("rollback"); throw error; }
   }
+  freeze(space: string, members: readonly string[], digest: string, priorRoot: string | null): Batch {
+    let bid = "";
+    this.transaction(() => {
+      const all = this.batches(), closed = ["rebuilt", "final", "fulfilled", "superseded"];
+      if (all.some(b => b.space === space && !closed.includes(b.state)) || all.some(b => !closed.includes(b.state) && b.members.some(id => members.includes(id))))
+        refuse("another batch is open or a preparation member is busy");
+      bid = `b${all.length + 1}`;
+      const value = batch({ bid, space, members: [...members], digest, state: "frozen", prior_root: priorRoot, root: null,
+        delegate_in: null, fee_rate: null, txid: null, mined_height: null, intent: 0, attempted: 0, supersedes: null,
+        answer: null, raw: null, recovery_paused: 0, ancestors: null, entry_key: null, release_failed: null });
+      const row = { ...value, members: JSON.stringify(value.members) }, keys = Object.keys(row) as (keyof typeof row)[];
+      this.db.prepare(`insert into batches(${keys.join(",")}) values(${keys.map(() => "?").join(",")})`).run(...keys.map(key => row[key]));
+    });
+    return this.get(bid);
+  }
   completeRebuild(bid: string, failed: readonly string[], digest: string, paused: boolean): string | null {
     let child: string | null = null;
     this.transaction(() => {

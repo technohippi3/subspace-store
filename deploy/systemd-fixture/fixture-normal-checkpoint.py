@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='fixture-checkpoint-',dir=value['runtime
         registry=SimpleNamespace(db=sqlite3.connect(runtime['database'])),
         subs_process=CommandSubs(runner['subs']['data_dir'],commands('stop'),commands('start')),
         subs_read=Http(runner['subs']['url']),ready_timeout=10,snapshot_number=Controller.snapshot_number)
-    for name in ('_subs_stopped','_subs_ready','_wait_subs_ready'):
+    for name in ('_require_preparation_idle','_subs_stopped','_subs_ready','_wait_subs_ready'):
         setattr(holder,name,types.MethodType(getattr(Controller,name),holder))
     original=shutil.copytree
     def held_copy(source,destination,*args,**kwargs):

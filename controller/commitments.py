@@ -90,6 +90,7 @@ class CommitmentTracking:
         raise Refused("Core/spaced changed during commitment observation; retry")
 
     def watch_bound(self, bid):
+        self._require_preparation_idle()
         self.wait_synced()
         self.capture_bytes(bid)
         b = self.batch(bid)

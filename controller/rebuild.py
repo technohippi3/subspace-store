@@ -4,6 +4,7 @@ import json
 from uuid import uuid4
 
 from .errors import Refused
+from .preparation_readback import PreparationReadback
 
 PREPARING = ("frozen", "staged", "committed_local", "proved", "checkpointed")
 
@@ -33,16 +34,26 @@ class Rebuild:
         if acked and (any(acked[k] != b[k] for k in ("root", "prior_root", "members", "digest", "space")) or
                       (acked.get("entry_key") and acked["entry_key"] != b.get("entry_key"))):
             raise Refused("release identity differs from its journal; reconcile before continuing")
-        if binding_failure:
-            self._note_failed_rebuild(bid)
         if b["root"] is None:
+            history = [e["batch"] for e in self.journal.entries() if e["kind"] == "batch" and e.get("batch", {}).get("bid") == bid]
+            if any(row.get("attempted") or row.get("state") in self.SENT or
+                   any(row.get(key) is not None for key in ("txid", "raw", "ancestors")) for row in [b, *history]):
+                raise Refused("possible send evidence; rootless release refused")
             if b.get("entry_key") or b["intent"]:
                 raise Refused("entry or intent has no root; reconcile before continuing")
             if b["state"] not in ("frozen", "staged") or any(
                     e["kind"] == "commit_local_intent" and e.get("bid") == bid for e in self.journal.entries()):
                 raise Refused("local commit outcome has no confirmed root; reconcile before release")
+            readback = PreparationReadback(self)
+            expected = {self._release_order(b, member)["name"].split("@", 1)[0]: self._release_order(b, member)["recipient_spk"] for member in b["members"]}
+            readback.head(b)
+            readback.available(b, expected)
+            if binding_failure:
+                self._note_failed_rebuild(bid)
             # No local commit was requested. Never roll back a prior root.
             return self._complete_bound_rebuild(b, failed)
+        if binding_failure:
+            self._note_failed_rebuild(bid)
         if not b.get("entry_key"):
             self._save(bid, journal=False, entry_key=uuid4().hex)
         self._save(bid, journal=False, state="releasing", release_failed=json.dumps(failed))
@@ -185,6 +196,7 @@ class Rebuild:
         """A batch known never to have been sent: journal it as rebuilt, then
         return its members to paid, then roll back and continue without the
         failing members."""
+        self.require_restored()
         if getattr(self.registry, "bound_entries", False):
             return self.release_unsent(bid, failing, binding_failure=True)
         b = self.batch(bid)
@@ -198,6 +210,7 @@ class Rebuild:
         return self._new_without(b, failing)
 
     def rebuild(self, bid, failing):
+        self.require_restored()
         b = self.batch(bid)
         if getattr(self.registry, "bound_entries", False):
             return self.release_unsent(bid, failing, binding_failure=True)
@@ -206,6 +219,7 @@ class Rebuild:
         return self._new_without(b, failing)
 
     def _new_without(self, b, failing):
+        self._require_preparation_idle()
         space = b["space"]
         names = [_label(self.registry.order(m)["name"]) for m in failing]
         if names:

@@ -69,6 +69,7 @@ class Publisher(BoundPublication):
     def enroll(self, bid):
         """Add the batch's members whose certificate verified at d >= 150
         (status "ready") to its outstanding set."""
+        self.c.require_restored()
         b = self.c.batch(bid)
         added = []
         for m in b["members"]:
@@ -124,6 +125,7 @@ class Publisher(BoundPublication):
         """One `/publish` call for an explicit chunk, after the live check.
         Returns what happened; the chunk's handles stay outstanding unless
         their publish_status reads "final"."""
+        self.c.require_restored()
         b = self.c.batch(bid)
         if not chunk:
             return {"called": False, "why": "empty chunk: never call /publish with an empty list"}
@@ -242,6 +244,7 @@ class Publisher(BoundPublication):
         handle sovereign, marks the order fulfilled. A matching answer whose
         root isn't final and covered yet, or that libveritas still answers
         "pending", is waiting, not a failure: nothing is alerted."""
+        self.c.require_restored()
         if getattr(self.reg, "bound_entries", False):
             return self._bound_confirm_delivery(bid, oid)
         row = self.row(bid, oid)

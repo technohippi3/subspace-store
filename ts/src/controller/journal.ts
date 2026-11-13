@@ -7,6 +7,7 @@ import { batch, type Batch } from "./records.ts";
 import { strictJson } from "./json.ts";
 import { refuse } from "./errors.ts";
 import { guardRecord } from "./rebuild-policy.ts";
+import { preparationRecord } from "./preparation-history.ts";
 
 export interface ControllerEvent { readonly seq: number; readonly kind: string; readonly [key: string]: Json }
 /** Existing Python controller envelope; store DurableStore envelopes are distinct. */
@@ -30,6 +31,7 @@ function decode(raw: string, sequence: number): ControllerEvent {
     batch(value.batch);
   }
   if (value.kind === "rebuild_guard") guardRecord(value);
+  if (value.kind === "preparation_pending" || value.kind === "preparation_effect") preparationRecord(value);
   return value as ControllerEvent;
 }
 export function latest(entries: readonly ControllerEvent[]): Map<string, Batch> {

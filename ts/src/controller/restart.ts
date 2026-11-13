@@ -2,6 +2,7 @@ import { ControllerError, refuse } from "./errors.ts";
 import type { BatchDatabase } from "./database.ts";
 import { latest, type ControllerJournal } from "./journal.ts";
 import { failedMembers, possibleSend, sameIdentity, sameIntent, sent, type Batch } from "./records.ts";
+import { preparationHistory } from "./preparation-history.ts";
 
 export function appendIfAvailable(journal: ControllerJournal, value: Batch): void {
   try { journal.append(value); }
@@ -10,7 +11,7 @@ export function appendIfAvailable(journal: ControllerJournal, value: Batch): voi
 /** Startup never contacts the registry or native ports and never authorizes a send. */
 export function settleRestart(db: BatchDatabase, journal: ControllerJournal): void {
   let acknowledged: Map<string, Batch> | undefined;
-  try { acknowledged = latest(journal.entries()); }
+  try { const entries = journal.entries(); preparationHistory(entries); acknowledged = latest(entries); }
   catch (error) { if (error instanceof ControllerError && error.code !== "unavailable") throw error; }
   db.requireRestored(new Set(acknowledged?.keys()));
   // Validate all immutable identities before changing any older local row.

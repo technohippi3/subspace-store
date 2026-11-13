@@ -12,10 +12,12 @@ from controller.publication import Publisher
 from runner.cli import Runner
 from runner.store import configured_store
 from runner.recovery_bridge import RecoveryStore, digest
+from controller.rpc import Http, HttpError
+from urllib.parse import parse_qs, urlsplit
 
 mode,url,token,database,journal_directory,test_root,bid=sys.argv[1:]
 root=Path(test_root); cfg_file=root/'chain.json'; state_file=root/'subs.json'
-if not state_file.exists(): state_file.write_text(json.dumps(dict(handles={},broadcasts=[],rollbacks=0,publishes=0,commits=0,calls=[])))
+if not state_file.exists(): state_file.write_text(json.dumps(dict(handles={},broadcasts=[],rollbacks=0,publishes=0,commits=0,calls=[],localRoot=None)))
 def cfg(): return json.loads(cfg_file.read_text())
 def state(): return json.loads(state_file.read_text())
 def save(s): state_file.write_text(json.dumps(s))
@@ -60,42 +62,53 @@ class Rpc:
   raise AssertionError((method,params))
 rpc=Rpc()
 class Subs:
+ def fact(self,name,value):
+  return dict(name=name,**value,status='staged' if value['commitment_root'] is None else 'committed',commitment_idx=None if value['commitment_root'] is None else 0)
  def get(self,path,raw=False,**kwargs):
   x=cfg();s=state()
   if path=='/rpc/endpoints':return dict(wallet='mock-wallet')
   if path=='/status':return dict(status='ready')
   if '/pipeline' in path:
-   waiting=mode=='prepare-wait-prove' and not (root/'allow-proof').exists()
+   local=s.get('localRoot');waiting=local is not None and mode=='prepare-wait-prove' and c.batches()[-1]['state']=='committed_local' and not (root/'allow-proof').exists()
    if waiting:(root/'prove-entered').touch()
-   return dict(root=x['root'],txid=x['txid'] if x.get('known') else None,steps=dict(proving='pending' if waiting else 'complete'),pending_proofs=1 if waiting else 0,proving_job_active=waiting)
+   return dict(root=local,txid=x['txid'] if local and x.get('known') else None,has_pending=local is not None,commitment_idx=0 if local else None,
+    staged_count=sum(v['commitment_root'] is None for v in s['handles'].values()),
+    steps=dict(local='complete' if local else 'pending',proving='pending' if waiting or not local else 'complete',broadcast='pending',confirmed='pending',finalized='pending',published='pending'),pending_proofs=1 if waiting else 0,proving_job_active=waiting)
   if '/commit/status' in path:return dict(txid=x['txid'] if x.get('known') else None)
   if '/certs/' in path:
    handle=path.split('/')[2];o=next(o for o in [store.order(m) for m in x['oids']] if o['name']==handle)
    certroot=x.get('certificateRoot',x['root']);h=x['roots'].get(certroot,x.get('certificateHeight',50))
    return json.dumps(dict(verified=True,zones=[dict(handle=handle,script_pubkey=o['recipient_spk'],sovereignty=x.get('sovereignty','sovereign')),
     dict(handle='@space',commitment_root=certroot,commitment_height=h)])).encode()
-  if '/handles?' in path:return dict(handles=[dict(name=n,**v) for n,v in s['handles'].items() if v['commitment_root'] is None],total_pages=1)
-  if '/handles/' in path:return s['handles'][path.rsplit('/',1)[1]]
+  if '/handles?' in path:
+   query=parse_qs(urlsplit(path).query);page=int(query['page'][0]);size=int(query.get('per_page',['100'])[0]);staged=query['filter'][0]=='staged'
+   rows=[self.fact(n,v) for n,v in sorted(s['handles'].items()) if (v['commitment_root'] is None)==staged]
+   return dict(handles=rows[(page-1)*size:page*size],total=len(rows),page=page,per_page=size,total_pages=(len(rows)+size-1)//size)
+  if '/handles/' in path:
+   name=path.rsplit('/',1)[1]
+   if name not in s['handles']:raise HttpError('GET',path,404,'recorded handle absent')
+   return self.fact(name,s['handles'][name])
   raise AssertionError(path)
  def post(self,path,body=None,raw=False,**kwargs):
   x=cfg();s=state();s['calls'].append(dict(path=path,body=body));save(s)
   if path=='/rpc/spaced':return dict(result=rpc.call(body['method'],*body['params']))
   if path=='/registry/sync':
-   for oid in x['oids']:
-    o=store.order(oid);name=o['name'].split('@')[0]
-    s['handles'].setdefault(name,dict(commitment_root=None,script_pubkey=o['recipient_spk'],parked=False,publish_status=None))
-   save(s);return {}
+   rows=Http(x['pendingUrl'],token=Path(token).read_text()).get('/pending?space=@space')['handles']
+   for o in rows:
+    name=o['handle'].split('@')[0]
+    s['handles'].setdefault(name,dict(commitment_root=None,script_pubkey=o['script_pubkey'],parked=False,publish_status=None))
+   save(s);return dict(success=True,pulled=len(rows),staged=len(rows),errors=[])
   if path.endswith('/commit'):
-   s['commits']+=1;newroot=hex(s['commits']+9)[2:]*64
+   prior=s.get('localRoot');s['commits']+=1;newroot=hex(s['commits']+9)[2:]*64;count=0
    for v in s['handles'].values():
-    if v['commitment_root'] is None and not v['parked']:v['commitment_root']=newroot
-   save(s);x['root']=newroot;cfg_file.write_text(json.dumps(x));return dict(root=newroot)
+    if v['commitment_root'] is None and not v['parked']:v['commitment_root']=newroot;count+=1
+   s['localRoot']=newroot;save(s);x['root']=newroot;cfg_file.write_text(json.dumps(x));return dict(space='@space',prev_root=prior,root=newroot,handles_committed=count,is_initial=prior is None)
   if path.endswith('/rollback-local'):
    for v in s['handles'].values():v['commitment_root']=None
-   s['rollbacks']+=1;save(s);return {}
+   s['localRoot']=None;s['rollbacks']+=1;save(s);return {}
   if path.endswith('/park'):
    for name in body['handles']:s['handles'][name]['parked']=body['parked']
-   save(s);return {}
+   save(s);return dict(updated=len(body['handles']))
   if path.endswith('/publish'):
    for name in body['handles']:s['handles'][name]['publish_status']='final'
    s['publishes']+=1;save(s);return dict(handles_published=len(body['handles']),remaining=0)

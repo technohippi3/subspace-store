@@ -4,6 +4,7 @@ from .errors import Refused
 
 class BoundRecovery:
     def reconcile_bound(self):
+        self._require_preparation_idle()
         if not getattr(self.registry, "offline_recovery", False):
             raise Refused("TypeScript recovery requires the store-owned offline reconcile command")
         log = []
@@ -46,6 +47,7 @@ class BoundRecovery:
         return log
 
     def bound_statement(self):
+        self._require_preparation_idle()
         i = self.registry.inventory
         start = self.btc.call("getblockchaininfo")
         if (start["blocks"], start["bestblockhash"]) != (i["tipHeight"], i["tipHash"]):

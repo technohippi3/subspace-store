@@ -86,6 +86,16 @@ If no local root, entry or intent exists and no local commit was requested,
 a precommit rebuild retires the batch without rolling back a prior commitment.
 A journaled local-commit request without a confirmed root requires
 reconciliation; a missing reply does not prove no commit occurred.
+Runtime amendment, 2026-11-13: before first rootless retirement, both
+controllers also confirm the fresh chain prior root, native pipeline and
+every available member's exact script and null root. Advanced or ambiguous
+native state refuses without rollback or successor. TypeScript requires
+preparation readback ports for this path. Local and retained same-batch
+journal attempted/sent or nonnull transaction/raw/ancestor evidence also
+refuses rootless retirement. Already completed parent retries remain
+read-only and permit legitimate child progress. A retained global preparation
+owner or unanswered staging effect withholds release, even if store close
+would clear pending; `CONTROLLER-PREPARATION.md` defines that barrier.
 Restart merges persisted
 failed sets monotonically and never downgrades closed progress to an older
 release intent. A journaled successor missing from the local database still

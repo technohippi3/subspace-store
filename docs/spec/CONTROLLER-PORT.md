@@ -1,17 +1,19 @@
-# TypeScript controller entry, release and restart kernel
+# TypeScript controller preparation, entry and release kernel
 
 The development controller under `ts/src/controller/` composes Effect with
-the existing controller batch states. Its bounded input is a preexisting
-checkpointed batch with a bound root and exact sorted member IDs. It ports
+the existing controller batch states. It now freezes, stages and verifies
+one local commitment as specified in `CONTROLLER-PREPARATION.md`. Its issuance
+input remains a preexisting checkpointed batch with a bound root and exact
+sorted member IDs. It ports
 the entry and first-attempt rules in `ENTRY-RECOVERY.md`, bound known-unsent
 release/rebuild in `ENTRY-RELEASE.md`, B5's durable throttle and
-interrupted-answer rules A20–A22. Safe precommit retirement is also supported;
-preparing or proving a batch is not. It adds no payment rule or independent
+interrupted-answer rules A20–A22. Safe precommit retirement requires concrete
+native preparation readback. Proving is not implemented. It adds no payment rule or independent
 model change.
 
 The shipped Python controller and attended runner remain selected. This
 library has no command entrypoint, polling loop, native service setup or
-deployment selection. It cannot freeze, stage, prove or checkpoint a batch.
+deployment selection. It cannot prove or checkpoint a batch.
 It supplies neither commitment readback/rebroadcast nor
 finality, certificate, publication, supersession, snapshot or whole-host
 reconciliation. Those ports and their real-native/package acceptance are
@@ -31,13 +33,14 @@ views, triggers, extra indexes and changed column/constraint definitions
 refuse before schema mutation. A missing journaled batch or unfinished
 recovery refuses with restore required. Admission is deliberately bounded;
 it does not qualify arbitrary historical databases for cutover. Batch
-membership and field shapes are checked, but this kernel trusts the supplied
-checkpoint digest and does not reconstruct or prove the frozen tree.
+membership and field shapes are checked. Preparation reconstructs and checks
+the immutable tuple digest; issuance of supplied checkpointed batches still
+trusts their digest. This kernel does not prove the frozen tree.
 
 The controller retains the existing Python JSONL envelope:
 `{"seq":1,"kind":"batch","batch":{...}}`. Other sequenced controller
 events are preserved as opaque history, except for the explicitly validated
-versioned rebuild-guard records. The store's DurableStore envelope
+versioned rebuild-guard and preparation ownership/effect records. The store's DurableStore envelope
 is separate. Complete prefixes require contiguous sequence numbers, valid
 UTF-8, unambiguous JSON and validated batch rows. Previously read bytes
 cannot change or disappear within an instance.
@@ -47,6 +50,24 @@ fsync, directory fsync and exact readback precede acknowledgment. The
 existing `<name>.down` marker refuses access. This preserves Python JSONL
 read/write compatibility; it does not give that legacy plaintext format a
 cryptographic origin proof across independent starts.
+
+Versioned global ownership and per-request staging effects preserve unknown
+pending set/clear, sync and park/unpark outcomes across restart. No plausible
+readback releases an unresolved request; the library refuses onward external
+work for separately established reconciliation. Conservative local startup
+safety evidence may still advance. A completed false
+pending acknowledgment withholds progress while permitting its exact owner
+to make a new request. One local commit intent is separately consumed per
+batch/space. No automatic retry, root adoption or proof recovery is provided.
+Older controller writers that ignore the ownership events must not alternate
+mid-stage; compatible JSONL envelopes are not cutover qualification.
+
+Preparation requires a loaded inspectable native space and an initial or
+already published prior pipeline. Finalized but unpublished prior pipelines
+conservatively refuse. Full stable staged and committed pages are bounded
+to 10,000 rows, and capacity is checked before commit. The strict explicit
+TypeScript selection API refuses a partly ineligible request; Python retains
+its existing filtered selection.
 
 The remote adapter retains the recovery client's `controller` stream and
 `journal-read`/`journal-append` request and acknowledgment shapes. It checks
@@ -122,7 +143,9 @@ permitted only for the original complete root; all-null roots skip a rollback
 that already happened. Mixed or foreign roots refuse. A rollback intent is
 acknowledged first. Lost close, rollback or parking replies resume through
 exact readback and idempotent operations. A rootless precommit batch can
-retire only without entry, intent or any unresolved `commit_local_intent`.
+retire only without entry, intent or any unresolved `commit_local_intent`,
+and after fresh native head/prior-root and absent-or-exact null-member checks.
+Missing preparation ports or advanced native state refuse before retirement.
 
 After fresh observation the failed set can only grow. Persisted exclusions
 from database and journal are unioned on restart, and rebuilding never
@@ -147,6 +170,11 @@ The 2026-11-13 runtime repairs in `CONTROLLER-DESIGN.md` and `ENTRY-RELEASE.md`
 also update the active Python controller: all-history failure-ID deduplication
 and fresh all-member status checks before first retirement/native mutations.
 Existing history is retained without retroactively rewriting old counts.
+`CONTROLLER-PREPARATION.md` records the subsequent active Python extraction
+and safety repairs: global staging ambiguity barriers, strict bound pending
+receipts, one local commit opportunity and rootless native-ahead/send-evidence
+refusal. Python remains selected; preparation is split into cohesive modules
+instead of expanding the controller core.
 
 ## Restart and evidence
 
@@ -182,5 +210,8 @@ process/protocol tests, not SSH or native-wallet qualification.
 
 Broadcasts and native capture are recording stand-ins. These checks establish
 source-level controller/store composition and normal-process restart only.
+Preparation adds real store/native-recording HTTP and child-process tests
+described in `CONTROLLER-PREPARATION.md`; their generated roots are not
+native cryptographic evidence.
 They do not establish real Spaces sends, native-byte validity, installed
 package acceptance, whole-host recovery or a production controller switch.

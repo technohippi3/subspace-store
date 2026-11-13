@@ -7,9 +7,18 @@ coverage. The installer and seller CLI are implemented. Each candidate requires
 same-payload real-native/browser and owner-client acceptance; see the root
 `../README.md` and `../deploy/NATIVE-PACKAGE.md` for the evidence boundary.
 
-The development kernel in `src/controller/` ports bound-entry first attempts,
+The development kernel in `src/controller/` now freezes, stages and verifies
+one local commitment, then stops at `committed_local`. It also ports bound-entry first attempts,
 known-unsent close/rebuild, the durable rebuild throttle and normal-process
-restart for preexisting checkpointed batches, plus safe precommit retirement.
+restart for preexisting checkpointed batches, plus safe precommit retirement
+with concrete native head/member readback. It has durable global ownership
+and ambiguity barriers for pending/sync/parking, and one local commit
+opportunity per batch. Unknown replies require reconciliation; no automatic
+root adoption, rollback or recommit is provided. Explicit TypeScript member
+selection conservatively refuses partly ineligible sets. Native spaces must
+already be loaded and prior pipelines published. Proving and checkpointing
+remain unimplemented. Compatible journal envelopes do not qualify alternating
+older controller writers mid-stage.
 It retains
 the Python controller journal protocol and has SQLite/HTTP/crash tests with
 recording native ports. It is not selected by the runner. Its remaining

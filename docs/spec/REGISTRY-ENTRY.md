@@ -77,6 +77,13 @@ route. The earlier inspection-only summary-list shape was not released.
 | `POST /operator/orders/<oid>/journal` | Flush pending entries and confirm the current order against its live journal receipt. Empty body or `{}` only. |
 | `POST /operator/pending` | Exactly `{"oids":[...]}`; select or clear the frozen set and report acknowledgment. |
 
+Runtime amendment, 2026-11-13: the active bound Python client and TypeScript
+preparation client require an exact `{acknowledged:boolean}` receipt.
+HTTP 200 with false does not permit sync or staged completion. An absent
+reply is not a completed false receipt and retains the global preparation
+ambiguity barrier in `CONTROLLER-PREPARATION.md`. The legacy Python store
+transport is unchanged.
+
 A separate authenticated loopback listener, with its own injected subs
 credential, serves `GET /pending?space=@space` and `GET /health`. Its
 health response is transport health, not controller-reconciled readiness.

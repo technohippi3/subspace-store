@@ -36,9 +36,10 @@ from .certificates import CertificateVerification
 from .supersessions import SupersessionTracking
 from .bound_recovery import BoundRecovery
 from .rebuild_guard import RebuildGuard
+from .preparation import CLOSED, Preparation
+from .preparation_history import history as preparation_history
 
 COMMITTED_UNSENT = ("committed_local", "proved", "checkpointed")
-CLOSED = ("rebuilt", "final", "fulfilled", "superseded")
 LIVE = ("issuing", "broadcast", "broadcast_uncertain", "mined", "final")
 
 SCHEMA = """
@@ -112,7 +113,7 @@ NO_ATTACH = ("subs has no /commit/txid route (U1(b)): the adopted txid can't be 
              "reviewed recovery procedure")
 
 
-class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking, BoundRecovery):
+class Controller(RebuildGuard, Preparation, Issuance, Rebuild, CommitmentTracking, CertificateVerification, SupersessionTracking, BoundRecovery):
     def __init__(self, db_path, journal, registry, clients, subs_process, verifier_bin,
                  workdir, operator_wallet, capabilities=None, snapshot_dir=None,
                  ready_timeout=120):
@@ -122,6 +123,7 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
             self.db.executescript(SCHEMA)
             self._migrate()
             self.journal = journal
+            preparation_history(journal, live=False)
             self.recovery_backend = getattr(journal, "backend", None)
             self._rebuild_policy()  # Refuse malformed/unsupported policy history before serving.
             self.registry = registry
@@ -309,87 +311,6 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
     def handle(self, space, handle):
         return self.subs_read.get(f"/spaces/{space}/handles/{handle}")
 
-    # 1. Freeze
-
-    def freeze(self, space, members=None, supersedes=None):
-        self.require_restored()
-        self._require_rebuild_gate()
-        open_ = [b for b in self.batches(space) if b["state"] not in CLOSED]
-        if open_:
-            raise Refused(f"another batch is open ({open_[0]['bid']}); one commitment per space")
-        busy = {m for b in self.batches() if b["state"] not in CLOSED for m in b["members"]}
-        candidates = [o for o in self.registry.converted_orders()
-                      if o not in busy and self.registry.batch_entry_ok(o)
-                      and self.registry.order(o)["name"].endswith(space)]
-        chosen = candidates if members is None else [m for m in members if m in candidates]
-        if not chosen:
-            raise Refused("nothing to batch")
-        members_full = sorted((self.registry.order(m)["name"], self.registry.order(m)["recipient_spk"], m)
-                              for m in chosen)
-        digest = hashlib.sha256(json.dumps(members_full).encode()).hexdigest()
-        bid = f"b{self.db.execute('select count(*) from batches').fetchone()[0] + 1}"
-        prior = self.onchain_commitment(space)
-        self.db.execute("""insert into batches(bid, space, members, digest, state, prior_root, supersedes)
-                           values (?, ?, ?, ?, 'frozen', ?, ?)""",
-                        (bid, space, json.dumps(sorted(chosen)), digest,
-                         prior["state_root"] if prior else None, supersedes))
-        self._journal(bid)
-        return bid
-
-    # 2. Stage
-
-    def stage(self, bid):
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] != "frozen":
-            raise Refused("not frozen")
-        space = b["space"]
-        expected = {label(self.registry.order(m)["name"]): self.registry.order(m)["recipient_spk"]
-                    for m in b["members"]}
-        self.registry.set_pending(b["members"])
-        sync = self.subs.post("/registry/sync")
-        staged = self.handles(space, "staged")
-        strays = [h["name"] for h in staged if not h["parked"] and h["name"] not in expected]
-        if strays:
-            self.subs.post(f"/spaces/{space}/park", {"handles": strays, "parked": True})
-        # A member parked by an earlier rebuild is unparked; parking only
-        # touches staged handles, so this can't reach a committed one.
-        parked_members = [h["name"] for h in staged if h["parked"] and h["name"] in expected]
-        if parked_members:
-            self.subs.post(f"/spaces/{space}/park", {"handles": parked_members, "parked": False})
-        if strays or parked_members:
-            staged = self.handles(space, "staged")
-        unparked = {h["name"]: h["script_pubkey"] for h in staged if not h["parked"]}
-        if unparked != expected:
-            raise Refused(f"staged readback mismatch: {unparked} != {expected}")
-        self.registry.set_pending([])
-        self._save(bid, state="staged")
-        return {"sync": sync, "staged": unparked, "parked": strays}
-
-    # 3. Local commit
-
-    def commit_local(self, bid):
-        self.require_restored()
-        b = self.batch(bid)
-        if b["state"] != "staged":
-            raise Refused("not staged")
-        space = b["space"]
-        self.journal.append("commit_local_intent", bid=bid, space=space)
-        result = self.subs.post(f"/spaces/{space}/commit", {})
-        root = result["root"]
-        on_root = 0
-        for m in b["members"]:
-            info = self.handle(space, label(self.registry.order(m)["name"]))
-            if info["commitment_root"] != root:
-                raise Refused(f"member {m} readback root {info['commitment_root']} != {root}")
-            on_root += 1
-        result["members_on_root"] = on_root
-        still = {h["name"] for h in self.handles(space, "staged")}
-        if still & {label(self.registry.order(m)["name"]) for m in b["members"]}:
-            raise Refused("a member is still staged after the local commit")
-        self._save(bid, state="committed_local", root=root)
-        return result
-
     # 4. Prove
 
     def prove(self, bid, timeout=6 * 3600, poll=5):
@@ -488,6 +409,7 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
         any other failure leaves the shutdown unestablished, and nothing is
         copied. Work resumes only once subs answers /status with a status
         again after its start."""
+        self._require_preparation_idle()
         # Numbered from what is already there, so the latest is well defined
         # however many processes took them (each runner command is its own).
         self.snapshots += 1
@@ -648,6 +570,7 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
     # Uncertain broadcast: readback, never retried
 
     def readback(self, bid):
+        self._require_preparation_idle()
         b = self.batch(bid)
         if b["state"] != "broadcast_uncertain":
             return {"adopted": False, "reason": "not uncertain"}
@@ -709,6 +632,7 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
         neither, such as a fresh host's, refuses the commitment's own bytes
         for a missing input. So the bytes of every unconfirmed ancestor the
         node holds now are journaled with it, parents first."""
+        self._require_preparation_idle()
         b = self.batch(bid)
         if b["raw"] or not b["txid"]:
             return bool(b["raw"])
@@ -810,6 +734,7 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
         reconcile. A restore that was interrupted resumes: a replay that
         didn't commit left nothing and runs again; one that committed isn't
         repeated, and reconciliation, which is idempotent, runs again."""
+        self._require_preparation_idle()
         pending = self.restore_pending()
         if pending is None or not pending["replayed_at"]:
             self._replay(pending["n"] if pending else None)
@@ -847,6 +772,7 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
             raise
 
     def _reconcile(self):
+        self._require_preparation_idle()
         if getattr(self.registry, "bound_entries", False):
             return self.reconcile_bound()
         log = []
@@ -945,16 +871,19 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
             return "incomplete"
         return "reconciling"
 
-    def require_restored(self):
+    def require_restored(self, *, preparation_bid=None):
         """Normal writes wait until a restore has replayed and reconciled."""
         if self.recovery_state() in ("required", "incomplete"):
             raise Refused(RESTORE_REQUIRED)
+        self._require_preparation_idle(preparation_bid)
 
     def mark_subs_restored(self, snapshot):
+        self._require_preparation_idle()
         self.db.execute("update recoveries set snapshot = ?, subs_at = ? where n = ?",
                         (snapshot, time.time(), self.restore_pending()["n"]))
 
     def mark_recovered(self):
+        self._require_preparation_idle()
         if self.recovery_state() == "reconciling":
             self.db.execute("update recoveries set ready_at = ? where ready_at is null",
                             (time.time(),))
@@ -998,6 +927,12 @@ class Controller(RebuildGuard, Issuance, Rebuild, CommitmentTracking, Certificat
         lacks attached, or the space paused for want of the U1(b)
         capability. It reads only."""
         waiting, paused = [], []
+        try:
+            owner, unresolved, _ = preparation_history(self.journal)
+            if owner is not None or unresolved is not None:
+                waiting.append("preparation effect or global pending owner requires reconciliation")
+        except JournalDown:
+            waiting.append("preparation journal unavailable")
         state = self.recovery_state()
         if state in ("required", "incomplete"):
             missing = self.missing_batches()

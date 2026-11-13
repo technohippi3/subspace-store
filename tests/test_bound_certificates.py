@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from controller.core import Refused
-from controller.journal import JournalDown
 from runner.cli import Runner
 from runner.store import Refused as StoreRefused, TypeScriptStore
 from tests.test_entry_release import World
@@ -28,7 +27,7 @@ class Certificates(unittest.TestCase):
         w.get = lambda path, raw=False: b"mock certificate"
         self.calls = []
         w.accept_certificate = lambda *args: self.calls.append(args) or dict(acknowledged=True)
-        self.answer = dict(verified=True, zones=[dict(handle="n1@space", script_pubkey="mock-script-1", sovereignty="sovereign"),
+        self.answer = dict(verified=True, zones=[dict(handle="n1@space", script_pubkey=w.order("o1")["recipient_spk"], sovereignty="sovereign"),
                                                dict(handle="@space", commitment_root="a" * 64, commitment_height=50)])
         return w
 
@@ -49,7 +48,7 @@ class Certificates(unittest.TestCase):
         w = self.world()
         with self.verifier():
             w.journal.set_down(True)
-            with self.assertRaises(JournalDown):
+            with self.assertRaisesRegex(Refused, "preparation journal unavailable"):
                 w.c.verify_certificates("b1")
             self.assertEqual(self.calls, [])
             w.journal.set_down(False)

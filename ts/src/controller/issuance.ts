@@ -10,6 +10,8 @@ import { appendIfAvailable, settleRestart } from "./restart.ts";
 import { strictJson } from "./json.ts";
 import { RebuildPolicy } from "./rebuild-policy.ts";
 import { KnownUnsentRelease } from "./release.ts";
+import { BatchPreparation } from "./preparation.ts";
+import { requirePreparationIdle } from "./preparation-history.ts";
 
 export interface ControllerConfig { readonly database: string; readonly makeJournal: () => ControllerJournal }
 function bounded(text: string): string {
@@ -23,6 +25,7 @@ export class BoundController {
   private readonly ports: ControllerPorts;
   private readonly policy: RebuildPolicy;
   private readonly releases: KnownUnsentRelease;
+  private readonly preparation: BatchPreparation;
   private readonly queue = Semaphore.makeUnsafe(1);
   private constructor(config: ControllerConfig, ports: ControllerPorts) {
     const db = new BatchDatabase(config.database);
@@ -32,6 +35,7 @@ export class BoundController {
       this.db = db; this.ports = ports;
       this.policy = new RebuildPolicy(this.journal, ports.height);
       this.releases = new KnownUnsentRelease(db, this.journal, ports, this.policy);
+      this.preparation = new BatchPreparation(db, this.journal, this.policy, ports.preparation);
     } catch (error) { db.close(); throw error; }
   }
   static open(config: ControllerConfig, ports: ControllerPorts) {
@@ -39,6 +43,9 @@ export class BoundController {
   }
   batch(bid: string): Result<Batch> { return checked("read batch", () => this.db.get(bid)); }
   alerts() { return checked("read alerts", () => this.db.alerts()); }
+  freeze(space: string, members?: readonly string[]): Result<Batch> { return this.queue.withPermit(this.preparation.freeze(space, members)); }
+  stage(bid: string): Result<Batch> { return this.queue.withPermit(this.preparation.stage(bid)); }
+  commitLocal(bid: string): Result<Batch> { return this.queue.withPermit(this.preparation.commit(bid)); }
   releaseUnsent(bid: string, failed: readonly string[], bindingFailure = false): Result<string | null> {
     return this.queue.withPermit(this.releases.release(bid, failed, bindingFailure));
   }
@@ -55,6 +62,7 @@ export class BoundController {
   }
   private readJournal() {
     return checked("journal read", () => {
+      requirePreparationIdle(this.journal);
       const current = latest(this.journal.entries()); this.db.requireRestored(new Set(current.keys()));
       return current;
     });
@@ -165,6 +173,7 @@ export class BoundController {
   private sendFirst(bid: string): Result<Batch> {
     const self = this; return Effect.gen(function* () {
       let b = yield* self.batch(bid);
+      yield* checked("require idle preparation before send", () => requirePreparationIdle(self.journal));
       yield* self.policy.requireGate();
       yield* checked("validate first send", () => {
         if (b.state !== "issuing" || possibleSend(b) || !b.intent || !b.entry_key || !b.root || !outpoint(b.delegate_in) || b.fee_rate === null || b.recovery_paused)

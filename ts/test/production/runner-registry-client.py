@@ -5,21 +5,25 @@ real loopback store. Subs is a recording stand-in, not a Bitcoin broadcaster.
 """
 import json
 import sys
-from types import SimpleNamespace
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from controller.core import Controller, Refused
+from controller.journal import Journal
 from runner.store import TypeScriptStore
 
 
 class SendGate:
+    _require_preparation_idle = Controller._require_preparation_idle
     _issuance_acknowledged = Controller._issuance_acknowledged
     _send = Controller._send
 
     def __init__(self, registry, controller_ack):
         self.registry, self.controller_ack = registry, controller_ack
-        self.journal = SimpleNamespace(down=lambda: not controller_ack)
+        self.temporary = tempfile.TemporaryDirectory(prefix="runner-send-gate-")
+        self.journal = Journal(self.temporary.name, "controller")
+        self.journal.set_down(not controller_ack)
         self.sent = 0
         self.row = dict(bid="b1", space="@space", root="a" * 64, entry_key="1" * 32,
                         delegate_in="d" * 64 + ":0", members=["o1"], intent=1,

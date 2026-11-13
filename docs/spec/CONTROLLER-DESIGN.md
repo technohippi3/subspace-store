@@ -41,6 +41,18 @@ takes the journal's copy (A22).
 
 ## Pinned upstream versions
 
+Runtime amendment, 2026-11-13: `CONTROLLER-PREPARATION.md` defines the
+bounded freeze/stage/local-commit implementation and active Python safety
+repairs. Pending set/clear, sync and parking have durable global ownership
+and one-request intent/completion barriers. Unknown requests require
+reconciliation instead of plausible-readback retries. Acknowledged
+`commit_local_intent` permits only one same-invocation local commit;
+preexisting intent and native-ahead state refuse automatic retry/adoption.
+Rootless first retirement validates the same native head/member facts and
+known-unsent evidence before creating a child. The prior payment rules and
+historical journals remain intact. Proving/checkpoint/runtime selection
+are not ported by this increment.
+
 - `subs` at `4dcc9237af3a807497d4b1532729842ee5dcdb68`;
 - `spaces` v0.5.0 (`spaced`, `space-cli`), released 2026-09-21. `subs` at
   that commit builds against the `spaces` crates 0.4.2, and git `16fb1f5`

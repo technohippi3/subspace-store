@@ -95,11 +95,14 @@ class EntryRecovery(unittest.TestCase):
                 with self.assertRaises(Refused):
                     c.issue("b1")
                 self.assertEqual(registry.calls, 0)
-                key = c.batch("b1")["entry_key"]
+                self.assertIsNone(c.batch("b1")["entry_key"])
                 journal.set_down(False)
                 with self.assertRaises(ConnectionError):
                     c.issue("b1")
                 self.assertEqual(c.batch("b1")["state"], "checkpointed")
+                key = c.batch("b1")["entry_key"]
+                self.assertIsNotNone(key)
+                self.assertEqual(c.acknowledged("b1")["entry_key"], key)
                 self.assertEqual(writes, [])
             finally:
                 c.close()

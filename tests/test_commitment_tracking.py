@@ -4,7 +4,6 @@ import tempfile
 import unittest
 
 from controller.core import Refused
-from controller.journal import JournalDown
 from runner.commitments import receipt
 from runner.store import Refused as StoreRefused, TypeScriptStore
 from tests.test_entry_release import World
@@ -38,7 +37,7 @@ class CommitmentTracking(unittest.TestCase):
     def test_A33_controller_journal_and_store_acknowledgments_precede_progress_and_retries_reobserve(self):
         w = self.world()
         w.journal.set_down(True)
-        with self.assertRaises(JournalDown):
+        with self.assertRaisesRegex(Refused, "preparation journal unavailable"):
             w.c.watch("b1")
         self.assertEqual(self.calls, [])
         self.assertEqual(w.c.batch("b1")["state"], "broadcast")

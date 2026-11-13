@@ -144,14 +144,28 @@ remapping and artifact manifest contract, and pins the complete Cargo lock
 digest. This removes that build tool's Python dependency; the controller,
 runner, reference baseline and remaining tooling still require Python.
 
-The bounded TypeScript/Effect controller kernel now handles a preexisting
-checkpointed batch's bound entry, first-send arm, known-unsent close/rebuild,
-durable rebuild throttle and normal-process restart, plus safe precommit
-retirement without a preparation implementation.
+The bounded TypeScript/Effect controller kernel now freezes, stages and
+verifies one local commitment, in addition to a preexisting checkpointed
+batch's bound entry, first-send arm, known-unsent close/rebuild, durable
+rebuild throttle and normal-process restart. Rootless first retirement
+requires native head/member evidence. `CONTROLLER-PREPARATION.md` defines
+the strict explicit-member API, global pending/staging ambiguity barrier,
+one-shot commit and conservative reconciliation refusals. Proving and
+checkpointing remain subsequent ports, so no preparation success can be
+used as a proved issuance precondition.
 It retains Python-shaped SQLite/JSONL history and the existing remote journal
 protocol. `CONTROLLER-PORT.md` defines its scope and stand-in broadcast tests.
-The shipped runner continues to select the Python controller. Batch preparation,
-the remaining controller lifecycle, native adapters and full replacement
+Runtime amendments, 2026-11-13: active Python preparation is extracted from
+the core into cohesive modules and receives the same global delayed-effect
+barrier, exact bound pending receipt, one local commit opportunity and
+rootless native-ahead/retained-send-evidence guards. Legacy Python selection
+and store transport remain unchanged. Prior journal history is preserved;
+older writers ignoring the ownership events cannot alternate mid-stage.
+These lifecycle repairs add no payment model policy. Tests use real store
+HTTP/SQLite and recording native public facts, not genuine native proofs.
+The shipped runner continues to select the Python controller. Proving,
+checkpointing, the remaining controller lifecycle, native setup/adapters,
+native preparation qualification and full replacement
 qualification still precede removal; this development slice changes no
 pilot activation gate.
 

@@ -178,6 +178,12 @@ class TypeScriptStore(Store):
     Python store's anonymous issuing marks."""
     bound_entries = True
 
+    def set_pending(self, oids):
+        result = self.op("POST", "/operator/pending", {"oids": list(oids)})
+        if not isinstance(result, dict) or set(result) != {"acknowledged"} or type(result["acknowledged"]) is not bool:
+            raise Refused("invalid completed frozen pending receipt")
+        return result["acknowledged"]
+
     def supersession_status(self, batch):
         payload = dict(self._entry_payload(batch), delegate=batch["delegate_in"])
         return supersession_receipt(self.op("POST", "/operator/supersessions/lookup", payload), batch, Refused)

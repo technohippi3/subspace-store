@@ -22,7 +22,8 @@ class World:
         self.lost_rollback = False
         self.bound_entries = True
         self.statuses = {}
-        self.info = {f"n{i}": dict(script_pubkey=f"mock-script-{i}", commitment_root="a" * 64, parked=False)
+        self.chain, self.head, self.pending = None, "a" * 64, True
+        self.info = {f"n{i}": dict(script_pubkey="5120" + str(i).rjust(64, "0"), commitment_root="a" * 64, parked=False)
                      for i in (1, 2)}
         self.c = self.open()
         self.c.db.execute("insert into batches(bid,space,members,digest,state,root,entry_key) "
@@ -31,16 +32,18 @@ class World:
         self.c._journal("b1")
 
     def open(self):
-        return Controller(self.root / "controller.db", self.journal, self,
+        result = Controller(self.root / "controller.db", self.journal, self,
                           Clients(lambda: self, lambda: self, lambda: None, lambda: None),
                           None, self.root / "verifier", self.root / "work", "mock-wallet")
+        result.onchain_commitment = lambda space: None if self.chain is None else dict(state_root=self.chain)
+        return result
 
     def restart(self):
         self.c.close()
         self.c = self.open()
 
     def order(self, oid):
-        return dict(name=f"n{oid[1:]}@space", recipient_spk=f"mock-script-{oid[1:]}", status=self.statuses.get(oid, "converted"))
+        return dict(name=f"n{oid[1:]}@space", recipient_spk="5120" + oid[1:].rjust(64, "0"), status=self.statuses.get(oid, "converted"))
 
     def observe(self):
         pass
@@ -60,7 +63,14 @@ class World:
         return dict(found=True, phase="closed", acknowledged=True)
 
     def get(self, path):
-        return self.info[path.rsplit("/", 1)[1]]
+        if path.endswith("/pipeline"):
+            return dict(root=self.head, txid="d" * 64 if self.chain == self.head and self.head else None,
+                        has_pending=self.pending, commitment_idx=0 if self.head else None, staged_count=0,
+                        steps={key: "complete" if self.head else "pending" for key in ("local", "proving", "broadcast", "confirmed", "finalized", "published")})
+        name = path.rsplit("/", 1)[1]
+        value = self.info[name]
+        return dict(value, name=name, status="committed" if value["commitment_root"] else "staged",
+                    commitment_idx=0 if value["commitment_root"] else None, publish_status=None)
 
     def post(self, path, body=None):
         if path.endswith("/rollback-local"):
@@ -121,10 +131,14 @@ class EntryRelease(unittest.TestCase):
 
     def test_A29_precommit_release_does_not_roll_back_a_previous_root_and_legacy_rollback_still_runs(self):
         w = self.world()
-        w.c._save("b1", root=None, entry_key=None, state="frozen")
+        w.chain = w.head = "a" * 64
+        w.pending = False
+        w.info["old"] = dict(w.info["n1"])
+        w.info["n1"]["commitment_root"] = w.info["n2"]["commitment_root"] = None
+        w.c._save("b1", root=None, prior_root="a" * 64, entry_key=None, state="frozen")
         self.assertEqual(w.c.rebuild("b1", ["o2"]), "b2")
         self.assertEqual((w.closed, w.rollbacks), (0, 0))
-        self.assertEqual(w.info["n1"]["commitment_root"], "a" * 64)
+        self.assertEqual(w.info["old"]["commitment_root"], "a" * 64)
         w.bound_entries = False
         w.c.rollback_local("b2")
         self.assertEqual(w.c.batch("b2")["state"], "rebuilt")

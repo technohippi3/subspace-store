@@ -139,7 +139,7 @@ test('L6: final depth with only 138 anchor blocks keeps issuance pending without
 }));
 test('L7: evicted commitment rebroadcasts only identical journaled bytes after live journal confirmation',async(t)=>within(t,async w=>{
  await w.ready();w.chain.minedHeight=null;w.chain.roots[w.chain.root]=null;w.chain.known=false;w.chain.mempool=false;await w.command('watch');
- writeFileSync(join(w.f.root,'controller-journal','runner.down'),'');const denied=await w.command('rebroadcast');assertError(denied,/acknowledged/);assert.deepEqual(denied.subs.raw_sends??[],[]);
+ writeFileSync(join(w.f.root,'controller-journal','runner.down'),'');const denied=await w.command('rebroadcast');assertError(denied,/acknowledged|journal unavailable/);assert.deepEqual(denied.subs.raw_sends??[],[]);
  await w.command('journal-up');const out=await w.command('rebroadcast');assert.equal(out.error,null);assert.deepEqual(out.subs.raw_sends,['00']);assert.equal(sent(out),1);
  w.chain.minedHeight=50;w.chain.roots[w.chain.root]=50;const final=await w.command('certify');assert.equal(final.error,null);assert.equal(b(final).state,'final');assert.equal((await run(w.store.order(w.tokens[0]))).status,'ready');
 }));
@@ -186,11 +186,11 @@ test('J5: a signed local refund attempt without acknowledgment cannot escape thr
  w.f.journal.down=false;const sent=await w.command('refund-broadcast');assert.equal(sent.error,null);assert.equal(w.f.sent.length,1);assert.equal(w.f.senderState.builds,1);
 }));
 test('J6: journal-only store/controller restore acknowledges a lost intent before one send, then rollback refuses',async(t)=>{
- const saved=await within(t,async w=>{await w.prepare();const pending=await w.command('controller-down-after-entry');assert.equal(b(pending).state,'issuing');assert.equal(b(pending).attempted,0);assert.equal(sent(pending),0);assertError(pending,/acknowledged/);await w.command('journal-up');return w;});
+ const saved=await within(t,async w=>{await w.prepare();const pending=await w.command('controller-down-after-entry');assert.equal(b(pending).state,'issuing');assert.equal(b(pending).attempted,0);assert.equal(sent(pending),0);assertError(pending,/acknowledged|journal unavailable/);await w.command('journal-up');return w;});
  await restoreBoundary(t,saved,async r=>{assert.equal((await run(r.store.order(saved.tokens[0]))).status,'issuing');const out=await r.command('issue');assert.equal(out.error,null);assert.equal(sent(out),1);assert(out.journal.some(e=>e.kind==='batch'&&e.batch.intent));assertError(await r.command('rollback'),/may have escaped/);});
 });
 test('J7: late controller journal acknowledgment in the same process resumes once and never sends twice',async(t)=>within(t,async w=>{
- await w.prepare();const out=await w.command('recover-intent-same-process');assert.equal(out.error,null);assert.equal(sent(out),1);assert.equal(b(out).state,'broadcast');assert.equal(out.errors.length,2);assert.match(out.errors[0],/acknowledged/);assert.match(out.errors[1],/only a batch issuing and never sent resumes/);
+ await w.prepare();const out=await w.command('recover-intent-same-process');assert.equal(out.error,null);assert.equal(sent(out),1);assert.equal(b(out).state,'broadcast');assert.equal(out.errors.length,2);assert.match(out.errors[0],/acknowledged|journal unavailable/);assert.match(out.errors[1],/only a batch issuing and never sent resumes/);
 }));
 test('J8: readiness cannot outrun a durable known transaction and restore withdraws verification pending fresh chain checks',async(t)=>{
  const saved=await within(t,async w=>{

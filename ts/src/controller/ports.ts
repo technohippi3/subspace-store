@@ -2,6 +2,7 @@ import type { Effect } from "effect";
 import type { ControllerError } from "./errors.ts";
 import type { Batch } from "./records.ts";
 import type { OrderStatus } from "../order.ts";
+import type { PreparationPorts } from "./preparation-ports.ts";
 
 export type Result<A> = Effect.Effect<A, ControllerError>;
 export interface EntryReceipt {
@@ -34,6 +35,7 @@ export interface ControllerPorts {
   readonly capture: (batch: Batch) => Result<CapturedTransaction | null>;
   readonly height: () => Result<number>;
   readonly release?: ReleasePorts;
+  readonly preparation?: PreparationPorts;
 }
 export interface NativeHandle {
   readonly script_pubkey: string; readonly commitment_root: string | null; readonly parked: boolean;

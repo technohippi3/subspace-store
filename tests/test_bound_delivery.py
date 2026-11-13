@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from controller.errors import Refused
-from controller.journal import Journal, JournalDown
+from controller.journal import Journal
 from controller.publication import Publisher
 from runner.store import Refused as StoreRefused, TypeScriptStore
 from tests.test_regtest_publication import FakeController, FakeRegistry, H1, R1
@@ -31,6 +31,7 @@ class BoundDelivery(unittest.TestCase):
                 self.posts.append(path)
                 return {"handles_published": 1}
         journal = Journal(root / "journal", "runner")
+        c.journal = journal
         p = Publisher(c, reg, journal, root / "publication.db", Subs(), "http://127.0.0.1:9")
         self.addCleanup(p.db.close)
         p.lookup = lambda bid, oid: dict(ok=True, sovereignty="sovereign", root_gate={"ok": True},
@@ -57,7 +58,7 @@ class BoundDelivery(unittest.TestCase):
         p, reg, journal = self.world()
         p.publish("b1", ["o1"])
         journal.set_down(True)
-        with self.assertRaises(JournalDown):
+        with self.assertRaisesRegex(Refused, "preparation journal unavailable"):
             p.confirm_delivery("b1", "o1")
         self.assertEqual(self.calls, [])
         journal.set_down(False); self.ack = False
