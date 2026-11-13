@@ -1,4 +1,5 @@
 """Actual package and systemd evidence with explicit fake app/node adapters."""
+import base64
 import hashlib
 import json
 import os
@@ -141,9 +142,21 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(self.installer()[0]['release'],'fixture-schema2')
         upgraded,_=self.installer('fixture-upgrade3');self.assertTrue(upgraded['ready'])
         h.exec('systemctl','stop','subspace-fixture-proxy.service','subspace-fixture-store.service','subspace-fixture-subs.service')
-        h.copy(HERE/'fixture-abort.py','/fixture-abort.py')
-        aborted=json.loads(h.exec('python3','/fixture-abort.py','/opt/subspace-store/current','/etc/subspace-store/installation.json',timeout=120).stdout)
+        # Generate real abort history outside CPU emulation. Every journal call
+        # still uses the shipped encrypted client over actual SSH. The guest
+        # then performs the complete installed checkpoint/update on that state.
+        history=h.root/'abort-history';history.mkdir(mode=0o700)
+        database=history/'controller.db';write(database,h.exec('cat','/srv/subspace-store/controller/controller.db').stdout,0o600)
+        public=' '.join((h.root/'recovery-server/host.pub').read_text().split()[:2])
+        write(history/'known-hosts',f'[127.0.0.1]:{h.recovery_port} {public}\n',0o600)
+        write(history/'key',base64.b64decode(h.values['recovery-key']),0o600)
+        write(history/'recovery.json',dict(version=1,installation='fixture',host='127.0.0.1',port=h.recovery_port,user='recovery',
+            identityFile=str(h.client_key),knownHostsFile=str(history/'known-hosts'),encryptionKeyFile=str(history/'key'),
+            connectTimeoutSeconds=2,operationTimeoutSeconds=30),0o600)
+        write(history/'abort.json',dict(database=str(database),recoveryConfig=str(history/'recovery.json'),node=shutil.which('node')),0o600)
+        aborted=json.loads(run([sys.executable,str(HERE/'fixture-abort.py'),str(h.root/'fixture-upgrade3-source'),str(history/'abort.json')],timeout=120).stdout)
         self.assertEqual(aborted['state'],'rebuilt');self.assertEqual(aborted['pendingClears'],1)
+        h.copy(database,'/srv/subspace-store/controller/controller.db')
         h.exec('systemctl','start','subspace-fixture-subs.service','subspace-fixture-store.service','subspace-fixture-proxy.service')
         updated,_=self.installer('fixture-postabort');self.assertTrue(updated['ready']);self.assertTrue(updated['paused'])
         receipt=json.loads(h.exec('cat','/srv/subspace-store/lifecycle/installed.json').stdout)
@@ -156,7 +169,7 @@ class PackageTests(unittest.TestCase):
         rolled,code=self.installer('fixture-schema2',bootstrap=old,success=False,flags=('--rollback',))
         self.assertEqual(code,2);self.assertEqual(rolled['code'],'incompatible-schema')
         self.assertEqual(self.installer()[0]['release'],'fixture-postabort')
-        write(DRAFT/'evidence/post-abort-update.json',dict(scope='actual installer/systemd/encrypted SSH with recording store and native ports',
+        write(DRAFT/'evidence/post-abort-update.json',dict(scope='actual guest installer/systemd/encrypted SSH; host-generated actual controller abort history with recording store/native ports',
             schema2BootstrapRefused=True,reviewedBootstrapTransition=True,postAbortUpdate=True,abort=aborted,checkpoint=receipt['checkpoint'],
             schema2DowngradeRefused=True,bootstrapHashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((DRAFT/'native').glob('*.py')) if not p.name.startswith('test')},

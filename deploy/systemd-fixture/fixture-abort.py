@@ -1,7 +1,8 @@
-"""Actual controller abort with recording native/store ports and encrypted SSH.
+"""Generate actual controller abort history with recording native/store ports.
 
-Only the disposable platform fixture calls this, with all managed units stopped.
-It is lifecycle evidence; the fixture order has no financial history.
+Run on the fixture host over encrypted SSH, then materialize the database in
+the stopped guest. Guest maintenance still uses its installed encrypted client.
+This is lifecycle evidence; the fixture order has no financial history.
 """
 import hashlib
 import json
@@ -10,18 +11,14 @@ import sqlite3
 import sys
 
 release, configuration = Path(sys.argv[1]), sys.argv[2]
-sys.path.insert(0, str(release / 'native'))
 sys.path.insert(0, str(release / 'app'))
-from common import config
-from checkpoint import recovery
 from controller.core import Controller, Clients
 from controller.preparation_history import PreparationBarrier, history
-from controller.recovery_backend import RemoteJournal
+from controller.recovery_backend import RecoveryBackend, RemoteJournal
 from controller.rpc import HttpError
 
-value = config(configuration)
-runner = json.loads(Path(value['runnerConfig']).read_text())
-database = Path(runner['controller']['dir']) / 'controller.db'
+value = json.loads(Path(configuration).read_text())
+database = Path(value['database'])
 with sqlite3.connect(database) as connection:
     # Replace only the empty fixture table with the real controller schema.
     if connection.execute('select count(*) from batches').fetchone() != (0,):
@@ -43,10 +40,8 @@ class Native:
             return dict(root=None, txid=None, has_pending=False, staged_count=0, commitment_idx=None,
                         steps={key:'pending' for key in ('local','proving','broadcast','confirmed','finalized','published')})
         raise HttpError('GET', path, 404, 'absent fixture member')
-class Backend:
-    def request(self, request): return recovery(value, release, request)
 native = Native()
-journal = RemoteJournal(Backend())
+journal = RemoteJournal(RecoveryBackend(value['recoveryConfig'], release/'client/client.mjs', value['node']))
 controller = Controller(database, journal, Registry(), Clients(lambda:native, lambda:native, lambda:None, lambda:None),
                         None, release/'unused-verifier', database.parent/'certificates', 'fixture-operator',
                         snapshot_dir=database.parent/'snapshots')
@@ -64,6 +59,7 @@ try:
     controller.abort_preparation('b1')
     rows = journal.entries()
     assert aborted['state'] == 'rebuilt' and history(journal)[0] is None and calls == [[]]
+    controller.db.execute('pragma wal_checkpoint(TRUNCATE)')
     print(json.dumps(dict(state=aborted['state'], journalPosition=len(rows), pendingClears=len(calls),
                          protocolPosition=next(row['seq'] for row in rows if row['kind']=='controller_protocol'))))
 finally:

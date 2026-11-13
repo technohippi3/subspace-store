@@ -108,8 +108,11 @@ package tests separately exercise actual systemd installation and update.
 The installed regression additionally installs a schema-2 fixture with unchanged
 `7d43c77` bootstrap/controller modules, demonstrates old-bootstrap schema-3
 refusal, and selects the reviewed new bootstrap for the one-way update. The actual
-controller then aborts a cancelled fixture order through encrypted remote journal
-acknowledgment. A later installed update checkpoints that complete framed prefix,
+controller then generates a cancelled fixture order's abort history on the host
+through actual encrypted SSH journal acknowledgment. That database is materialized
+in the stopped guest; this avoids repeated cold client starts under CPU emulation
+without extending transport or test deadlines. A later installed update uses its
+own installed encrypted client to checkpoint that complete framed prefix,
 preserves the retired batch in both copied and live databases, and restarts paused.
 The old bootstrap still refuses a schema-2 downgrade afterward. Native/store
 ports in this platform regression are recording fixtures, not financial evidence.
