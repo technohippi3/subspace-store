@@ -1,9 +1,10 @@
 # Store journal envelope codec slice
 
 This implements a dormant envelope-only boundary for
-[the proposed journal format](STORE-OPERATION-JOURNAL.md). No existing storage,
-journal adapter, runtime entrypoint, operation API, database/schema, bootstrap or
-Python code selects it. It grants no append, acknowledgment, activation or effect
+[the proposed journal format](STORE-OPERATION-JOURNAL.md). The separate dormant
+[local file backend](STORE-ENVELOPE-FILE-JOURNAL.md) consumes it. No existing selected
+storage adapter, runtime entrypoint, operation API, database/schema, bootstrap or
+Python code selects it. The pure codec grants no append, acknowledgment, activation or effect
 permission. Domain validation and real ownership/lifecycle qualification remain
 separate requirements; the broader format is not implemented by this slice.
 
@@ -64,7 +65,7 @@ or hashes from the production encoder.
 These are pure data-format tests, not storage/process/native, restore, billing,
 installed-package or buyer evidence. Byte limits and deep-nesting controls do not
 qualify worst-case heap/CPU or process availability. Old backends remain selected. Integrating
-the byte-carrying view through FileJournal, SshJournal, SQLite/outbox, checkpoint,
+the byte-carrying view through selected FileJournal, SshJournal, SQLite/outbox, checkpoint,
 replay and trusted bootstrap readers needs its own bounded implementation/tests.
 Governing domain models and actual operation/crash/concurrency/restore evidence
 must accompany behavior before capability selection. No Python removal, bootstrap
