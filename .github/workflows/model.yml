@@ -58,6 +58,16 @@ jobs:
         run: npm run check
       - name: TypeScript models, application and native package integration
         run: npm test
+        env:
+          SUBSPACE_PACKAGE_DIAGNOSTICS_DIRECTORY: ${{ runner.temp }}/subspace-package-diagnostics
+      - name: Retain sanitized package fixture progress
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-fixture-progress
+          path: ${{ runner.temp }}/subspace-package-diagnostics/*.json
+          if-no-files-found: warn
+          retention-days: 7
 
   core-regtest:
     runs-on: ubuntu-latest

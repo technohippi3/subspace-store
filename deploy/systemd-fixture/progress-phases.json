@@ -1,0 +1,13 @@
+[
+  "package.setup", "package.make-release", "package.installer-status", "package.installer-apply",
+  "package.schema2.reference", "package.schema2.copy-bootstrap", "package.schema2.initial-install",
+  "package.schema2.old-bootstrap-refusal", "package.schema2.upgrade", "package.schema2.abort-history",
+  "package.schema2.post-abort-update", "package.schema2.verify", "package.schema2.downgrade-refusal",
+  "hosts.keys", "hosts.recovery", "hosts.api", "hosts.native", "hosts.close",
+  "guest.boot", "guest.cloud-init", "guest.bootstrap", "guest.close", "guest.running", "guest.stopped",
+  "guest.command", "guest.copy", "guest.systemctl-start", "guest.systemctl-stop", "guest.systemctl-restart",
+  "guest.systemctl-show", "guest.systemctl-other",
+  "command.ssh", "command.scp", "command.docker", "command.openssl", "command.ssh-keygen",
+  "command.qemu-img", "command.genisoimage", "command.git", "command.python3", "command.node", "command.other",
+  "diagnostics.limit", "diagnostics.finished"
+]

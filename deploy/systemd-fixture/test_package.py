@@ -13,11 +13,13 @@ import threading
 import unittest
 
 from fixtures import DRAFT, HERE, Hosts, run, write
+from progress import phase, traced, event
 sys.path.insert(0, str(DRAFT / "native"))
 from release import build
 
 
 class PackageTests(unittest.TestCase):
+    @traced("package.setup")
     def setUp(self):
         (DRAFT/'evidence').mkdir(exist_ok=True,mode=0o700)
         self.host = Hosts()
@@ -71,6 +73,7 @@ class PackageTests(unittest.TestCase):
         self.make_release("fixture-v2", "fixture-v1")
         self.make_release("fixture-broken", "fixture-v2", fail=True)
 
+    @traced("package.make-release")
     def make_release(self, name, prior=None, fail=False, legacy=None):
         host = self.host
         source = host.root / (name + "-source")
@@ -100,35 +103,38 @@ class PackageTests(unittest.TestCase):
             host.copy(output / (name + "." + suffix), "/var/lib/subspace-incoming/" + name + "/" + ("release.tar.gz" if suffix == "tar.gz" else suffix))
 
     def installer(self, release=None, *, success=True, flags=(), bootstrap='/bootstrap/native/installer.py'):
-        args = ["/usr/bin/python3", bootstrap, "--config", "/etc/subspace-store/installation.json"]
-        if release is None:
-            args.append("status")
-        else:
-            path = "/var/lib/subspace-incoming/" + release
-            args.extend(["apply", "--manifest", path + "/manifest.json", "--signature", path + "/manifest.sig", "--artifact", path + "/release.tar.gz", *flags])
-        # Real service users must traverse public code and lifecycle locks even
-        # when the root operator retains the upstream-wallet umask.
-        result = self.host.exec('/bin/sh', '-c', 'umask 077; exec "$@"', 'installer',
-                                *args, success=False, timeout=120)
-        if success and result.returncode:
-            journal = self.host.exec("journalctl", "--no-pager", "-n", "60", "--unit=subspace-*", success=False)
-            unit = self.host.exec("systemctl", "cat", "subspace-secrets-fixture-store.service", success=False)
-            probe = self.host.exec("systemd-run", "--wait", "--pipe", "--property=User=subspace-secrets",
-                "--property=LoadCredentialEncrypted=bootstrap:/etc/credstore.encrypted/subspace-fixture-infisical.cred",
-                "python3", "-c", "import os,json,stat; p=os.environ['CREDENTIALS_DIRECTORY']; s=os.lstat(p+'/bootstrap'); d=os.lstat(p); print(json.dumps({'directory':p,'euid':os.geteuid(),'egid':os.getegid(),'directoryMode':oct(d.st_mode&511),'directoryUid':d.st_uid,'directoryGid':d.st_gid,'directorySymlink':stat.S_ISLNK(d.st_mode),'fileMode':oct(s.st_mode&511),'fileUid':s.st_uid,'fileGid':s.st_gid,'fileLinks':s.st_nlink,'fileSymlink':stat.S_ISLNK(s.st_mode),'readOnlyMount':bool(os.statvfs(p).f_flag&os.ST_RDONLY)}))", success=False)
-            self.fail(result.stdout.decode() + "\n" + journal.stdout.decode(errors="replace") + "\n" + unit.stdout.decode() +
-                "\ncredential probe: " + probe.stdout.decode() + probe.stderr.decode() + "\nAPI request count: " + str(len(self.host.requests)))
-        return json.loads(result.stdout), result.returncode
+        with phase("package.installer-status" if release is None else "package.installer-apply"):
+            args = ["/usr/bin/python3", bootstrap, "--config", "/etc/subspace-store/installation.json"]
+            if release is None:
+                args.append("status")
+            else:
+                path = "/var/lib/subspace-incoming/" + release
+                args.extend(["apply", "--manifest", path + "/manifest.json", "--signature", path + "/manifest.sig", "--artifact", path + "/release.tar.gz", *flags])
+            # Real service users must traverse public code and lifecycle locks even
+            # when the root operator retains the upstream-wallet umask.
+            result = self.host.exec('/bin/sh', '-c', 'umask 077; exec "$@"', 'installer',
+                                    *args, success=False, timeout=120)
+            if success and result.returncode:
+                journal = self.host.exec("journalctl", "--no-pager", "-n", "60", "--unit=subspace-*", success=False)
+                unit = self.host.exec("systemctl", "cat", "subspace-secrets-fixture-store.service", success=False)
+                probe = self.host.exec("systemd-run", "--wait", "--pipe", "--property=User=subspace-secrets",
+                    "--property=LoadCredentialEncrypted=bootstrap:/etc/credstore.encrypted/subspace-fixture-infisical.cred",
+                    "python3", "-c", "import os,json,stat; p=os.environ['CREDENTIALS_DIRECTORY']; s=os.lstat(p+'/bootstrap'); d=os.lstat(p); print(json.dumps({'directory':p,'euid':os.geteuid(),'egid':os.getegid(),'directoryMode':oct(d.st_mode&511),'directoryUid':d.st_uid,'directoryGid':d.st_gid,'directorySymlink':stat.S_ISLNK(d.st_mode),'fileMode':oct(s.st_mode&511),'fileUid':s.st_uid,'fileGid':s.st_gid,'fileLinks':s.st_nlink,'fileSymlink':stat.S_ISLNK(s.st_mode),'readOnlyMount':bool(os.statvfs(p).f_flag&os.ST_RDONLY)}))", success=False)
+                self.fail(result.stdout.decode() + "\n" + journal.stdout.decode(errors="replace") + "\n" + unit.stdout.decode() +
+                    "\ncredential probe: " + probe.stdout.decode() + probe.stderr.decode() + "\nAPI request count: " + str(len(self.host.requests)))
+            return json.loads(result.stdout), result.returncode
 
     def sql(self, statement):
         code = "import sqlite3,json; c=sqlite3.connect('/srv/subspace-store/store/store.db'); r=c.execute(" + repr(statement) + "); print(json.dumps(r.fetchall())); c.commit()"
         return json.loads(self.host.exec("python3", "-c", code).stdout)
 
     def test_schema2_bootstrap_transition_and_installed_post_abort_update(self):
+        event("state", "package.schema2.reference")
         application=Path(os.environ.get('SUBSPACE_PACKAGE_APPLICATION_SOURCE',str(DRAFT.parent)))
         sys.path.insert(0,str(application))
         from tests.legacy_controller_source import export_revision
         legacy=self.host.root/'legacy';export_revision(legacy,'7d43c77','deploy/native','controller','runner','service')
+        event("state", "package.schema2.copy-bootstrap")
         h=self.host;h.exec('mkdir','-p','/reviewed-schema2/native')
         for path in (legacy/'deploy/native').glob('*.py'):
             if not path.name.startswith('test'):h.copy(path,'/reviewed-schema2/native/'+path.name)
@@ -136,15 +142,19 @@ class PackageTests(unittest.TestCase):
         self.make_release('fixture-upgrade3','fixture-schema2')
         self.make_release('fixture-postabort','fixture-upgrade3')
         old='/reviewed-schema2/native/installer.py'
+        event("state", "package.schema2.initial-install")
         first,_=self.installer('fixture-schema2',bootstrap=old);self.assertTrue(first['ready'])
+        event("state", "package.schema2.old-bootstrap-refusal")
         refused,code=self.installer('fixture-upgrade3',bootstrap=old,success=False)
         self.assertEqual(code,2);self.assertEqual(refused['code'],'unsupported-release-schema')
         self.assertEqual(self.installer()[0]['release'],'fixture-schema2')
+        event("state", "package.schema2.upgrade")
         upgraded,_=self.installer('fixture-upgrade3');self.assertTrue(upgraded['ready'])
         h.exec('systemctl','stop','subspace-fixture-proxy.service','subspace-fixture-store.service','subspace-fixture-subs.service')
         # Generate real abort history outside CPU emulation. Every journal call
         # still uses the shipped encrypted client over actual SSH. The guest
         # then performs the complete installed checkpoint/update on that state.
+        event("state", "package.schema2.abort-history")
         history=h.root/'abort-history';history.mkdir(mode=0o700)
         database=history/'controller.db';write(database,h.exec('cat','/srv/subspace-store/controller/controller.db').stdout,0o600)
         public=' '.join((h.root/'recovery-server/host.pub').read_text().split()[:2])
@@ -158,7 +168,9 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(aborted['state'],'rebuilt');self.assertEqual(aborted['pendingClears'],1)
         h.copy(database,'/srv/subspace-store/controller/controller.db')
         h.exec('systemctl','start','subspace-fixture-subs.service','subspace-fixture-store.service','subspace-fixture-proxy.service')
+        event("state", "package.schema2.post-abort-update")
         updated,_=self.installer('fixture-postabort');self.assertTrue(updated['ready']);self.assertTrue(updated['paused'])
+        event("state", "package.schema2.verify")
         receipt=json.loads(h.exec('cat','/srv/subspace-store/lifecycle/installed.json').stdout)
         self.assertEqual(receipt['checkpoint']['controllerJournal'],aborted['journalPosition'])
         self.assertEqual(receipt['schemas']['controllerJournal'],3)
@@ -166,6 +178,7 @@ class PackageTests(unittest.TestCase):
         query="import sqlite3,json,sys; c=sqlite3.connect(sys.argv[1]);print(json.dumps(c.execute('select bid,state from batches').fetchall()))"
         for path in (directory+'/controller.db','/srv/subspace-store/controller/controller.db'):
             self.assertEqual(json.loads(h.exec('python3','-c',query,path).stdout),[['b1','rebuilt']])
+        event("state", "package.schema2.downgrade-refusal")
         rolled,code=self.installer('fixture-schema2',bootstrap=old,success=False,flags=('--rollback',))
         self.assertEqual(code,2);self.assertEqual(rolled['code'],'incompatible-schema')
         self.assertEqual(self.installer()[0]['release'],'fixture-postabort')
@@ -174,7 +187,6 @@ class PackageTests(unittest.TestCase):
             schema2DowngradeRefused=True,bootstrapHashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((DRAFT/'native').glob('*.py')) if not p.name.startswith('test')},
             codecSha256=hashlib.sha256((application/'controller/journal_protocol.py').read_bytes()).hexdigest()))
-
     def alchemy(self, operation, release="fixture-v1"):
         host = self.host
         directory = host.root / "alchemy-private"
