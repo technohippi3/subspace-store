@@ -6,6 +6,9 @@ It neither opens paths nor creates/migrates schema. It rejects databases contain
 store_meta, records, other application tables/views or attached/temporary databases.
 The selected DurableStore and its replay, projection, checkpoint/restore and
 runtime paths remain unchanged. This is not a supported new store profile.
+The separate dormant [projection profile](STORE-ENVELOPE-PROJECTION.md) shares
+the internal transaction engine and qualifies generic outbox/records atomicity;
+it does not relax this outbox-only constructor's schema guard.
 
 The caller must establish exclusive ownership, protected file/sidecar/connection
 custody and safe opening before construction and throughout use. No OS lease,
