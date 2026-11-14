@@ -3,7 +3,8 @@
 This implements a dormant envelope-only boundary for
 [the proposed journal format](STORE-OPERATION-JOURNAL.md). The separate dormant
 [local file backend](STORE-ENVELOPE-FILE-JOURNAL.md) and
-[SSH backend](STORE-ENVELOPE-SSH-JOURNAL.md) consume it. No existing selected
+[SSH backend](STORE-ENVELOPE-SSH-JOURNAL.md) and isolated
+[SQLite outbox primitive](STORE-ENVELOPE-OUTBOX.md) consume it. No existing selected
 storage adapter, runtime entrypoint, operation API, database/schema, bootstrap or
 Python code selects it. The pure codec grants no append, acknowledgment, activation or effect
 permission. Domain validation and real ownership/lifecycle qualification remain
