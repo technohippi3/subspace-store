@@ -14,15 +14,18 @@ import time
 from urllib.parse import parse_qs, unquote, urlsplit
 import uuid
 
+from progress import command, phase, traced
+
 HERE = Path(__file__).resolve().parent
 DRAFT = HERE.parent
 
 
 def run(arguments, *, data=None, timeout=30, success=True):
-    result = subprocess.run(arguments, input=data, capture_output=True, timeout=timeout)
-    if success and result.returncode:
-        raise RuntimeError(f"fixture command failed: {arguments[:3]!r}: {result.stdout.decode(errors='replace')[-1000:]} {result.stderr.decode(errors='replace')[-1000:]}")
-    return result
+    with command(arguments):
+        result = subprocess.run(arguments, input=data, capture_output=True, timeout=timeout)
+        if success and result.returncode:
+            raise RuntimeError(f"fixture command failed: {arguments[:3]!r}: {result.stdout.decode(errors='replace')[-1000:]} {result.stderr.decode(errors='replace')[-1000:]}")
+        return result
 
 
 def port():
@@ -55,10 +58,14 @@ class Hosts:
         self.tls_port, self.buyer_port, self.operator_port, self.subs_port = [port() for _ in range(4)]
         self.recovery_port = port()
         try:
-            self.keys()
-            self.start_recovery()
-            self.start_api()
-            self.start_native()
+            with phase('hosts.keys'):
+                self.keys()
+            with phase('hosts.recovery'):
+                self.start_recovery()
+            with phase('hosts.api'):
+                self.start_api()
+            with phase('hosts.native'):
+                self.start_native()
         except BaseException:
             self.close()
             raise
@@ -189,6 +196,7 @@ class Hosts:
             return self.guest.exec(*arguments, success=success, timeout=timeout)
         return run(["docker", "exec", self.native, *arguments], timeout=timeout, success=success)
 
+    @traced("hosts.close")
     def close(self):
         if self.guest:
             self.guest.close()

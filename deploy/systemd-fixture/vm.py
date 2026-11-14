@@ -10,9 +10,11 @@ import time
 import uuid
 
 from fixtures import DRAFT, port, run, write
+from progress import phase, traced, guest_state
 
 
 class Guest:
+    @traced("guest.boot")
     def __init__(self, root):
         self.root = Path(root)
         self.process = None
@@ -63,12 +65,15 @@ class Guest:
         else:
             self.close()
             raise RuntimeError("disposable guest SSH deadline exceeded")
-        self.exec("cloud-init", "status", "--wait", timeout=120)
-        self.exec("mkdir", "-p", "/bootstrap/native", "/bootstrap/client")
-        self.copy_tree(DRAFT / "native", "/bootstrap/native")
-        self.copy_tree(DRAFT / "client", "/bootstrap/client")
-        self.copy(shutil.which("node"), "/usr/local/bin/node")
-        self.exec("chmod", "0755", "/usr/local/bin/node")
+        guest_state(self.process)
+        with phase("guest.cloud-init"):
+            self.exec("cloud-init", "status", "--wait", timeout=120)
+        with phase("guest.bootstrap"):
+            self.exec("mkdir", "-p", "/bootstrap/native", "/bootstrap/client")
+            self.copy_tree(DRAFT / "native", "/bootstrap/native")
+            self.copy_tree(DRAFT / "client", "/bootstrap/client")
+            self.copy(shutil.which("node"), "/usr/local/bin/node")
+            self.exec("chmod", "0755", "/usr/local/bin/node")
 
     def options(self):
         return ["-F", "/dev/null", "-oBatchMode=yes", "-oIdentitiesOnly=yes", "-oIdentityAgent=none",
@@ -76,8 +81,15 @@ class Guest:
             "-oConnectTimeout=2", "-oServerAliveInterval=2", "-oServerAliveCountMax=2", "-i", str(self.identity)]
 
     def exec(self, *arguments, success=True, timeout=30):
-        return run(["ssh", *self.options(), "-T", "-p", str(self.port), "root@127.0.0.1", shlex.join(arguments)], success=success, timeout=timeout)
+        guest_state(self.process)
+        label = "guest.command"
+        if arguments and arguments[0] == "systemctl":
+            verb = arguments[1] if len(arguments) > 1 else "other"
+            label = "guest.systemctl-" + (verb if verb in ("start", "stop", "restart", "show") else "other")
+        with phase(label):
+            return run(["ssh", *self.options(), "-T", "-p", str(self.port), "root@127.0.0.1", shlex.join(arguments)], success=success, timeout=timeout)
 
+    @traced("guest.copy")
     def copy(self, source, destination):
         run(["scp", *self.options(), "-P", str(self.port), str(source), f"root@127.0.0.1:{destination}"], timeout=60)
         self.exec("chown", "root:root", destination)
@@ -87,7 +99,9 @@ class Guest:
             if file.is_file() and file.suffix in (".py", ".mjs") and not file.name.startswith("test"):
                 self.copy(file, destination + "/" + file.name)
 
+    @traced("guest.close")
     def close(self):
+        guest_state(self.process)
         if self.process and self.process.poll() is None:
             self.process.terminate()
             try:

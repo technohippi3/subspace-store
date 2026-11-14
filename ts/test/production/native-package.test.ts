@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { cpSync, mkdtempSync, mkdirSync, rmSync, accessSync, constants } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, rmSync, accessSync, constants, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { capturePlatformProgress } from './platform-progress.ts';
 
 const execute=promisify(execFile), repository=process.env.SUBSPACE_PACKAGE_SOURCE_ROOT ?? fileURLToPath(new URL('../../../',import.meta.url));
 const temporary=mkdtempSync(join(tmpdir(),'subspace-package-production-'));
@@ -14,8 +15,8 @@ const deployment=join(temporary,'deploy'), environment:NodeJS.ProcessEnv={...pro
 // A nested Node test runner must execute its own files, not inherit the
 // parent runner's internal child context and return without running them.
 delete environment.NODE_TEST_CONTEXT;
-async function run(binary:string,args:string[],cwd=deployment,timeout=600000){
-  return execute(binary,args,{cwd,env:environment,timeout,maxBuffer:16*1024*1024});
+async function run(binary:string,args:string[],cwd=deployment,timeout=600000,extra:NodeJS.ProcessEnv={}){
+  return execute(binary,args,{cwd,env:{...environment,...extra},timeout,maxBuffer:16*1024*1024});
 }
 async function nodeTests(file:string,minimum:number){
   const result=await run(process.execPath,['--test',join(deployment,file)]);
@@ -38,7 +39,12 @@ function qualifyPlatform(){return platform??=(async()=>{
   let accelerator=process.env.SUBSPACE_PACKAGE_VM_ACCELERATOR;
   if(!accelerator){try{accessSync('/dev/kvm',constants.R_OK|constants.W_OK);accelerator='kvm';}catch{accelerator='tcg';}}
   Object.assign(environment,{SUBSPACE_PACKAGE_VM_IMAGE:image,SUBSPACE_PACKAGE_VM_ACCELERATOR:accelerator});
-  await run('python3',['-m','unittest','test_package','-v'],join(deployment,'systemd-fixture'),900000);
+  const progress=join(deployment,'evidence','platform-progress.jsonl');
+  mkdirSync(join(deployment,'evidence'),{recursive:true,mode:0o700});
+  writeFileSync(progress,'',{flag:'wx',mode:0o600});
+  await capturePlatformProgress(()=>run('python3',['-m','unittest','test_package','-v'],
+    join(deployment,'systemd-fixture'),900000,{SUBSPACE_PACKAGE_PROGRESS_FILE:progress}),progress,
+    process.env.SUBSPACE_PACKAGE_DIAGNOSTICS_DIRECTORY);
   const evidence=process.env.SUBSPACE_PACKAGE_EVIDENCE_DIRECTORY;
   if(evidence){mkdirSync(evidence,{recursive:true});cpSync(join(deployment,'evidence'),join(mkdtempSync(join(evidence,'platform-')),'receipts'),{recursive:true});}
 })();}
