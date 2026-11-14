@@ -9,6 +9,10 @@ case expectations remain effective. Implementation must land with its governing
 model, lifecycle tests and qualified readers before activation. This document
 introduces no named case, skipped test or legacy-history adoption permission.
 
+The first dormant [envelope codec slice](STORE-JOURNAL-CODEC.md) implements only
+byte custody and structural encoding/prefix checks. It does not qualify a backend,
+operation/domain validator, activation or the broader proposed capability.
+
 The current logical Entry version is one, even though the signed package already
 uses storeJournal schema two for its existing recovery transport. These are
 separate version namespaces. The new logical Entry version is two and the literal
