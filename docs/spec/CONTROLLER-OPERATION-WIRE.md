@@ -225,23 +225,13 @@ and one newline to the controller stream. N is the next Positive sequence.
 The prefix is literal ASCII including its trailing space; the body has no extra
 whitespace. Earlier bytes are never rewritten or renumbered.
 
-Store activation requires a separate `SSSJ2 ` incompatibility floor, but its exact
-external envelope is deliberately deferred to a separately reviewed store-format
-specification before any effectful implementation or selection. It must preserve
-the current hash-linked Entry fields `{version,store,seq,previous,changes,hash}`,
-store UUID identity, contiguous sequence and original version-one prefix bytes and
-hashes. A standalone controller-like floor object is not a valid store Entry.
-The prerequisite must specify the first-floor transaction, framed post-floor bytes,
-hash preimages and previous-hash transition; operation/Grant/TerminalUnused change
-identities and their atomic projection; exact recordDigest/sequence confirmation;
-SQLite, local-file, remote, replay and bootstrap checkpoint interpretation; and
-record/page bounds including framing overhead. Its golden histories must show old
-readers refusing before effects, including an older database, and new readers
-validating the untouched prefix plus the floor and successors. No JSON mirror may
-let old readers bypass the floor. This PR does not close that store wire format.
-The pure/read-only first slice needs no store-format implementation. Effectful
-store/native/controller integration stays blocked until that prerequisite is
-reviewed, implemented and verified alongside the new operation contracts.
+Store activation requires the separate `SSSJ2 ` incompatibility floor and exact
+[store operation journal format](STORE-OPERATION-JOURNAL.md). That companion defines
+the Entry/hash-chain transition, protocol change identities, atomic projections,
+receipt bytes, limits and reader/package prerequisites. It is a proposed format,
+not an implemented capability. The pure/read-only first slice needs no store-format
+implementation. Effectful store/native/controller integration stays blocked until
+the format and operation contracts are reviewed, implemented and verified together.
 
 A controller operation record has exactly `{seq,kind,version,request,observation,
 result,confirmation}`: kind `controller_operation`, version1, observation `intent`,
