@@ -78,6 +78,7 @@ class Guest:
     def options(self):
         return ["-F", "/dev/null", "-oBatchMode=yes", "-oIdentitiesOnly=yes", "-oIdentityAgent=none",
             "-oStrictHostKeyChecking=yes", "-oGlobalKnownHostsFile=/dev/null", "-oUserKnownHostsFile=" + str(self.known),
+            "-oControlMaster=auto", "-oControlPersist=5", "-oControlPath=" + str(self.root / "ssh-%C"),
             "-oConnectTimeout=2", "-oServerAliveInterval=2", "-oServerAliveCountMax=2", "-i", str(self.identity)]
 
     def exec(self, *arguments, success=True, timeout=30):
@@ -102,6 +103,13 @@ class Guest:
     @traced("guest.close")
     def close(self):
         guest_state(self.process)
+        if hasattr(self, "known"):
+            try:
+                run(["ssh", *self.options(), "-O", "exit", "-p", str(self.port), "root@127.0.0.1"], success=False, timeout=3)
+            except (OSError, subprocess.TimeoutExpired):
+                # Still terminate the owned VM below. Persisted masters also
+                # have finite idle lifetime; cleanup must not strand the guest.
+                pass
         if self.process and self.process.poll() is None:
             self.process.terminate()
             try:
