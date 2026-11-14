@@ -1,0 +1,54 @@
+{
+  "provenance": "Explicit ASCII-key/integer fixtures independently serialized with Python; every SHA-256 cross-checked with OpenSSL. No production codec import. Not a general Python JCS oracle or domain-valid history.",
+  "store": "11111111-2222-3333-4444-555555555555",
+  "records": [
+    {
+      "name": "legacy-compact",
+      "payload": "{\"version\":1,\"store\":\"11111111-2222-3333-4444-555555555555\",\"seq\":1,\"previous\":null,\"changes\":[{\"kind\":\"data\",\"key\":\"alpha\",\"value\":{\"b\":2,\"a\":1}}],\"hash\":\"5a8df08579b6036117d3b268c83fd096322142d8d3283d1652a6542beddef7af\"}",
+      "embeddedHash": "5a8df08579b6036117d3b268c83fd096322142d8d3283d1652a6542beddef7af",
+      "recordDigest": "fedc60b1391c41a315dca367293435efd7eb63e845d240afb6f11c4ed9058363"
+    },
+    {
+      "name": "legacy-pretty",
+      "payload": "{\n  \"version\": 1,\n  \"store\": \"11111111-2222-3333-4444-555555555555\",\n  \"seq\": 1,\n  \"previous\": null,\n  \"changes\": [\n    {\n      \"kind\": \"data\",\n      \"key\": \"alpha\",\n      \"value\": {\n        \"b\": 2,\n        \"a\": 1\n      }\n    }\n  ],\n  \"hash\": \"5a8df08579b6036117d3b268c83fd096322142d8d3283d1652a6542beddef7af\"\n} ",
+      "embeddedHash": "5a8df08579b6036117d3b268c83fd096322142d8d3283d1652a6542beddef7af",
+      "recordDigest": "b89902314d93f1f7896aec54e62c0dbf7a1d31ed9fed10a7b8ab16a4d749f406"
+    },
+    {
+      "name": "legacy-duplicate-exponent",
+      "payload": "{\"version\":1,\"version\":1,\"store\":\"11111111-2222-3333-4444-555555555555\",\"seq\":1e0,\"previous\":null,\"changes\":[{\"kind\":\"data\",\"key\":\"alpha\",\"value\":{\"b\":2,\"a\":1}}],\"hash\":\"5a8df08579b6036117d3b268c83fd096322142d8d3283d1652a6542beddef7af\"}",
+      "embeddedHash": "5a8df08579b6036117d3b268c83fd096322142d8d3283d1652a6542beddef7af",
+      "recordDigest": "40dcbb1cb79d40b321c847ded0c9d2db7cf76343240c507219aad6778e9ea8ec"
+    },
+    {
+      "name": "legacy-successor",
+      "payload": "{\"version\":1,\"store\":\"11111111-2222-3333-4444-555555555555\",\"seq\":2,\"previous\":\"5a8df08579b6036117d3b268c83fd096322142d8d3283d1652a6542beddef7af\",\"changes\":[{\"kind\":\"data\",\"key\":\"alpha\",\"value\":{\"b\":2,\"a\":1}}],\"hash\":\"f3d843a54408a1680348067e96b8439b6d96955aabf32cb7c00f7b3638b8b500\"}",
+      "embeddedHash": "f3d843a54408a1680348067e96b8439b6d96955aabf32cb7c00f7b3638b8b500",
+      "recordDigest": "9e75f6b01023fbcab39e4f1f17e1ac0897a078df1ca470221bf4e6051805b36d"
+    },
+    {
+      "name": "floor-first",
+      "payload": "SSSJ2 {\"changes\":[{\"key\":\"required\",\"kind\":\"store_protocol\",\"value\":{\"authorityIdentity\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"capabilityDigest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"installation\":\"test-installation\",\"requires\":[\"store_operation_ownership_v1\"],\"version\":2}}],\"hash\":\"e30e4b8027a20df1099a3aaa022205b7457334e00fd344f873dd2e75f441eed5\",\"previous\":null,\"seq\":1,\"store\":\"11111111-2222-3333-4444-555555555555\",\"version\":2}",
+      "embeddedHash": "e30e4b8027a20df1099a3aaa022205b7457334e00fd344f873dd2e75f441eed5",
+      "recordDigest": "cc9bacfa587eb3d25ade76b0e4d7742da9cda7e6a8925a7ab8664519289c094a"
+    },
+    {
+      "name": "floor-after-legacy",
+      "payload": "SSSJ2 {\"changes\":[{\"key\":\"required\",\"kind\":\"store_protocol\",\"value\":{\"authorityIdentity\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"capabilityDigest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"installation\":\"test-installation\",\"requires\":[\"store_operation_ownership_v1\"],\"version\":2}}],\"hash\":\"c19b64ed084403cce1dfacd3728d16303971fd07ddd75bd5b9ab842924a9cedf\",\"previous\":\"5a8df08579b6036117d3b268c83fd096322142d8d3283d1652a6542beddef7af\",\"seq\":2,\"store\":\"11111111-2222-3333-4444-555555555555\",\"version\":2}",
+      "embeddedHash": "c19b64ed084403cce1dfacd3728d16303971fd07ddd75bd5b9ab842924a9cedf",
+      "recordDigest": "7b76fea3054e32b39ba3e4ae08ea92a1bbe8be2f25a998d20a92f828278ad3d5"
+    },
+    {
+      "name": "successor-after-floor",
+      "payload": "SSSJ2 {\"changes\":[{\"key\":\"alpha\",\"kind\":\"data\",\"value\":{\"10\":\"ten\",\"2\":\"two\",\"items\":[3,2,1]}}],\"hash\":\"c247a2b88b08af0e33d14264df7e5e0a0800a7df3b55bb94869dc9791c8ff72b\",\"previous\":\"e30e4b8027a20df1099a3aaa022205b7457334e00fd344f873dd2e75f441eed5\",\"seq\":2,\"store\":\"11111111-2222-3333-4444-555555555555\",\"version\":2}",
+      "embeddedHash": "c247a2b88b08af0e33d14264df7e5e0a0800a7df3b55bb94869dc9791c8ff72b",
+      "recordDigest": "7ad5c6fd4d1f1f709e3969d001d8fac2b111e64649b1d250c2d26b9a84964748"
+    },
+    {
+      "name": "successor-after-legacy-floor",
+      "payload": "SSSJ2 {\"changes\":[{\"key\":\"alpha\",\"kind\":\"data\",\"value\":{\"10\":\"ten\",\"2\":\"two\",\"items\":[3,2,1]}}],\"hash\":\"8dc73bd68fde6ab4f8c909f28ff32f8a80d8f116e2d93eafc394f82016c74b03\",\"previous\":\"c19b64ed084403cce1dfacd3728d16303971fd07ddd75bd5b9ab842924a9cedf\",\"seq\":3,\"store\":\"11111111-2222-3333-4444-555555555555\",\"version\":2}",
+      "embeddedHash": "8dc73bd68fde6ab4f8c909f28ff32f8a80d8f116e2d93eafc394f82016c74b03",
+      "recordDigest": "24e0a4e96fe9dab9132cac72757fa5fb76db2a541caed23ae6e6da6e54bfd049"
+    }
+  ]
+}
