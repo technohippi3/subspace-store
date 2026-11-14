@@ -50,7 +50,7 @@ function versionTwo(value: unknown): EnvelopeEntry {
   return value as unknown as EnvelopeEntry;
 }
 /** Syntax, canonical encoding and embedded hash only. Domain/authority checks
- * are deliberately separate. This module is not selected by any backend. */
+ * are deliberately separate. No running storage path selects this module. */
 export function readJournalPayload(input: Uint8Array): EnvelopeRecord {
   if (!(input instanceof Uint8Array) || !input.length || input.length > ENVELOPE_MAX_BYTES)
     throw Error("journal payload exceeds bounds");
